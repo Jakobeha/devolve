@@ -1,0 +1,42 @@
+Input
+  placeholder: &str
+  text: String
+  -- events
+  enter_key: Option<()>
+  ===
+
+Root: Box
+  width = 400
+  height = 200
+  children
+    `Ok Button`
+    `Cancel Button`
+    `Text Input`
+
+`Ok Button`: Button
+  text = "OK"
+  is_enabled = Inputs.ok_enabled
+  ===
+  click = Outputs.click_ok
+
+`Cancel Button`: Button
+  text = "Cancel"
+  ===
+  click = Outputs.click_cancel
+
+`Text Input`: TextField
+  text = Inputs.text
+  placeholder = Inputs.placeholder
+  ===
+  text = Outputs.text
+  text_modified = Outputs.text_modified
+  enter_key = Outputs.enter_key
+
+Output
+  ===
+  text: String
+  -- events
+  text_modified: Option<(Range<usize>, String)>,
+  enter_key: Option<()>,
+  click_ok: Option<()>,
+  click_cancel: Option<()>
