@@ -106,7 +106,7 @@ impl BuiltGraph {
         }
         unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>) -> (RawData, Vec<NodeInput>) {
             let mut cached_input_data = RawData {
-                types: input_types.iter().map(|input| input.rust_type).collect::<Vec<_>>(),
+                types: input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
@@ -114,12 +114,12 @@ impl BuiltGraph {
                 .collect::<Vec<_>>();
             (cached_input_data, inputs)
         }
-        let compute_dag = sorted_nodes.into_iter().map(|(node_id, node)| {
-            let node_type = &graph[&node.type_name];
+        let compute_dag = sorted_nodes.into_iter().map(|(_, node)| {
+            let node_type = &graph.types[&node.type_name];
 
             let compute = node.compute;
             let cached_output_data = RawData {
-                types: node_type.outputs.iter().map(|input| input.rust_type).collect::<Vec<_>>(),
+                types: node_type.outputs.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
             };
             let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices);
@@ -211,14 +211,14 @@ impl BuiltGraph {
     pub unsafe fn compute_unchecked(&mut self, ctx: &mut CompoundViewCtx, inputs: RawInputs, mut outputs: RawOutputs<'_>) {
         debug_assert!(inputs.len() == self.input_types.len() && outputs.len() == self.output_types.len());
 
-        unsafe fn handle_inputs(inputs: &[NodeInput], input_data: &mut [Box<[MaybeUninit<u8>]>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_dag: &Vec<Node>) {
-            unsafe fn handle_input(input: &NodeInput, input_data: &mut [MaybeUninit<u8>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_dag: &Vec<Node>) {
+        unsafe fn handle_inputs(inputs: &[NodeInput], input_data: &mut [Box<[MaybeUninit<u8>]>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_sub_dag: &[Node]) {
+            unsafe fn handle_input(input: &NodeInput, input_data: &mut [MaybeUninit<u8>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_sub_dag: &[Node]) {
                 match input {
                     NodeInput::Const => {},
                     NodeInput::Dep(dep) => {
                         let other_output = match dep {
                             NodeInputDep::OtherNodeOutput { node_idx, field_idx } => {
-                                let other_node = &compute_dag[*node_idx];
+                                let other_node = &compute_sub_dag[*node_idx];
                                 &other_node.cached_output_data.data[*field_idx]
                             }
                             NodeInputDep::GraphInput { field_idx } => &graph_input_data[*field_idx]
@@ -230,7 +230,7 @@ impl BuiltGraph {
                     NodeInput::Array(inputs) => {
                         let input_datas = input_data.chunks_mut(inputs.len());
                         for (input, input_data) in zip(inputs, input_datas) {
-                            handle_input(input, input_data, graph_input_data, compute_dag);
+                            handle_input(input, input_data, graph_input_data, compute_sub_dag);
                         }
                     }
                     NodeInput::Tuple(inputs) => {
@@ -240,21 +240,22 @@ impl BuiltGraph {
                                 offset += align - offset % align;
                             }
                             let input_data = &mut input_data[offset..offset + size];
-                            handle_input(input, input_data, graph_input_data, compute_dag);
+                            handle_input(input, input_data, graph_input_data, compute_sub_dag);
                             offset += size;
                         }
                     }
                 }
             }
 
-            for (input, mut input_data) in zip(inputs, input_data) {
-                handle_input(&input, input_data.as_mut(), graph_input_data, compute_dag);
+            for (input, input_data) in zip(inputs, input_data) {
+                handle_input(&input, input_data.as_mut(), graph_input_data, compute_sub_dag);
             }
         }
 
-        for node in self.compute_dag.iter_mut() {
+        for index in 0..self.compute_dag.len() {
+            let (node, compute_sub_dag) = self.compute_dag[..=index].split_last_mut().unwrap();
             // Copy input data to nodes (const data is already there), then compute to output data
-            handle_inputs(&node.inputs, &mut node.cached_input_data.data, inputs.data(), &self.compute_dag);
+            handle_inputs(&node.inputs, &mut node.cached_input_data.data, inputs.data(), &compute_sub_dag);
             node.compute.run(ctx, RawInputs::from(&node.cached_input_data), RawOutputs::from(&mut node.cached_output_data))
         }
 

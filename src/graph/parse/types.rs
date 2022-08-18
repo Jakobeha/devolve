@@ -71,9 +71,9 @@ pub struct SerialFieldType {
     pub default_value_children: SerialBody
 }
 
-#[derive(Display)]
+#[derive(Clone, Display)]
 pub enum SerialRustType {
-    #[display(fmt = "{}{}", name, "if generic_args.is_empty() { \"\" } else { format!(\"<{}>\", \", \".join(generic_args)) }")]
+    #[display(fmt = "{}{}", name, "if generic_args.is_empty() { std::borrow::Cow::Borrowed(\"\") } else { std::borrow::Cow::Owned(format!(\"<{}>\", \", \".join(generic_args))) }")]
     Ident {
         name: String,
         generic_args: Vec<SerialRustType>

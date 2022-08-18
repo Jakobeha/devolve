@@ -12,7 +12,7 @@ struct SerialNodeDep<'a> {
 
 pub fn sort_nodes_by_deps(nodes: HashMap<String, SerialNode>) -> Vec<(String, SerialNode)> {
     let deps_map = nodes.iter()
-        .map(|(node_name, node)| (node_name.to_string(), node_dep_nodes(node).collect::<HashSet<_>>()))
+        .map(|(node_name, node)| (node_name.to_string(), node_dep_nodes(node).map(String::from).collect::<HashSet<_>>()))
         .collect::<HashMap<_, _>>();
     let mut nodes = nodes.into_iter().collect::<Vec<_>>();
 
@@ -51,16 +51,16 @@ fn value_deps<'a>(value: Option<&'a SerialValueHead>, value_children: &'a Serial
 fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=SerialNodeDep> {
     match value_head {
         None | Some(SerialValueHead::Integer(_)) | Some(SerialValueHead::Float(_)) | Some(SerialValueHead::String(_)) => {
-            Box::new(std::iter::empty())
+            Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         Some(SerialValueHead::Ref { node_ident, field_ident }) => {
-            Box::new(std::iter::once(SerialNodeDep { node_ident, field_ident }))
+            Box::new(std::iter::once(SerialNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         Some(SerialValueHead::Array(elems)) => {
-            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem))))
+            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         Some(SerialValueHead::Tuple(elems)) => {
-            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem))))
+            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
     }
 }
@@ -68,13 +68,13 @@ fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=S
 fn value_children_deps(value_children: &SerialBody) -> impl Iterator<Item=SerialNodeDep> {
     match value_children {
         SerialBody::None => {
-            Box::new(std::iter::empty())
+            Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         SerialBody::Tuple(elems) => {
-            Box::new(elems.iter().flat_map(|elem| value_deps(elem.value.as_ref(), &elem.value_children)))
+            Box::new(elems.iter().flat_map(|elem| value_deps(elem.value.as_ref(), &elem.value_children))) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         SerialBody::Fields(fields) => {
-            Box::new(fields.iter().flat_map(|field| value_deps(field.value.as_ref(), &field.value_children)))
+            Box::new(fields.iter().flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))) as Box<dyn Iterator<Item=SerialNodeDep>>
         }
     }
 }

@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::mem::MaybeUninit;
 use crate::CompoundViewCtx;
 use crate::rust_type::RustType;
@@ -19,7 +18,7 @@ pub struct RawData {
 #[derive(Clone)]
 struct PanickingComputeFn;
 
-pub trait RawComputeFnTrait: Send + Sync {
+pub trait RawComputeFnTrait: Send + Sync + 'static {
     fn box_clone(&self) -> Box<dyn RawComputeFnTrait>;
 
     fn run(&self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>);

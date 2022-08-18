@@ -1,4 +1,6 @@
 #![feature(decl_macro)]
+#![feature(const_type_id)]
+#![feature(const_type_name)]
 #![feature(new_uninit)]
 
 pub use ctx::*;

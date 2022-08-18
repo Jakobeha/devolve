@@ -157,8 +157,6 @@ impl KnownRustType {
         }
     }
 
-    const TYPE_SEPARATORS: [char; 6] = ['<', '>', '(', ')', '[', ']'];
-
     /// Type name which corresponds to [StructuralRustType::type_name]
     pub fn structural_type_name(&self) -> String {
         self.simple_type_name()
@@ -171,6 +169,8 @@ impl KnownRustType {
 }
 
 impl IntrinsicRustType {
+    const TYPE_SEPARATORS: [char; 6] = ['<', '>', '(', ')', '[', ']'];
+
     /// Type name which corresponds to [StructuralRustType::type_name]
     pub fn structural_type_name(&self) -> String {
         self.simple_type_name()
@@ -347,8 +347,14 @@ impl TypeStructure {
     /// If they are different then takes priority from the first type.
     /// Use [is_structural_subtype_of] if you want to do something else (e.g. throw error or set to opaque).
     pub fn refine_from(&mut self, other: TypeStructure) {
-        match (&mut self, other) {
-            (TypeStructure::Opaque, other) => *self = other,
+        // Can't put in match expr because of borrowing rules
+        if matches!(self, TypeStructure::Opaque) {
+            *self = other;
+            return;
+        }
+
+        match (self, other) {
+            (TypeStructure::Opaque, _) => unreachable!(),
             (TypeStructure::CReprEnum { variants }, TypeStructure::CReprEnum { variants: mut other_variants }) => {
                 for variant in variants.iter_mut() {
                     if let Some(other_variant_idx) = other_variants.iter().position(|other_variant| variant.name == other_variant.name) {
@@ -409,7 +415,7 @@ impl TypeStructBody {
     }
 
     fn refine_from(&mut self, other: TypeStructBody) {
-        match (&mut self, other) {
+        match (self, other) {
             (TypeStructBody::Tuple(elements), TypeStructBody::Tuple(other_elements)) => {
                 for (element, other_element) in elements.iter_mut().zip(other_elements.into_iter()) {
                     element.refine_from(other_element);
@@ -469,7 +475,7 @@ impl TypeStructure {
             TypeStructure::CReprStruct { body } => body.infer_size(),
             TypeStructure::Pointer { referenced: _ } => Some(size_of::<*const ()>()),
             TypeStructure::Tuple { elements } => infer_tuple_size(elements),
-            TypeStructure::Array { elem, length } => infer_array_size(elem, length),
+            TypeStructure::Array { elem, length } => infer_array_size(elem, *length),
             TypeStructure::Slice { elem: _ } => None
         }
     }
@@ -486,7 +492,7 @@ impl TypeStructure {
                 Some(usize::max(discriminant_align, data_align))
             }
             TypeStructure::CReprStruct { body } => body.infer_align(),
-            TypeStructure::Pointer { referenced: _ } => align_of::<*const ()>(),
+            TypeStructure::Pointer { referenced: _ } => Some(align_of::<*const ()>()),
             TypeStructure::Tuple { elements } => infer_tuple_align(elements),
             TypeStructure::Array { elem, length } => infer_array_align(elem, *length),
             TypeStructure::Slice { elem: _ } => None

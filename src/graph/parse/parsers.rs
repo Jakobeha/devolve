@@ -170,12 +170,12 @@ impl<'a> GraphParser<'a> {
         let lines = input.lines();
         let mut block = Vec::new();
 
-        let finish_block = |block: &mut Vec<(usize, String)>| {
+        fn finish_block(this: &mut GraphParser<'_>, block: &mut Vec<(usize, String)>) {
             if !block.is_empty() {
-                self.parse_block(block);
+                this.parse_block(block);
                 block.clear();
             }
-        };
+        }
 
         for (line_num, line) in lines.enumerate() {
             match line {
@@ -189,13 +189,13 @@ impl<'a> GraphParser<'a> {
                     return;
                 }
                 Ok(line) => if line.is_empty() || line.chars().all(|char| char.is_whitespace()) {
-                    finish_block(&mut block);
+                    finish_block(self, &mut block);
                 } else {
                     block.push((line_num, line));
                 }
             }
         }
-        finish_block(&mut block);
+        finish_block(self, &mut block);
     }
 
     fn get_file(path: &Path) -> Result<BufReader<File>, std::io::Error> {
@@ -274,9 +274,10 @@ impl<'a> GraphParser<'a> {
                 let type_ = match lexer.next() {
                     None => None,
                     Some(GraphToken::Punct(':')) => {
-                        let rust_type = munch_type(&mut lexer)?;
+                        lexer.munch("ident (node type)", |token| extract!(token, GraphToken::Ident))?;
+                        let node_type = lexer.slice().to_string();
                         lexer.munch_end()?;
-                        Some(rust_type);
+                        Some(node_type)
                     }
                     _ => Err((lexer.span().start, ParseErrorBody::Expected(": or end of line")))?
                 };
@@ -382,8 +383,8 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
     fn parse(
         &mut self,
         lines: &[(usize, String)],
-        parse_item: impl FnMut(&str) -> Result<Item, (usize, ParseErrorBody)>,
-        parse_item_children: impl FnMut(&mut GraphParser<'b>, &mut Item, &[(usize, String)])
+        mut parse_item: impl FnMut(&str) -> Result<Item, (usize, ParseErrorBody)>,
+        mut parse_item_children: impl FnMut(&mut GraphParser<'b>, &mut Item, &[(usize, String)])
     ) {
         for (line_index, (line_num, line)) in lines.iter().enumerate() {
             let indent = line.chars().filter(|c| c.is_whitespace()).count();
@@ -424,8 +425,8 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
                 }
 
                 // Will be Some unless we had an error parsing a field
-                if let Some((_, mut current_item)) = self.current_item.as_mut() {
-                    parse_item_children(&mut self.p, &mut current_item, inner_lines);
+                if let Some(current_item) = self.current_item.as_mut() {
+                    parse_item_children(&mut self.p, &mut current_item.1, inner_lines);
                 }
             } else {
                 self.finish_item();
@@ -570,7 +571,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
         )
     }
 
-    fn finish(mut self) {
+    fn finish(self) {
         let (p, items) = self.p.finish();
         debug_assert!(matches!(self.body, SerialBody::None), "finish with existing SerialBody unsupported");
         if !items.is_empty() {
@@ -605,7 +606,7 @@ impl<'a, 'b> EnumVariantTypeParser<'a, 'b> {
 
     fn new(
         p: &'a mut GraphParser<'b>,
-        variants: &mut Vec<SerialEnumVariantType>
+        variants: &'a mut Vec<SerialEnumVariantType>
     ) -> Self {
         EnumVariantTypeParser {
             p: AbstractTreeParser::new(p),
@@ -623,7 +624,7 @@ impl<'a, 'b> EnumVariantTypeParser<'a, 'b> {
         )
     }
 
-    fn finish(mut self) {
+    fn finish(self) {
         let (_, items) = self.p.finish();
         for (_, item) in items.into_iter() {
             self.variants.push(item);
@@ -667,7 +668,7 @@ impl<'a, 'b> TypeBodyParser<'a, 'b> {
         )
     }
 
-    fn finish(mut self) {
+    fn finish(self) {
         let (p, items) = self.p.finish();
         debug_assert!(matches!(self.body, SerialTypeBody::None), "finish with existing SerialTypeBody unsupported");
         if !items.is_empty() {
@@ -695,7 +696,7 @@ fn parse_divider_or_header_or_field(line: &str) -> Result<FieldElemParserItem, (
     } else if line.starts_with("--") {
         Ok(FieldElemParserItem::Header { header: line.to_string() })
     } else {
-        OK(FieldElemParserItem::Field(parse_field(line)?))
+        Ok(FieldElemParserItem::Field(parse_field(line)?))
     }
 }
 
@@ -801,10 +802,11 @@ fn parse_enum_variant_type(line: &str) -> Result<SerialEnumVariantType, (usize, 
 }
 
 fn munch_value_or_underscore(lexer: &mut Lexer<GraphToken>) -> Result<Option<SerialValueHead>, (usize, ParseErrorBody)> {
-    // lexer doesn't support peek but there are easy workarounds, here is one
-    let remaining_chars = lexer.remainder().trim_start().chars();
-    let next_char = remaining_chars.next();
-    if next_char == Some('_') && !remaining_chars.next().map_or(false, |c| c.is_alphanumeric()) {
+    // lexer doesn't support peek but there are workarounds, here is one
+    let remainder = lexer.remainder().trim();
+    // check that the next char is _ and the char after is not for an identifier.
+    // We want to check for either '_' or '_: ...'
+    if remainder == "_" || remainder.starts_with("_:") {
         lexer.munch("'_'", |token| extract!(token, GraphToken::Punct('_'))).expect("peek failed");
         Ok(None)
     } else {
@@ -916,9 +918,9 @@ fn munch_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, P
             match lexer.next() {
                 None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("';' or ']'"))),
                 Some(GraphToken::Punct(';')) => {
-                    let length = lexer.munch("integer", |token| extract!(token, GraphToken::Integer(int)))?.map_err(|error| {
-                        (lexer.span().start, ParseErrorBody::BadInteger(error))
-                    })?;
+                    let length = lexer.munch("integer", |token| extract!(token, GraphToken::Integer(int)))?
+                        .map_err(|error| (lexer.span().start, ParseErrorBody::BadInteger(error)))?
+                        .try_into().map_err(|error| (lexer.span().start, ParseErrorBody::BadArrayLength(error)))?;
                     lexer.munch("']'", |token| extract!(token, GraphToken::Punct(']')))?;
                     Ok(SerialRustType::Array {
                         elem,

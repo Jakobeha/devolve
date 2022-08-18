@@ -66,8 +66,8 @@ impl MutableGraph {
         for node_id in self.iter_node_ids() {
             // Depth-first search
             let mut visited = HashSet::<NodeId>::new();
-            for elem in not_in_cycle {
-                visited.insert(elem);
+            for elem in &not_in_cycle {
+                visited.insert(*elem);
             }
 
             let mut current_chain = Vec::new();
@@ -119,13 +119,13 @@ impl TryIndex<NodeId> for MutableGraph {
     type Output = Node;
 
     fn try_index(&self, index: NodeId) -> Result<&Self::Output, NotFound<NodeId>> {
-        self.nodes.try_index(index.0).map_err(NodeId)
+        self.nodes.get(index.0).ok_or(NotFound { index })
     }
 }
 
 impl TryIndexMut<NodeId> for MutableGraph {
     fn try_index_mut(&mut self, index: NodeId) -> Result<&mut Self::Output, NotFound<NodeId>> {
-        self.nodes.try_index(index.0).map_err(NodeId)
+        self.nodes.get_mut(index.0).ok_or(NotFound { index })
     }
 }
 
@@ -167,7 +167,7 @@ impl<'a> Index<&'a NodeTypeName> for MutableGraph {
 
 impl<'a> IndexMut<&'a NodeTypeName> for MutableGraph {
     fn index_mut(&mut self, index: &'a NodeTypeName) -> &mut Self::Output {
-        self.types.index_mut(index)
+        self.types.get_mut(index).expect("index_mut: key not found")
     }
 }
 // endregion

@@ -85,16 +85,16 @@ impl Node {
 }
 
 impl NodeInput {
-    pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> {
+    pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
         match &self {
-            NodeInput::Hole | NodeInput::Const(_) => Box::new(std::iter::empty()),
-            NodeInput::Dep(dep) => Box::new(std::iter::once(dep)),
-            NodeInput::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())),
-            NodeInput::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps()))
+            NodeInput::Hole | NodeInput::Const(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeInputDep>>,
+            NodeInput::Dep(dep) => Box::new(std::iter::once(*dep)) as Box<dyn Iterator<Item=NodeInputDep>>,
+            NodeInput::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>,
+            NodeInput::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>
         }
     }
 
-    pub fn dep_nodes(&self) -> impl Iterator<Item=NodeId> {
+    pub fn dep_nodes(&self) -> impl Iterator<Item=NodeId> + '_ {
         self.deps().filter_map(|dep| match dep {
             NodeInputDep::GraphInput { idx: _ } => None,
             NodeInputDep::OtherNodeOutput { id, idx: _ } => Some(id)

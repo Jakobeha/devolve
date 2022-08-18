@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crate::rust_type::RustType;
 use derive_more::{Display, Error};
-use std::num::{ParseIntError, ParseFloatError};
+use std::num::{ParseIntError, ParseFloatError, TryFromIntError};
 //noinspection RsUnisedImport (intelliJ fails to detect use)
 use join_lazy_fmt::Join;
 use snailquote::UnescapeError;
@@ -43,6 +43,8 @@ pub enum ParseErrorBody {
     BadInteger(#[error(source)] ParseIntError),
     #[display(fmt = "couldn't parse float: {}", _0)]
     BadFloat(#[error(source)] ParseFloatError),
+    #[display(fmt = "negative array length")]
+    BadArrayLength(#[error(source)] TryFromIntError),
     #[display(fmt = "bad escape in string: {}", _0)]
     BadEscape(#[error(source)] UnescapeError),
     #[display(fmt = "unopened '{}'", _0)]

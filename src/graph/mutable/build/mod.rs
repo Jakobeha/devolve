@@ -14,7 +14,7 @@ use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantTy
 use crate::graph::raw::RawComputeFn;
 use crate::misc::extract::extract;
 use crate::misc::map_box::map_box;
-use crate::rust_type::{infer_tuple_align, infer_tuple_size, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use crate::rust_type::{infer_tuple_align, infer_tuple_size, IsSubtypeOf, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
 mod serial_deps;
 mod size_and_align;
@@ -222,7 +222,7 @@ impl<'a> GraphBuilder<'a> {
                 old_inputs.append(&mut inputs);
                 for input_io_type in inherited_type.type_data.inputs.iter() {
                     let input_field_name = &input_io_type.name;
-                    let input_idx = defined_input_types.iter().position(|input_type| input_type.name == input_field_name);
+                    let input_idx = defined_input_types.iter().position(|input_type| &input_type.name == input_field_name);
 
                     inputs.push(match input_idx {
                         None => NodeInput::Hole,
@@ -254,7 +254,7 @@ impl<'a> GraphBuilder<'a> {
         (type_data, node)
     }
 
-    fn resolve_node_type_if_builtin(&self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
+    fn resolve_node_type_if_builtin(&mut self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
         // TODO: here is where we check for BuiltinNodeType functions
         match self.resolved_rust_types.get(type_name) {
             None => match BuiltinNodeType::get(type_name) {
@@ -315,7 +315,7 @@ impl<'a> GraphBuilder<'a> {
         match KnownRustType::get(&structural_type.type_name) {
             None => RustType::Structural(structural_type),
             Some(known_type) => {
-                if !structural_type.structure.is_structural_subtype_of(&known_type.structure) {
+                if structural_type.structure.is_structural_subtype_of(&known_type.structure) == IsSubtypeOf::No {
                     self.errors.push(GraphFormError::TypeConflictsWithBuiltinType {
                         name: structural_type.type_name.to_string()
                     });
@@ -337,29 +337,9 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_type_structurally2(&mut self, serial_type: SerialRustType) -> StructuralRustType {
         let type_name = serial_type.to_string();
-        let structure = match serial_type {
-            // Even if we defined the structure elsewhere, don't need to include it here
-            // too much work and not actually necessary because we infer the size and alignment separately
-            SerialRustType::Ident { .. } => TypeStructure::Opaque,
-            SerialRustType::Reference(base_type) => TypeStructure::Pointer {
-                referenced: map_box(base_type, |base_type| self.resolve_type2(
-                    base_type,
-                ))
-            },
-            SerialRustType::Tuple(elements) => TypeStructure::Tuple {
-                elements: elements.into_iter().map(|elem| self.resolve_type2(elem)).collect()
-            },
-            SerialRustType::Array { elem, length } => TypeStructure::Array {
-                elem: map_box(elem, |elem| self.resolve_type2(elem)),
-                length
-            },
-            SerialRustType::Slice(elem) => TypeStructure::Slice {
-                elem: map_box(elem, |elem| self.resolve_type2(elem))
-            }
-        };
-        let (known_size, known_align) = match serial_type {
+        let (known_size, known_align) = match &serial_type {
             SerialRustType::Ident { name, generic_args } => {
-                let (previously_defined_size, previously_defined_align) = match self.resolved_rust_types.get(&name) {
+                let (previously_defined_size, previously_defined_align) = match self.resolved_rust_types.get(name.as_str()) {
                     None => (None, None),
                     Some(previously_defined_type) => {
                         (previously_defined_type.size, previously_defined_type.align)
@@ -376,7 +356,7 @@ impl<'a> GraphBuilder<'a> {
                 let (box_size, box_align) = if (name == "Box" || name == "Vec" || name == "HashSet") && generic_args.len() == 1 {
                     match &generic_args[0] {
                         SerialRustType::Ident { name, generic_args: _ } => {
-                            if self.graph_types.contains(&name) {
+                            if self.graph_types.contains(name.as_str()) {
                                 match name.as_str() {
                                     "Box" => (Some(size_of::<Box<()>>()), Some(align_of::<Box<()>>())),
                                     "Vec" => (Some(size_of::<Vec<()>>()), Some(align_of::<Vec<()>>())),
@@ -399,6 +379,26 @@ impl<'a> GraphBuilder<'a> {
             }
             _ => (None, None)
         };
+        let structure = match serial_type {
+            // Even if we defined the structure elsewhere, don't need to include it here
+            // too much work and not actually necessary because we infer the size and alignment separately
+            SerialRustType::Ident { .. } => TypeStructure::Opaque,
+            SerialRustType::Reference(base_type) => TypeStructure::Pointer {
+                referenced: map_box(base_type, |base_type| self.resolve_type2(
+                    base_type,
+                ))
+            },
+            SerialRustType::Tuple(elements) => TypeStructure::Tuple {
+                elements: elements.into_iter().map(|elem| self.resolve_type2(elem)).collect()
+            },
+            SerialRustType::Array { elem, length } => TypeStructure::Array {
+                elem: map_box(elem, |elem| self.resolve_type2(elem)),
+                length
+            },
+            SerialRustType::Slice(elem) => TypeStructure::Slice {
+                elem: map_box(elem, |elem| self.resolve_type2(elem))
+            }
+        };
         // use or, because structure.infer_size is guaranteed to be a no-op if known_size has any change of being Some
         StructuralRustType {
             type_name,
@@ -420,7 +420,7 @@ impl<'a> GraphBuilder<'a> {
             Some(SerialValueHead::Ref { node_ident, field_ident }) => match self.resolved_node_type(node_ident) {
                 // Error will show up later
                 None => StructuralRustType::unknown(),
-                Some(node_type) => match node_type.outputs.iter().find(|io_type| io_type.name.as_str() == field_ident.as_str()) {
+                Some(node_type) => match node_type.outputs.iter().find(|io_type| &io_type.name == field_ident) {
                     // Error will show up later
                     None => StructuralRustType::unknown(),
                     Some(io_type) => io_type.rust_type.structural()
@@ -491,7 +491,7 @@ impl<'a> GraphBuilder<'a> {
                 let structure = TypeStructure::CReprStruct {
                     body: TypeStructBody::Fields(
                         zip(
-                            fields.iter().map(|field| field.name).cloned(),
+                            fields.iter().map(|field| &field.name).cloned(),
                             item_types.into_iter()
                         ).map(|(name, rust_type)| TypeStructField { name, rust_type }).collect::<Vec<_>>()
                     )
@@ -514,7 +514,8 @@ impl<'a> GraphBuilder<'a> {
         match resolved_type {
             None => inferred_type,
             Some(mut resolved_type) => {
-                if !resolved_type.is_structural_subtype_of(&inferred_type) && !inferred_type.is_structural_subtype_of(&resolved_type) {
+                if resolved_type.is_structural_subtype_of(&inferred_type) == IsSubtypeOf::No ||
+                    inferred_type.is_structural_subtype_of(&resolved_type) == IsSubtypeOf::No {
                     self.errors.push(GraphFormError::ValueTypeMismatch {
                         explicit_type_name: resolved_type.type_name.to_string(),
                         inferred_type_name: inferred_type.type_name.to_string()
@@ -534,7 +535,8 @@ impl<'a> GraphBuilder<'a> {
         let mut iter = resolved_types.into_iter();
         let mut final_type = iter.next().unwrap();
         for next_type in iter {
-            if !final_type.is_structural_subtype_of(&next_type) && !next_type.is_structural_subtype_of(&final_type) {
+            if final_type.is_structural_subtype_of(&next_type) == IsSubtypeOf::No ||
+                next_type.is_structural_subtype_of(&final_type) == IsSubtypeOf::No {
                 self.errors.push(GraphFormError::ArrayElemTypeMismatch {
                     type_name_lhs: final_type.type_name.to_string(),
                     type_name_rhs: next_type.type_name.to_string()
@@ -603,7 +605,7 @@ impl<'a> GraphBuilder<'a> {
                         }
                     )
                 };
-                NodeInput::Dep(if node_id == NodeId(usize::MAX) {
+                NodeInput::Dep(if node_id == Some(NodeId(usize::MAX)) {
                     NodeInputDep::GraphInput {
                         idx: idx.unwrap_or(usize::MAX)
                     }

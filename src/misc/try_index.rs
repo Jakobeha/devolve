@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap, LinkedList, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::hash::Hash;
 use derive_more::{Display, Error};
 
 #[derive(Debug, Display, Error, Clone, PartialEq, Eq)]
@@ -11,18 +12,10 @@ pub trait TryIndex<Idx> {
     type Output;
 
     fn try_index(&self, index: Idx) -> Result<&Self::Output, NotFound<Idx>>;
-
-    fn get(&self, index: Idx) -> Result<&Self::Output, NotFound<Idx>> {
-        self.try_index(index)
-    }
 }
 
 pub trait TryIndexMut<Idx>: TryIndex<Idx> {
     fn try_index_mut(&mut self, index: Idx) -> Result<&mut Self::Output, NotFound<Idx>>;
-
-    fn get_mut(&mut self, index: Idx) -> Result<&mut Self::Output, NotFound<Idx>> {
-        self.try_index_mut(index)
-    }
 }
 
 impl<'a, T> TryIndex<usize> for &'a [T] {
@@ -75,21 +68,7 @@ impl<T> TryIndexMut<usize> for VecDeque<T> {
     }
 }
 
-impl<T> TryIndex<usize> for LinkedList<T> {
-    type Output = T;
-
-    fn try_index(&self, index: usize) -> Result<&Self::Output, NotFound<usize>> {
-        self.get(index).ok_or(NotFound { index })
-    }
-}
-
-impl<T> TryIndexMut<usize> for LinkedList<T> {
-    fn try_index_mut(&mut self, index: usize) -> Result<&mut Self::Output, NotFound<usize>> {
-        self.get_mut(index).ok_or(NotFound { index })
-    }
-}
-
-impl<K, V> TryIndex<K> for BTreeMap<K, V> {
+impl<K: Ord, V> TryIndex<K> for BTreeMap<K, V> {
     type Output = V;
 
     fn try_index(&self, index: K) -> Result<&Self::Output, NotFound<K>> {
@@ -97,13 +76,13 @@ impl<K, V> TryIndex<K> for BTreeMap<K, V> {
     }
 }
 
-impl<K, V> TryIndexMut<K> for BTreeMap<K, V> {
+impl<K: Ord, V> TryIndexMut<K> for BTreeMap<K, V> {
     fn try_index_mut(&mut self, index: K) -> Result<&mut Self::Output, NotFound<K>> {
         self.get_mut(&index).ok_or(NotFound { index })
     }
 }
 
-impl<'a, K, V> TryIndex<&'a K> for HashMap<K, V> {
+impl<'a, K: Eq + Hash, V> TryIndex<&'a K> for HashMap<K, V> {
     type Output = V;
 
     fn try_index(&self, index: &'a K) -> Result<&Self::Output, NotFound<&'a K>> {
@@ -111,7 +90,7 @@ impl<'a, K, V> TryIndex<&'a K> for HashMap<K, V> {
     }
 }
 
-impl<'a, K, V> TryIndexMut<&'a K> for HashMap<K, V> {
+impl<'a, K: Eq + Hash, V> TryIndexMut<&'a K> for HashMap<K, V> {
     fn try_index_mut(&mut self, index: &'a K) -> Result<&mut Self::Output, NotFound<&'a K>> {
         self.get_mut(&index).ok_or(NotFound { index })
     }
