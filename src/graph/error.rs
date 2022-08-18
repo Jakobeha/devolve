@@ -1,11 +1,14 @@
+use std::error::Error;
+use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
 use std::path::PathBuf;
-use crate::rust_type::RustType;
+
 use derive_more::{Display, Error};
-use std::num::{ParseIntError, ParseFloatError, TryFromIntError};
-//noinspection RsUnisedImport (intelliJ fails to detect use)
-use join_lazy_fmt::Join;
 use snailquote::UnescapeError;
+//noinspection RsUnusedImport (intelliJ fails to detect use)
+use join_lazy_fmt::Join;
+
 use crate::graph::mutable::NodeId;
+use crate::rust_type::RustType;
 
 pub type ParseErrors = Vec<ParseError>;
 
@@ -57,7 +60,7 @@ pub enum ParseErrorBody {
 
 pub type GraphFormErrors = Vec<GraphFormError>;
 
-#[derive(Debug, Clone, Display, Error)]
+#[derive(Debug, Display, Error)]
 pub enum GraphFormError {
     #[display(fmt = "no 'Input' node")]
     NoInput,
@@ -71,12 +74,27 @@ pub enum GraphFormError {
     InputHasInputs,
     #[display(fmt = "'Output' node has outputs")]
     OutputHasOutputs,
-    #[display(fmt = "outputs can't have values")]
-    OutputHasValue { #[error(not(source))] node_name: String },
+    #[display(fmt = "outputs can't have values: in node {}, output {}", node_name, output_name)]
+    OutputHasValue {
+        node_name: String,
+        output_name: String
+    },
     #[display(fmt = "node type not found: {} (in {})", type_name, node_name)]
     NodeTypeNotFound {
         type_name: String,
         node_name: String,
+    },
+    #[display(fmt = "node type function not found: {} (in {})", type_fn_name, node_name)]
+    NodeTypeFunctionNotFound {
+        type_fn_name: String,
+        node_name: String,
+    },
+    #[display(fmt = "node type function missing ')' (in {})", node_name)]
+    NodeTypeFunctionMissingRParen { #[error(not(source))] node_name: String },
+    #[display(fmt = "node type function error: {} (in {})", error, node_name)]
+    NodeTypeFunctionError {
+        error: Box<dyn Error>,
+        node_name: String
     },
     #[display(fmt = "type not found: {} (referenced from node {})", type_name, referenced_from)]
     RustTypeNotFound {

@@ -4,7 +4,7 @@ use std::mem::{align_of, size_of, take};
 
 use slab::Slab;
 
-use crate::graph::builtins::BuiltinNodeType;
+use crate::graph::builtins::{BuiltinNodeType, BuiltinNodeTypeFnCtx};
 use crate::graph::error::{GraphFormError, GraphFormErrors, NodeNameFieldName};
 use crate::graph::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData, NodeTypeName};
 use crate::graph::mutable::build::serial_deps::sort_nodes_by_deps;
@@ -191,7 +191,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_node(&mut self, name: &str, node: SerialNode) -> (NodeTypeData, Node) {
         let inherited_type = node.node_type.as_ref()
-            .and_then(|node_type| self.resolve_node_type_if_builtin(node_type, name));
+            .and_then(|node_type| self.resolve_node_type(node_type, name));
         // TODO: Include field headers in MutableGraph?
         let (defined_input_types, defined_inputs) = node.input_fields.into_iter()
             .filter_map(|input_field| extract!(input_field, SerialFieldElem::Field(field)))
@@ -202,10 +202,16 @@ impl<'a> GraphBuilder<'a> {
             .map(|field| self.resolve_node_field(field, name))
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
-        let mut inputs = defined_inputs;
-        if defined_outputs.iter().any(|output_value| !matches!(output_value, NodeInput::Hole)) {
-            self.errors.push(GraphFormError::OutputHasValue { node_name: name.to_string() });
+        let output_idxs_with_values = defined_outputs.iter().enumerate().filter(|(_, output_value)| !matches!(output_value, NodeInput::Hole)).map(|(idx, _)| idx).collect::<Vec<_>>();
+        for output_idx in output_idxs_with_values {
+            let output_name = defined_output_types[output_idx].name.clone();
+            self.errors.push(GraphFormError::OutputHasValue {
+                node_name: name.to_string(),
+                output_name
+            });
         }
+
+        let mut inputs = defined_inputs;
 
         let (node_type_name, type_data, compute) = match inherited_type {
             None => {
@@ -254,7 +260,19 @@ impl<'a> GraphBuilder<'a> {
         (type_data, node)
     }
 
-    fn resolve_node_type_if_builtin(&mut self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
+    fn resolve_node_type(&mut self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
+        if let Some((fn_name, fn_arg)) = type_name.split_once('(') {
+            let fn_arg = fn_arg.strip_suffix(')').unwrap_or_else(|| {
+                self.errors.push(GraphFormError::NodeTypeFunctionMissingRParen { node_name: node_name.to_string() });
+                fn_arg
+            });
+            self.resolve_node_type_fn(fn_name, fn_arg, node_name)
+        } else {
+            self.resolve_node_type_const(type_name, node_name)
+        }
+    }
+
+    fn resolve_node_type_const(&mut self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
         // TODO: here is where we check for BuiltinNodeType functions
         match self.resolved_rust_types.get(type_name) {
             None => match BuiltinNodeType::get(type_name) {
@@ -274,6 +292,32 @@ impl<'a> GraphBuilder<'a> {
                 });
                 None
             },
+        }
+    }
+
+    fn resolve_node_type_fn(&mut self, fn_name: &str, fn_arg: &str, node_name: &str) -> Option<BuiltinNodeType> {
+        match BuiltinNodeType::get_and_call_fn(fn_name, fn_arg, self.builtin_node_type_fn_ctx()) {
+            None => {
+                self.errors.push(GraphFormError::NodeTypeFunctionNotFound {
+                    type_fn_name: fn_name.to_string(),
+                    node_name: node_name.to_string()
+                });
+                None
+            },
+            Some(Err(error)) => {
+                self.errors.push(GraphFormError::NodeTypeFunctionError {
+                    error,
+                    node_name: node_name.to_string()
+                });
+                None
+            },
+            Some(Ok(builtin)) => Some(builtin)
+        }
+    }
+
+    fn builtin_node_type_fn_ctx(&self) -> BuiltinNodeTypeFnCtx<'_> {
+        BuiltinNodeTypeFnCtx {
+            resolved_rust_types: &self.resolved_rust_types
         }
     }
 
