@@ -6,13 +6,12 @@ use slab::Slab;
 
 use crate::graph::builtins::{BuiltinNodeType, BuiltinNodeTypeFnCtx};
 use crate::graph::error::{GraphFormError, GraphFormErrors, NodeNameFieldName};
-use crate::graph::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData, NodeTypeName};
+use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeId, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::graph::mutable::build::serial_deps::sort_nodes_by_deps;
 use crate::graph::mutable::build::size_and_align::{calculate_align, calculate_array_size, calculate_size};
 //noinspection RsUnusedImport (intelliJ fails to see SerialFieldElem use)
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
 use crate::graph::raw::RawComputeFn;
-use crate::misc::extract::extract;
 use crate::misc::map_box::map_box;
 use crate::rust_type::{infer_tuple_align, infer_tuple_size, IsSubtypeOf, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
@@ -189,24 +188,18 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_node(&mut self, name: &str, node: SerialNode) -> (NodeTypeData, Node) {
+    fn resolve_node(&mut self, node_name: &str, node: SerialNode) -> (NodeTypeData, Node) {
         let inherited_type = node.node_type.as_ref()
-            .and_then(|node_type| self.resolve_node_type(node_type, name));
-        // TODO: Include field headers in MutableGraph?
-        let (defined_input_types, defined_inputs) = node.input_fields.into_iter()
-            .filter_map(|input_field| extract!(input_field, SerialFieldElem::Field(field)))
-            .map(|field| self.resolve_node_field(field, name))
-            .unzip::<_, _, Vec<_>, Vec<_>>();
-        let (defined_output_types, defined_outputs) = node.output_fields.into_iter()
-            .filter_map(|input_field| extract!(input_field, SerialFieldElem::Field(field)))
-            .map(|field| self.resolve_node_field(field, name))
-            .unzip::<_, _, Vec<_>, Vec<_>>();
+            .and_then(|node_type| self.resolve_node_type(node_type, node_name));
+
+        let (defined_input_types, defined_inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name);
+        let (defined_output_types, defined_outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name);
 
         let output_idxs_with_values = defined_outputs.iter().enumerate().filter(|(_, output_value)| !matches!(output_value, NodeInput::Hole)).map(|(idx, _)| idx).collect::<Vec<_>>();
         for output_idx in output_idxs_with_values {
             let output_name = defined_output_types[output_idx].name.clone();
             self.errors.push(GraphFormError::OutputHasValue {
-                node_name: name.to_string(),
+                node_name: node_name.to_string(),
                 output_name
             });
         }
@@ -220,7 +213,7 @@ impl<'a> GraphBuilder<'a> {
                     inputs: defined_input_types,
                     outputs: defined_output_types
                 };
-                (NodeTypeName::from(name.to_string()), self_type_data, RawComputeFn::panicking())
+                (NodeTypeName::from(node_name.to_string()), self_type_data, RawComputeFn::panicking())
             },
             Some(inherited_type) => {
                 // Rearrange inputs and fill with holes, to match inherited type (there are no outputs)
@@ -251,10 +244,16 @@ impl<'a> GraphBuilder<'a> {
             }
         };
 
+        let meta = NodeMetadata {
+            input_headers,
+            output_headers
+        };
+
         let node = Node {
             type_name: node_type_name,
             inputs,
-            compute
+            compute,
+            meta
         };
 
         (type_data, node)
@@ -319,6 +318,25 @@ impl<'a> GraphBuilder<'a> {
         BuiltinNodeTypeFnCtx {
             resolved_rust_types: &self.resolved_rust_types
         }
+    }
+
+    fn resolve_field_elems(&mut self, fields: Vec<SerialFieldElem>, node_name: &str) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
+        let mut defined_types: Vec<NodeIOType> = Vec::new();
+        let mut defined_values: Vec<NodeInput> = Vec::new();
+        let mut headers: Vec<FieldHeader> = Vec::new();
+        for (index, field) in fields.into_iter().enumerate() {
+            match field {
+                SerialFieldElem::Header { header } => {
+                    headers.push(FieldHeader { index, header });
+                }
+                SerialFieldElem::Field(field) => {
+                    let (defined_input_type, defined_input) = self.resolve_node_field(field, node_name);
+                    defined_types.push(defined_input_type);
+                    defined_values.push(defined_input);
+                }
+            }
+        }
+        (defined_types, defined_values, headers)
     }
 
     fn resolve_node_field(&mut self, field: SerialField, node_name: &str) -> (NodeIOType, NodeInput) {

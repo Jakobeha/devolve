@@ -46,7 +46,21 @@ pub enum NodeInputDep {
 pub struct Node {
     pub type_name: NodeTypeName,
     pub inputs: Vec<NodeInput>,
-    pub compute: RawComputeFn
+    pub compute: RawComputeFn,
+    pub meta: NodeMetadata
+}
+
+/// Display info which is not used in actual computations
+pub struct NodeMetadata {
+    pub input_headers: Vec<FieldHeader>,
+    pub output_headers: Vec<FieldHeader>,
+}
+
+pub struct FieldHeader {
+    /// Note that the index counts indices of previous headers,
+    /// so unlike usual you *don't* want to add these in reverse.
+    pub index: usize,
+    pub header: String
 }
 
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
