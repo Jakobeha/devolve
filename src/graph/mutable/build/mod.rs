@@ -7,15 +7,14 @@ use slab::Slab;
 use crate::graph::builtins::{BuiltinNodeType, BuiltinNodeTypeFnCtx};
 use crate::graph::error::{GraphFormError, GraphFormErrors, NodeNameFieldName};
 use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeId, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
-use crate::graph::mutable::build::serial_deps::sort_nodes_by_deps;
 use crate::graph::mutable::build::size_and_align::{calculate_align, calculate_array_size, calculate_size};
+use crate::graph::parse::topological_sort::SortByDeps;
 //noinspection RsUnusedImport (intelliJ fails to see SerialFieldElem use)
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
 use crate::graph::raw::RawComputeFn;
 use crate::misc::map_box::map_box;
 use crate::rust_type::{infer_tuple_align, infer_tuple_size, IsSubtypeOf, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
-mod serial_deps;
 mod size_and_align;
 
 pub(super) struct GraphBuilder<'a> {
@@ -44,9 +43,10 @@ impl<'a> GraphBuilder<'a> {
             self.graph_types.insert(graph_type);
         }
 
-        // TODO: Topological sort the types
-        let sorted_types = graph.rust_types.into_iter();
-        let sorted_nodes = sort_nodes_by_deps(graph.nodes);
+        let mut sorted_types = graph.rust_types.into_iter().collect::<Vec<_>>();
+        sorted_types.sort_by_deps();
+        let mut sorted_nodes = graph.nodes.into_iter().collect::<Vec<_>>();
+        sorted_nodes.sort_by_deps();
 
         for (name, type_def) in sorted_types {
             let type_def = self.resolve_type_def(&name, type_def);

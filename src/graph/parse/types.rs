@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use join_lazy_fmt::Join;
 
 use snailquote::escape;
+use crate::graph::parse::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, Indent};
 
 pub struct SerialGraph {
@@ -114,11 +115,16 @@ impl Default for SerialTypeBody {
 // region Display impls
 impl Display for SerialGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for (type_name, rust_type) in &self.rust_types {
+        let mut rust_types = self.rust_types.iter().collect::<Vec<_>>();
+        rust_types.sort_by_deps();
+        let mut nodes = self.nodes.iter().collect::<Vec<_>>();
+        nodes.sort_by_deps();
+
+        for (type_name, rust_type) in rust_types {
             writeln!(f, "{}", rust_type.with_ctx(type_name))?;
         }
 
-        for (node_name, node) in &self.nodes {
+        for (node_name, node) in nodes {
             writeln!(f, "{}", node.with_ctx(node_name))?;
         }
 
