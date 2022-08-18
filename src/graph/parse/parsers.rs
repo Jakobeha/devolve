@@ -146,7 +146,7 @@ impl SerialGraph {
 
     fn new() -> Self {
         SerialGraph {
-            types: HashMap::new(),
+            rust_types: HashMap::new(),
             nodes: HashMap::new()
         }
     }
@@ -330,7 +330,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                 p.parse();
             },
             BlockParser::StructType { p, name, struct_type } => {
-                if p.graph.types.contains_key(&name) {
+                if p.graph.rust_types.contains_key(&name) {
                     p.errors.push(ParseError {
                         path: p.path.to_path_buf(),
                         line: start_line_num,
@@ -338,11 +338,11 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         body: ParseErrorBody::DuplicateType { name }
                     });
                 } else {
-                    p.graph.types.insert(name, SerialType::Struct(struct_type));
+                    p.graph.rust_types.insert(name, SerialType::Struct(struct_type));
                 }
             }
             BlockParser::EnumType { p, name, enum_type } => {
-                if p.graph.types.contains_key(&name) {
+                if p.graph.rust_types.contains_key(&name) {
                     p.errors.push(ParseError {
                         path: p.path.to_path_buf(),
                         line: start_line_num,
@@ -350,7 +350,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         body: ParseErrorBody::DuplicateType { name }
                     });
                 } else {
-                    p.graph.types.insert(name, SerialType::Enum(enum_type));
+                    p.graph.rust_types.insert(name, SerialType::Enum(enum_type));
                 }
             }
             BlockParser::Node { p, name, node,  } => {

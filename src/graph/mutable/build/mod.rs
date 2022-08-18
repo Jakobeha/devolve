@@ -41,12 +41,12 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn _build(mut self, graph: SerialGraph) -> MutableGraph {
-        for graph_type in graph.types.keys().cloned() {
+        for graph_type in graph.rust_types.keys().cloned() {
             self.graph_types.insert(graph_type);
         }
 
         // TODO: Topological sort the types
-        let sorted_types = graph.types.into_iter();
+        let sorted_types = graph.rust_types.into_iter();
         let sorted_nodes = sort_nodes_by_deps(graph.nodes);
 
         for (name, type_def) in sorted_types {
