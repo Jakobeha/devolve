@@ -18,9 +18,10 @@ pub macro extract {
 
 #[doc(hidden)]
 macro __extract_return {
-    () => { () },
-    ($first:ident) => { ($first, ) },
-    ($first:expr) => { () },
-    ($first:ident, $( $rest:expr ),*) => { ($first, __extract_return!($($rest),*)) },
-    ($first:expr, $( $rest:expr ),*) => { __extract_return!($($rest),*) }
+    ($( $lit0:literal ),*) => { (()) },
+    ($( $lit0:literal, )* $id0:ident $(, $lit1:literal )*) => { $id0 },
+    ($( $lit0:literal, )* $id0:ident, $( $lit1:literal, )* $id1:ident $(, $lit2:literal )*) => { ($id0, $id1) },
+    ($( $lit0:literal, )* $id0:ident, $( $lit1:literal, )* $id1:ident, $( $lit2:literal, )* $id2:ident $(, $lit3:literal )*) => { ($id0, $id1, $id2) },
+    ($( $lit0:literal, )* $id0:ident, $( $lit1:literal, )* $id1:ident, $( $lit2:literal, )* $id2:ident, $( $lit3:literal, )* $id3:ident $(, $lit4:literal)*) => { ($id0, $id1, $id2, $id3) },
+    ($( $lit0:literal, )* $id0:ident, $( $lit1:literal, )* $id1:ident, $( $lit2:literal, )* $id2:ident, $( $lit3:literal, )* $id3:ident, $( $lit4:literal, )* $id4:ident $(, $lit5:literal )*) => { ($id0, $id1, $id2, $id3, $id4) }
 }

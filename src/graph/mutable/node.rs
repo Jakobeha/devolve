@@ -44,7 +44,7 @@ pub enum NodeInputDep {
 }
 
 pub struct Node {
-    pub node_type: NodeTypeName,
+    pub type_name: NodeTypeName,
     pub inputs: Vec<NodeInput>,
     pub compute: RawComputeFn
 }
@@ -64,11 +64,11 @@ impl Node {
         self.iter_dep_nodes().any(|dep| dep == other_id)
     }
 
-    pub fn iter_deps(&self) -> impl Iterator<Item=NodeInputDep> {
+    pub fn iter_deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
         self.inputs.iter().flat_map(|input| input.deps())
     }
 
-    pub fn iter_dep_nodes(&self) -> impl Iterator<Item=NodeId> {
+    pub fn iter_dep_nodes(&self) -> impl Iterator<Item=NodeId> + '_ {
         self.inputs.iter().flat_map(|input| input.dep_nodes())
     }
 
@@ -87,10 +87,10 @@ impl Node {
 impl NodeInput {
     pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> {
         match &self {
-            NodeInput::Hole | NodeInput::Const(_) => std::iter::empty(),
-            NodeInput::Dep(dep) => std::iter::once(dep),
-            NodeInput::Array(inputs) => inputs.iter().flat_map(|input| input.deps()),
-            NodeInput::Tuple(inputs_with_layouts) => inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps())
+            NodeInput::Hole | NodeInput::Const(_) => Box::new(std::iter::empty()),
+            NodeInput::Dep(dep) => Box::new(std::iter::once(dep)),
+            NodeInput::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())),
+            NodeInput::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps()))
         }
     }
 
@@ -121,7 +121,7 @@ impl From<String> for NodeTypeName {
 
 impl Into<String> for NodeTypeName {
     fn into(self) -> String {
-        self.0.into_owned()
+        self.0
     }
 }
 

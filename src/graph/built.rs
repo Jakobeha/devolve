@@ -6,7 +6,7 @@ use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs};
-use crate::rust_type::RustType;
+use crate::rust_type::{RustType, IsSubtypeOf};
 
 /// Compound view graph.
 ///
@@ -106,8 +106,8 @@ impl BuiltGraph {
         }
         unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>) -> (RawData, Vec<NodeInput>) {
             let mut cached_input_data = RawData {
-                types: input_types.iter().map(|input| *input.rust_type).collect::<Vec<_>>(),
-                data: input_types.iter().map(|input| Box::new_uninit_slice(*input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
+                types: input_types.iter().map(|input| input.rust_type).collect::<Vec<_>>(),
+                data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices))
@@ -115,12 +115,12 @@ impl BuiltGraph {
             (cached_input_data, inputs)
         }
         let compute_dag = sorted_nodes.into_iter().map(|(node_id, node)| {
-            let node_type = &graph[&node.node_type];
+            let node_type = &graph[&node.type_name];
 
             let compute = node.compute;
             let cached_output_data = RawData {
-                types: node_type.outputs.iter().map(|input| *input.rust_type).collect::<Vec<_>>(),
-                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(*input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
+                types: node_type.outputs.iter().map(|input| input.rust_type).collect::<Vec<_>>(),
+                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
             };
             let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices);
 
@@ -158,19 +158,41 @@ impl BuiltGraph {
             });
         }
         for (actual_type, expected_type) in zip(input_types.iter(), self.input_types.iter()) {
-            if !actual_type.is_rough_subtype_of(&expected_type.rust_type) {
-                errors.push(GraphIOCheckError::InputTypeMismatch {
-                    field_name: expected_type.name.clone(),
-                    expected: expected_type.rust_type.clone()
-                });
+            match actual_type.is_rough_subtype_of(&expected_type.rust_type) {
+                IsSubtypeOf::No => {
+                    errors.push(GraphIOCheckError::InputTypeMismatch {
+                        field_name: expected_type.name.clone(),
+                        expected: expected_type.rust_type.clone(),
+                        actual: actual_type.clone()
+                    });
+                },
+                IsSubtypeOf::Unknown => {
+                    errors.push(GraphIOCheckError::InputTypeMaybeMismatch {
+                        field_name: expected_type.name.clone(),
+                        expected: expected_type.rust_type.clone(),
+                        actual: actual_type.clone()
+                    })
+                },
+                IsSubtypeOf::Yes => {}
             }
         }
         for (actual_type, expected_type) in zip(output_types.iter(), self.output_types.iter()) {
-            if !actual_type.is_rough_subtype_of(&expected_type.rust_type) {
-                errors.push(GraphIOCheckError::OutputTypeMismatch {
-                    field_name: expected_type.name.clone(),
-                    expected: expected_type.rust_type.clone()
-                });
+            match actual_type.is_rough_subtype_of(&expected_type.rust_type) {
+                IsSubtypeOf::No => {
+                    errors.push(GraphIOCheckError::OutputTypeMismatch {
+                        field_name: expected_type.name.clone(),
+                        expected: expected_type.rust_type.clone(),
+                        actual: actual_type.clone()
+                    });
+                },
+                IsSubtypeOf::Unknown => {
+                    errors.push(GraphIOCheckError::OutputTypeMaybeMismatch {
+                        field_name: expected_type.name.clone(),
+                        expected: expected_type.rust_type.clone(),
+                        actual: actual_type.clone(),
+                    })
+                },
+                IsSubtypeOf::Yes => {}
             }
         }
 
@@ -202,7 +224,8 @@ impl BuiltGraph {
                             NodeInputDep::GraphInput { field_idx } => &graph_input_data[*field_idx]
                         };
                         debug_assert!(other_output.len() == input_data.len());
-                        copy_nonoverlapping(other_output.as_ptr(), input_data as *mut _, other_output.len());
+                        input_data.copy_from_slice(other_output);
+                        copy_nonoverlapping(other_output.as_ptr(), input_data.as_mut_ptr(), other_output.len());
                     }
                     NodeInput::Array(inputs) => {
                         let input_datas = input_data.chunks_mut(inputs.len());

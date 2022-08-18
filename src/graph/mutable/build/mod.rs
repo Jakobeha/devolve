@@ -14,14 +14,14 @@ use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantTy
 use crate::graph::raw::RawComputeFn;
 use crate::misc::extract::extract;
 use crate::misc::map_box::map_box;
-use crate::rust_type::{KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use crate::rust_type::{infer_tuple_align, infer_tuple_size, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
 mod serial_deps;
 mod size_and_align;
 
 pub(super) struct GraphBuilder<'a> {
     errors: &'a mut GraphFormErrors,
-    graph_types: Vec<String>,
+    graph_types: HashSet<String>,
     resolved_rust_types: HashMap<String, StructuralRustType>,
     resolved_node_types: HashMap<NodeTypeName, NodeTypeData>,
     resolved_nodes: HashMap<String, (NodeId, Node)>,
@@ -33,7 +33,7 @@ impl<'a> GraphBuilder<'a> {
     pub(super) fn build(graph: SerialGraph, errors: &'a mut GraphFormErrors) -> MutableGraph {
         GraphBuilder {
             errors,
-            graph_types: Vec::new(),
+            graph_types: HashSet::new(),
             resolved_rust_types: HashMap::new(),
             resolved_node_types: HashMap::new(),
             resolved_nodes: HashMap::new(),
@@ -42,7 +42,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn _build(mut self, graph: SerialGraph) -> MutableGraph {
         for graph_type in graph.types.keys().cloned() {
-            self.graph_types.push(graph_type);
+            self.graph_types.insert(graph_type);
         }
 
         // TODO: Topological sort the types
@@ -72,14 +72,14 @@ impl<'a> GraphBuilder<'a> {
                 if !input_node.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
                     self.errors.push(GraphFormError::InputHasInputs);
                 }
-                if input_node.node_type.as_ref() != NodeTypeName::INPUT {
+                if input_node.type_name.as_ref() != NodeTypeName::INPUT {
                     self.errors.push(GraphFormError::InputHasCompute);
                     // Best failure, we have to clone because this may be used somewhere else
-                    let input_type_data = self.resolved_node_types.get(&input_node.node_type).unwrap();
+                    let input_type_data = self.resolved_node_types.get(&input_node.type_name).unwrap();
                     input_type_data.outputs.clone()
                 } else {
                     // Remove input self-type
-                    let input_type_data = self.resolved_node_types.remove(&input_node.node_type).unwrap();
+                    let input_type_data = self.resolved_node_types.remove(&input_node.type_name).unwrap();
                     debug_assert!(input_type_data.inputs.len() == input_node.inputs.len(), "basic sanity check failed");
                     input_type_data.outputs
                 }
@@ -92,17 +92,17 @@ impl<'a> GraphBuilder<'a> {
             },
             Some((output_id, output_node)) => {
                 debug_assert!(output_id == NodeId(self.resolved_nodes.len()), "output id is wrong, should be guaranteed to be last (resolved_nodes.len())");
-                let output_types = if output_node.node_type.as_ref() != NodeTypeName::OUTPUT {
+                let output_types = if output_node.type_name.as_ref() != NodeTypeName::OUTPUT {
                     self.errors.push(GraphFormError::OutputHasCompute);
                     // Best failure, we have to clone because this may be used somewhere else
-                    let output_type_data = self.resolved_node_types.get(&output_node.node_type).unwrap();
+                    let output_type_data = self.resolved_node_types.get(&output_node.type_name).unwrap();
                     if !output_type_data.outputs.is_empty() {
                         self.errors.push(GraphFormError::OutputHasOutputs);
                     }
                     output_type_data.inputs.clone()
                 } else {
                     // Remove output self-type
-                    let output_type_data = self.resolved_node_types.remove(&output_node.node_type).unwrap();
+                    let output_type_data = self.resolved_node_types.remove(&output_node.type_name).unwrap();
                     debug_assert!(output_type_data.inputs.len() == output_node.inputs.len(), "basic sanity check failed");
                     if !output_type_data.outputs.is_empty() {
                         self.errors.push(GraphFormError::OutputHasOutputs);
@@ -117,7 +117,7 @@ impl<'a> GraphBuilder<'a> {
         // Could remove this allocation but it would require exposing the internals of slab
         let mut sorted_resolved_nodes = self.resolved_nodes.into_values().collect::<Vec<_>>();
         // NodeId is not Ord because ids in the graph aren't guaranteed ordered
-        sorted_resolved_nodes.sort_by_key(|(id, _)| *id.0);
+        sorted_resolved_nodes.sort_by_key(|(id, _)| id.0);
         for (node_id, node) in sorted_resolved_nodes.into_iter() {
             let node_id2 = nodes.insert(node);
             debug_assert!(node_id.0 == node_id2, "sanity check failed");
@@ -220,7 +220,7 @@ impl<'a> GraphBuilder<'a> {
                 // Rearrange inputs and fill with holes, to match inherited type (there are no outputs)
                 let mut old_inputs = Vec::new();
                 old_inputs.append(&mut inputs);
-                for (input_io_type, default_input) in inherited_type.type_data.inputs.iter() {
+                for input_io_type in inherited_type.type_data.inputs.iter() {
                     let input_field_name = &input_io_type.name;
                     let input_idx = defined_input_types.iter().position(|input_type| input_type.name == input_field_name);
 
@@ -246,7 +246,7 @@ impl<'a> GraphBuilder<'a> {
         };
 
         let node = Node {
-            node_type: node_type_name,
+            type_name: node_type_name,
             inputs,
             compute
         };
@@ -312,12 +312,12 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn further_resolve_structural_type(&mut self, structural_type: StructuralRustType) -> RustType {
-        match KnownRustType::get(&structural_type.name) {
+        match KnownRustType::get(&structural_type.type_name) {
             None => RustType::Structural(structural_type),
             Some(known_type) => {
-                if !structural_type.is_subtype_of(&known_type) {
+                if !structural_type.structure.is_structural_subtype_of(&known_type.structure) {
                     self.errors.push(GraphFormError::TypeConflictsWithBuiltinType {
-                        name: structural_type.name.to_string()
+                        name: structural_type.type_name.to_string()
                     });
                 }
                 RustType::Known(known_type)
@@ -332,7 +332,7 @@ impl<'a> GraphBuilder<'a> {
     ) -> StructuralRustType {
         let resolved_type = serial_type.map(|serial_type| self.resolve_type_structurally2(serial_type));
         let inferred_type = self.infer_type_structurally((value, value_children));
-        self.merge_resolve_type(resolved_type, inferred_type)
+        self.merge_resolved_type(resolved_type, inferred_type)
     }
 
     fn resolve_type_structurally2(&mut self, serial_type: SerialRustType) -> StructuralRustType {
@@ -347,7 +347,7 @@ impl<'a> GraphBuilder<'a> {
                 ))
             },
             SerialRustType::Tuple(elements) => TypeStructure::Tuple {
-                elements: elements.map(|elem| self.resolve_type2(elem)).collect()
+                elements: elements.into_iter().map(|elem| self.resolve_type2(elem)).collect()
             },
             SerialRustType::Array { elem, length } => TypeStructure::Array {
                 elem: map_box(elem, |elem| self.resolve_type2(elem)),
@@ -376,7 +376,7 @@ impl<'a> GraphBuilder<'a> {
                 let (box_size, box_align) = if (name == "Box" || name == "Vec" || name == "HashSet") && generic_args.len() == 1 {
                     match &generic_args[0] {
                         SerialRustType::Ident { name, generic_args: _ } => {
-                            if self.graph_types.contains_key(&name) {
+                            if self.graph_types.contains(&name) {
                                 match name.as_str() {
                                     "Box" => (Some(size_of::<Box<()>>()), Some(align_of::<Box<()>>())),
                                     "Vec" => (Some(size_of::<Vec<()>>()), Some(align_of::<Vec<()>>())),
@@ -419,10 +419,10 @@ impl<'a> GraphBuilder<'a> {
             Some(SerialValueHead::String(_)) => StructuralRustType::string(),
             Some(SerialValueHead::Ref { node_ident, field_ident }) => match self.resolved_node_type(node_ident) {
                 // Error will show up later
-                None => (None, None, None, TypeStructure::Opaque),
-                Some(node_type) => match node_type.outputs.iter().find(|io_type| io_type.name == field_ident) {
+                None => StructuralRustType::unknown(),
+                Some(node_type) => match node_type.outputs.iter().find(|io_type| io_type.name.as_str() == field_ident.as_str()) {
                     // Error will show up later
-                    None => (None, None, None, TypeStructure::Opaque),
+                    None => StructuralRustType::unknown(),
                     Some(io_type) => io_type.rust_type.structural()
                 }
             },
@@ -460,6 +460,52 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
+    fn infer_type_structurally2(
+        &mut self,
+        value_children: &SerialBody
+    ) -> StructuralRustType {
+        match value_children {
+            SerialBody::None => StructuralRustType::unknown(),
+            SerialBody::Tuple(tuple_items) => {
+                let item_types = tuple_items.iter().map(|tuple_item| {
+                    // TODO: why do we have to clone rust_type here? are we doing something redundant?
+                    self.resolve_type(tuple_item.rust_type.clone(), (tuple_item.value.as_ref(), &tuple_item.value_children))
+                }).collect::<Vec<_>>();
+                let size = infer_tuple_size(&item_types);
+                let align = infer_tuple_align(&item_types);
+                let structure = TypeStructure::CReprStruct { body: TypeStructBody::Tuple(item_types) };
+                StructuralRustType {
+                    type_name: "{anonymous tuple struct}".to_string(),
+                    size,
+                    align,
+                    structure
+                }
+            },
+            SerialBody::Fields(fields) => {
+                let item_types = fields.iter().map(|field| {
+                    // TODO: why do we have to clone rust_type here? (see above)
+                    self.resolve_type(field.rust_type.clone(), (field.value.as_ref(), &field.value_children))
+                }).collect::<Vec<_>>();
+                let size = infer_tuple_size(&item_types);
+                let align = infer_tuple_align(&item_types);
+                let structure = TypeStructure::CReprStruct {
+                    body: TypeStructBody::Fields(
+                        zip(
+                            fields.iter().map(|field| field.name).cloned(),
+                            item_types.into_iter()
+                        ).map(|(name, rust_type)| TypeStructField { name, rust_type }).collect::<Vec<_>>()
+                    )
+                };
+                StructuralRustType {
+                    type_name: "{anonymous field struct}".to_string(),
+                    size,
+                    align,
+                    structure
+                }
+            }
+        }
+    }
+
     fn merge_resolved_type(
         &mut self,
         resolved_type: Option<StructuralRustType>,
@@ -468,7 +514,7 @@ impl<'a> GraphBuilder<'a> {
         match resolved_type {
             None => inferred_type,
             Some(mut resolved_type) => {
-                if !resolved_type.is_subtype_of(&inferred_type) && !inferred_type.is_subtype_of(&resolved_type) {
+                if !resolved_type.is_structural_subtype_of(&inferred_type) && !inferred_type.is_structural_subtype_of(&resolved_type) {
                     self.errors.push(GraphFormError::ValueTypeMismatch {
                         explicit_type_name: resolved_type.type_name.to_string(),
                         inferred_type_name: inferred_type.type_name.to_string()
@@ -488,7 +534,7 @@ impl<'a> GraphBuilder<'a> {
         let mut iter = resolved_types.into_iter();
         let mut final_type = iter.next().unwrap();
         for next_type in iter {
-            if !final_type.is_subtype_of(&next_type) && !next_type.is_subtype_of(&final_type) {
+            if !final_type.is_structural_subtype_of(&next_type) && !next_type.is_structural_subtype_of(&final_type) {
                 self.errors.push(GraphFormError::ArrayElemTypeMismatch {
                     type_name_lhs: final_type.type_name.to_string(),
                     type_name_rhs: next_type.type_name.to_string()
@@ -526,7 +572,7 @@ impl<'a> GraphBuilder<'a> {
         match value {
             SerialValueHead::Integer(int) => NodeInput::Const(Box::new(int.to_ne_bytes())),
             SerialValueHead::Float(float) => NodeInput::Const(Box::new(float.to_ne_bytes())),
-            SerialValueHead::String(string) => NodeInput::Const(string.into_boxed_bytes()),
+            SerialValueHead::String(string) => NodeInput::Const(string.into_boxed_str().into_boxed_bytes()),
             SerialValueHead::Ref { node_ident, field_ident } => {
                 let (node_id, idx) = match self.resolved_node_and_type(&node_ident) {
                     None => {
@@ -551,7 +597,7 @@ impl<'a> GraphBuilder<'a> {
                                         field_name: field_name.to_string()
                                     }
                                 });
-                                NodeInput::Const(Box::new([]))
+                                None
                             }
                             Some(idx) => Some(idx)
                         }
@@ -575,7 +621,7 @@ impl<'a> GraphBuilder<'a> {
             }
             SerialValueHead::Tuple(elems) => {
                 NodeInput::Tuple(elems.into_iter().enumerate().map(|(index, elem)| {
-                    self.resolve_tuple_item(index, (Some(elem), SerialBody::None), (rust_type, None), node_name, field_name)
+                    self.resolve_value_child(index, (Some(elem), SerialBody::None), (rust_type, None), node_name, field_name)
                 }).collect())
             }
         }
@@ -584,16 +630,21 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_value_via_children(&mut self, value: SerialBody, rust_type: &RustType, node_name: &str, field_name: &str) -> NodeInput {
         match value {
             SerialBody::None => NodeInput::Hole,
-            SerialBody::Tuple(elems) => {
-                NodeInput::Tuple(elems.into_iter().enumerate().map(|(index, elem)| {
-                    self.resolve_tuple_item(index, (elem.value, elem.value_children), (rust_type, elem.rust_type), node_name, field_name)
+            SerialBody::Tuple(tuple_items) => {
+                NodeInput::Tuple(tuple_items.into_iter().enumerate().map(|(index, tuple_item)| {
+                    self.resolve_value_child(index, (tuple_item.value, tuple_item.value_children), (rust_type, tuple_item.rust_type), node_name, field_name)
                 }).collect())
             }
-            SerialBody::Fields(_) => {}
+            SerialBody::Fields(fields) => {
+                // field names are ignored in the input, and the data is equivalent to a tuple or unnamed struct
+                NodeInput::Tuple(fields.into_iter().enumerate().map(|(index, field)| {
+                    self.resolve_value_child(index, (field.value, field.value_children), (rust_type, field.rust_type), node_name, field_name)
+                }).collect())
+            }
         }
     }
 
-    fn resolve_tuple_item(
+    fn resolve_value_child(
         &mut self,
         index: usize,
         (elem, elem_children): (Option<SerialValueHead>, SerialBody),
@@ -628,7 +679,7 @@ impl<'a> GraphBuilder<'a> {
 
         if inferred_size.is_none() || inferred_align.is_none() {
             self.errors.push(GraphFormError::TupleElemLayoutNotResolved {
-                inferred_type_name: inferred_type.type_name.to_string(),
+                inferred_type: inferred_type.to_string(),
                 referenced_from: NodeNameFieldName {
                     node_name: node_name.to_string(),
                     field_name: field_name.to_string()
@@ -643,13 +694,13 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolved_node_type(&self, node_name: &str) -> Option<&NodeTypeData> {
         self.resolved_nodes.get(node_name).map(|(_, node)| {
-            self.resolved_node_types.get(&node.node_type).expect("resolved node missing its type")
+            self.resolved_node_types.get(&node.type_name).expect("resolved node missing its type")
         })
     }
 
     fn resolved_node_and_type(&self, node_name: &str) -> Option<(&NodeId, &NodeTypeData, &Node)> {
         self.resolved_nodes.get(node_name).map(|(node_id, node)| {
-            let node_type = self.resolved_node_types.get(&node.node_type).expect("resolved node missing its type");
+            let node_type = self.resolved_node_types.get(&node.type_name).expect("resolved node missing its type");
             (node_id, node_type, node)
         })
     }

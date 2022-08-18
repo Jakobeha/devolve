@@ -278,7 +278,7 @@ impl<'a> GraphParser<'a> {
                         lexer.munch_end()?;
                         Some(rust_type);
                     }
-                    _ => Err((lexer.span().start, ParseErrorBody::Expected(": or end of line")))
+                    _ => Err((lexer.span().start, ParseErrorBody::Expected(": or end of line")))?
                 };
 
                 BlockParser::Node {
@@ -695,7 +695,7 @@ fn parse_divider_or_header_or_field(line: &str) -> Result<FieldElemParserItem, (
     } else if line.starts_with("--") {
         Ok(FieldElemParserItem::Header { header: line.to_string() })
     } else {
-        parse_field(line)
+        OK(FieldElemParserItem::Field(parse_field(line)?))
     }
 }
 
@@ -802,9 +802,9 @@ fn parse_enum_variant_type(line: &str) -> Result<SerialEnumVariantType, (usize, 
 
 fn munch_value_or_underscore(lexer: &mut Lexer<GraphToken>) -> Result<Option<SerialValueHead>, (usize, ParseErrorBody)> {
     // lexer doesn't support peek but there are easy workarounds, here is one
-    let remaining_chars = lexer.remainder().trim_start();
-    let next_char = remaining_chars.chars();
-    if next_char == Some('_') && !remaining_chars.next(1).map_or(false, |c| c.is_alphanumeric()) {
+    let remaining_chars = lexer.remainder().trim_start().chars();
+    let next_char = remaining_chars.next();
+    if next_char == Some('_') && !remaining_chars.next().map_or(false, |c| c.is_alphanumeric()) {
         lexer.munch("'_'", |token| extract!(token, GraphToken::Punct('_'))).expect("peek failed");
         Ok(None)
     } else {
@@ -916,7 +916,9 @@ fn munch_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, P
             match lexer.next() {
                 None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("';' or ']'"))),
                 Some(GraphToken::Punct(';')) => {
-                    let length = lexer.munch("integer", |token| extract!(token, GraphToken::Integer(int)))?;
+                    let length = lexer.munch("integer", |token| extract!(token, GraphToken::Integer(int)))?.map_err(|error| {
+                        (lexer.span().start, ParseErrorBody::BadInteger(error))
+                    })?;
                     lexer.munch("']'", |token| extract!(token, GraphToken::Punct(']')))?;
                     Ok(SerialRustType::Array {
                         elem,

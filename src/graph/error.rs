@@ -9,8 +9,8 @@ use crate::graph::mutable::NodeId;
 
 pub type ParseErrors = Vec<ParseError>;
 
-#[derive(Debug, Clone, Display, Error)]
-#[display(fmt = "at {}:{}, {}\n{}", line, column, path, body)]
+#[derive(Debug, Display, Error)]
+#[display(fmt = "at {}:{}, {}\n{}", line, column, "path.display()", body)]
 pub struct ParseError {
     pub path: PathBuf,
     pub line: usize,
@@ -19,36 +19,36 @@ pub struct ParseError {
 }
 
 
-#[derive(Debug, Clone, Display, Error)]
+#[derive(Debug, Display, Error)]
 pub enum ParseErrorBody {
     #[display(fmt = "io error: {}", _0)]
     IoError(#[error(source)] std::io::Error),
     #[display(fmt = "bad indentation")]
     BadIndentation,
     #[display(fmt = "expected more ({})", _0)]
-    ExpectedMore(&'static str),
+    ExpectedMore(#[error(not(source))] &'static str),
     #[display(fmt = "expected less")]
     ExpectedLess,
     #[display(fmt = "expected {}", _0)]
-    Expected(&'static str),
+    Expected(#[error(not(source))] &'static str),
     #[display(fmt = "duplicate type: {}", name)]
-    DuplicateType { name: String },
+    DuplicateType { #[error(not(source))] name: String },
     #[display(fmt = "duplicate node: {}" name)]
-    DuplicateNode { name: String },
+    DuplicateNode { #[error(not(source))] name: String },
     #[display(fmt = "divider '===' not allowed here")]
     UnexpectedDivider,
     #[display(fmt = "mixed fields and tuple items")]
     MixedFieldsAndTupleItems,
-    #[display(fmt = "couldn't parse integer: {}")]
+    #[display(fmt = "couldn't parse integer: {}", _0)]
     BadInteger(#[error(source)] ParseIntError),
-    #[display(fmt = "couldn't parse float: {}")]
+    #[display(fmt = "couldn't parse float: {}", _0)]
     BadFloat(#[error(source)] ParseFloatError),
     #[display(fmt = "bad escape in string: {}", _0)]
     BadEscape(#[error(source)] UnescapeError),
     #[display(fmt = "unopened '{}'", _0)]
-    Unopened(char),
+    Unopened(#[error(not(source))] char),
     #[display(fmt = "unopened '{}'", _0)]
-    Unclosed(char),
+    Unclosed(#[error(not(source))] char),
     #[display(fmt = "unexpected ','")]
     UnexpectedComma,
 }
@@ -70,7 +70,7 @@ pub enum GraphFormError {
     #[display(fmt = "'Output' node has outputs")]
     OutputHasOutputs,
     #[display(fmt = "outputs can't have values")]
-    OutputHasValue { node_name: String },
+    OutputHasValue { #[error(not(source))] node_name: String },
     #[display(fmt = "node type not found: {} (in {})", type_name, node_name)]
     NodeTypeNotFound {
         type_name: String,
@@ -98,7 +98,7 @@ pub enum GraphFormError {
         node_name: String
     },
     #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structura", name)]
-    TypeConflictsWithBuiltinType { name: String },
+    TypeConflictsWithBuiltinType { #[error(not(source))] name: String },
     #[display(fmt = "type mismatch: value is {}, type is {}. Note that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name)]
     ValueTypeMismatch {
         inferred_type_name: String,
@@ -111,11 +111,12 @@ pub enum GraphFormError {
     },
     #[display(fmt = "value has both inline and multiline definition: at {}", source)]
     InlineValueHasChildren {
+        #[error(not(source))]
         source: NodeNameFieldName
     },
-    #[display(fmt = "tuple elem layout not resolved, we need to know the size and alignment of each item (inferred type = {}, referenced from {}", inferred_type_name, referenced_from)]
+    #[display(fmt = "tuple elem layout not resolved, we need to know the size and alignment of each item (inferred type = {}, referenced from {}", inferred_type, referenced_from)]
     TupleElemLayoutNotResolved {
-        inferred_type_name: String,
+        inferred_type: String,
         referenced_from: NodeNameFieldName
     },
 }
@@ -129,15 +130,15 @@ pub struct NodeNameFieldName {
 
 pub type GraphValidationErrors = Vec<GraphValidationError>;
 
-#[derive(Debug, Clone, Display, Error)]
+#[derive(Debug, Display, Error)]
 pub enum GraphValidationError {
-    #[display(fmt = "node cycle: [{}]", "\", \".join(_0)")]
-    Cycle(NodeCycle)
+    #[display(fmt = "node cycle: {}", _0)]
+    Cycle(#[error(not(source))] NodeCycle)
 }
 
 pub type GraphIOCheckErrors = Vec<GraphIOCheckError>;
 
-#[derive(Debug, Clone, Display, Error)]
+#[derive(Debug, Display, Error)]
 pub enum GraphIOCheckError {
     #[display(fmt = "inputs count mismatch: got {} expected {}", actual, expected)]
     InputsCountMismatch {
@@ -149,16 +150,32 @@ pub enum GraphIOCheckError {
         actual: usize,
         expected: usize
     },
-    #[display(fmt = "input type mismatch: in {}, expected {}", field_name, expected)]
+    #[display(fmt = "input type mismatch: in {}, got {} expected {}", field_name, actual, expected)]
     InputTypeMismatch {
         field_name: String,
-        expected: RustType
+        expected: RustType,
+        actual: RustType
     },
-    #[display(fmt = "output type mismatch: in {}, expected {}", field_name, expected)]
+    #[display(fmt = "input type can't be verified: in {}, got {} expected {}", field_name, actual, expected)]
+    InputTypeMaybeMismatch {
+        field_name: String,
+        expected: RustType,
+        actual: RustType
+    },
+    #[display(fmt = "output type mismatch: in {}, got {} expected {}", field_name, actual, expected)]
     OutputTypeMismatch {
         field_name: String,
-        expected: RustType
+        expected: RustType,
+        actual: RustType
+    },
+    #[display(fmt = "output type can't be verified: in {}, got {} expected {}", field_name, actual, expected)]
+    OutputTypeMaybeMismatch {
+        field_name: String,
+        expected: RustType,
+        actual: RustType
     },
 }
 
+#[derive(Debug, Display)]
+#[display(fmt = "[{}]", "\", \".join(_0)")]
 pub struct NodeCycle(pub Vec<NodeId>);

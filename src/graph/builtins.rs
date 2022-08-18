@@ -20,7 +20,7 @@ lazy_static! {
 impl BuiltinNodeType {
     pub fn register(name: String, builtin: BuiltinNodeType) {
         if let Some(mut builtins) = catch_and_log!(BUILTINS.write(), "builtin node types poisoned") {
-            if builtins.contains(&name) {
+            if builtins.contains_key(&name) {
                 error!("builtin node type with name {} already registered", name);
             }
             builtins.insert(name, builtin);

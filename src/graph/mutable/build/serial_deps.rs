@@ -48,8 +48,7 @@ fn value_deps<'a>(value: Option<&'a SerialValueHead>, value_children: &'a Serial
     value_head_deps(value).chain(value_children_deps(value_children))
 }
 
-#[auto_enum(Iterator)]
-fn value_head_deps<'a>(value_head: Option<&'a SerialValueHead>) -> Box<dyn Iterator<Item=SerialNodeDep<'a>>> {
+fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=SerialNodeDep> {
     match value_head {
         None | Some(SerialValueHead::Integer(_)) | Some(SerialValueHead::Float(_)) | Some(SerialValueHead::String(_)) => {
             Box::new(std::iter::empty())
@@ -66,8 +65,7 @@ fn value_head_deps<'a>(value_head: Option<&'a SerialValueHead>) -> Box<dyn Itera
     }
 }
 
-#[auto_enum(Iterator)]
-fn value_children_deps<'a>(value_children: &'a SerialBody) -> Box<dyn Iterator<Item=SerialNodeDep<'a>>> {
+fn value_children_deps(value_children: &SerialBody) -> impl Iterator<Item=SerialNodeDep> {
     match value_children {
         SerialBody::None => {
             Box::new(std::iter::empty())

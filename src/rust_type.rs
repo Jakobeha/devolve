@@ -142,7 +142,7 @@ impl KnownRustType {
         let type_name = known_type.structural_type_name();
         if let Some(mut known_types) = catch_and_log!(KNOWN_TYPES.write(), "known rust types poisoned") {
             if let Some(existing_type) = known_types.get(&type_name) {
-                if existing_type != known_type {
+                if existing_type != &known_type {
                     error!("known rust type with name {} already registered, and it's a different type", type_name);
                 }
             }
@@ -159,6 +159,18 @@ impl KnownRustType {
 
     const TYPE_SEPARATORS: [char; 6] = ['<', '>', '(', ')', '[', ']'];
 
+    /// Type name which corresponds to [StructuralRustType::type_name]
+    pub fn structural_type_name(&self) -> String {
+        self.simple_type_name()
+    }
+
+    /// Type name without module qualifiers
+    pub fn simple_type_name(&self) -> String {
+        self.intrinsic.simple_type_name()
+    }
+}
+
+impl IntrinsicRustType {
     /// Type name which corresponds to [StructuralRustType::type_name]
     pub fn structural_type_name(&self) -> String {
         self.simple_type_name()
@@ -299,7 +311,7 @@ impl TypeStructure {
                         None => IsSubtypeOf::No,
                         Some(other_variant) => variant.body.is_structural_subtype_of(&other_variant.body)
                     }
-                }).min()
+                }).min().unwrap_or(IsSubtypeOf::Yes)
             }
             (TypeStructure::CReprStruct { body }, TypeStructure::CReprStruct { body: other_body }) => {
                 body.is_structural_subtype_of(other_body)
@@ -311,7 +323,9 @@ impl TypeStructure {
                 if elements.len() != other_elements.len() {
                     IsSubtypeOf::No
                 } else {
-                    zip(elements.iter(), other_elements.iter()).map(|(element, other_element)| element.is_rough_subtype_of(other_element)).min()
+                    zip(elements.iter(), other_elements.iter()).map(|(element, other_element)| {
+                        element.is_rough_subtype_of(other_element)
+                    }).min().unwrap_or(IsSubtypeOf::Yes)
                 }
             }
             (TypeStructure::Array { elem, length }, TypeStructure::Array { elem: other_elem, length: other_length }) => {
@@ -373,7 +387,9 @@ impl TypeStructBody {
                 if elements.len() != other_elements.len() {
                     IsSubtypeOf::No
                 } else {
-                    zip(elements.iter(), other_elements.iter()).map(|(element, other_element)| element.is_rough_subtype_of(other_element)).min()
+                    zip(elements.iter(), other_elements.iter()).map(|(element, other_element)| {
+                        element.is_rough_subtype_of(other_element)
+                    }).min().unwrap_or(IsSubtypeOf::Yes)
                 }
             }
             (TypeStructBody::Fields(fields), TypeStructBody::Fields(other_fields)) => {
@@ -385,7 +401,7 @@ impl TypeStructBody {
                             None => IsSubtypeOf::No,
                             Some(other_field) => field.rust_type.is_rough_subtype_of(&other_field.rust_type)
                         }
-                    }).min()
+                    }).min().unwrap_or(IsSubtypeOf::Yes)
                 }
             }
             _ => IsSubtypeOf::No
@@ -425,14 +441,14 @@ impl IsSubtypeOf {
 impl RustType {
     pub fn infer_size(&self) -> Option<usize> {
         match self {
-            RustType::Known(known) => Some(known.size),
+            RustType::Known(known) => Some(known.intrinsic.size),
             RustType::Structural(structural) => structural.size
         }
     }
 
     pub fn infer_align(&self) -> Option<usize> {
         match self {
-            RustType::Known(known) => Some(known.align),
+            RustType::Known(known) => Some(known.intrinsic.align),
             RustType::Structural(structural) => structural.align
         }
     }
@@ -451,9 +467,9 @@ impl TypeStructure {
                 Some(discriminant_size + data_size)
             }
             TypeStructure::CReprStruct { body } => body.infer_size(),
-            TypeStructure::Pointer { referenced: _ } => size_of::<*const ()>(),
+            TypeStructure::Pointer { referenced: _ } => Some(size_of::<*const ()>()),
             TypeStructure::Tuple { elements } => infer_tuple_size(elements),
-            TypeStructure::Array { elem, length } => self.infer_array_size(elem, length),
+            TypeStructure::Array { elem, length } => infer_array_size(elem, length),
             TypeStructure::Slice { elem: _ } => None
         }
     }
@@ -467,7 +483,7 @@ impl TypeStructure {
             } else {
                 let discriminant_align = discriminant_align(variants.len());
                 let data_align = variants.iter().map(|variant| variant.infer_align().unwrap()).max().unwrap_or(0);
-                usize::max(discriminant_align, data_align)
+                Some(usize::max(discriminant_align, data_align))
             }
             TypeStructure::CReprStruct { body } => body.infer_align(),
             TypeStructure::Pointer { referenced: _ } => align_of::<*const ()>(),
@@ -509,7 +525,7 @@ impl TypeStructBody {
         match self {
             TypeStructBody::None => Some(0),
             TypeStructBody::Tuple(elems) => infer_tuple_size(elems),
-            TypeStructBody::Fields(fields) => infer_tuple_size(fields.iter().map(|field| field.rust_type))
+            TypeStructBody::Fields(fields) => infer_tuple_size(fields.iter().map(|field| &field.rust_type))
         }
     }
 
@@ -517,7 +533,7 @@ impl TypeStructBody {
         match self {
             TypeStructBody::None => Some(0),
             TypeStructBody::Tuple(elems) => infer_tuple_align(elems),
-            TypeStructBody::Fields(fields) => infer_tuple_align(fields.iter().map(|field| field.rust_type))
+            TypeStructBody::Fields(fields) => infer_tuple_align(fields.iter().map(|field| &field.rust_type))
         }
     }
 }
@@ -530,7 +546,7 @@ impl Default for TypeStructBody {
 
 // Note: technically tuples don't have a defined repr according to Rust
 
-fn infer_tuple_size<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
+pub fn infer_tuple_size<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
     let mut cumulative_size = 0;
     for elem in elems {
         let size = elem.infer_size()?;
@@ -543,7 +559,7 @@ fn infer_tuple_size<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<u
     Some(cumulative_size)
 }
 
-fn infer_tuple_align<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
+pub fn infer_tuple_align<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
     let mut max_align = 0;
     for elem in elems {
         let align = elem.infer_align()?;
@@ -554,7 +570,16 @@ fn infer_tuple_align<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<
     Some(max_align)
 }
 
-fn infer_array_align(elem: &RustType, length: usize) -> Option<usize> {
+pub fn infer_array_size(elem: &RustType, length: usize) -> Option<usize> {
+    let mut aligned_size = elem.infer_size()?;
+    let align = elem.infer_align()?;
+    if aligned_size % align != 0 {
+        aligned_size += align - aligned_size % align;
+    }
+    Some(aligned_size * length)
+}
+
+pub fn infer_array_align(elem: &RustType, length: usize) -> Option<usize> {
     let mut aligned_size = elem.infer_size()?;
     let align = elem.infer_align()?;
     if aligned_size % align != 0 {

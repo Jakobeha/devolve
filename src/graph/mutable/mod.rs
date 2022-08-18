@@ -49,7 +49,7 @@ impl MutableGraph {
         errors
     }
 
-    pub fn iter_node_ids(&self) -> impl Iterator<Item=NodeId> {
+    pub fn iter_node_ids(&self) -> impl Iterator<Item=NodeId> + '_ {
         self.nodes.iter().map(|(id, _)| NodeId(id))
     }
 
@@ -118,13 +118,13 @@ impl TryFrom<SerialGraph> for MutableGraph {
 impl TryIndex<NodeId> for MutableGraph {
     type Output = Node;
 
-    fn get(&self, index: NodeId) -> Result<&Self::Output, NotFound<NodeId>> {
+    fn try_index(&self, index: NodeId) -> Result<&Self::Output, NotFound<NodeId>> {
         self.nodes.try_index(index.0).map_err(NodeId)
     }
 }
 
 impl TryIndexMut<NodeId> for MutableGraph {
-    fn get_mut(&mut self, index: NodeId) -> Result<&mut Self::Output, NotFound<NodeId>> {
+    fn try_index_mut(&mut self, index: NodeId) -> Result<&mut Self::Output, NotFound<NodeId>> {
         self.nodes.try_index(index.0).map_err(NodeId)
     }
 }
@@ -146,14 +146,14 @@ impl IndexMut<NodeId> for MutableGraph {
 impl<'a> TryIndex<&'a NodeTypeName> for MutableGraph {
     type Output = NodeTypeData;
 
-    fn get(&self, index: &'a NodeTypeName) -> Result<&Self::Output, NotFound<&'a NodeTypeName>> {
-        self.types.get(index).map_err(NodeTypeName::from)
+    fn try_index(&self, index: &'a NodeTypeName) -> Result<&Self::Output, NotFound<&'a NodeTypeName>> {
+        self.types.try_index(index)
     }
 }
 
 impl<'a> TryIndexMut<&'a NodeTypeName> for MutableGraph {
-    fn get_mut(&mut self, index: &'a NodeTypeName) -> Result<&mut Self::Output, NotFound<&'a NodeTypeName>> {
-        self.types.get(index).map_err(NodeTypeName::from)
+    fn try_index_mut(&mut self, index: &'a NodeTypeName) -> Result<&mut Self::Output, NotFound<&'a NodeTypeName>> {
+        self.types.try_index_mut(index)
     }
 }
 
@@ -161,13 +161,13 @@ impl<'a> Index<&'a NodeTypeName> for MutableGraph {
     type Output = NodeTypeData;
 
     fn index(&self, index: &'a NodeTypeName) -> &Self::Output {
-        self.types.try_index(index)
+        self.types.index(index)
     }
 }
 
 impl<'a> IndexMut<&'a NodeTypeName> for MutableGraph {
     fn index_mut(&mut self, index: &'a NodeTypeName) -> &mut Self::Output {
-        self.types.try_index(index)
+        self.types.index_mut(index)
     }
 }
 // endregion

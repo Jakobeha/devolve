@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use derive_more::Display;
+//noinspection RsUnusedImport (intelliJ fails to detect use)
+use join_lazy_fmt::Join;
 
 pub struct SerialGraph {
     pub types: HashMap<String, SerialType>,

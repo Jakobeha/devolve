@@ -14,12 +14,8 @@ impl<'a, Token: Logos<'a>> LexerExt for Lexer<'a, Token> {
 
     fn munch<R>(&mut self, desc: &'static str, expected: impl Fn(Self::Token) -> Option<R>) -> Result<R, (usize, ParseErrorBody)> {
         match self.next() {
-            Some(token) => if expected(token) {
-                Ok(())
-            } else {
-                Err((self.span().start, ParseErrorBody::Expected(desc)))
-            },
-            None => Err((self.span().end, ParseErrorBody::ExpectedMore(desc)))
+            None => Err((self.span().end, ParseErrorBody::ExpectedMore(desc))),
+            Some(token) => expected(token).ok_or((self.span().start, ParseErrorBody::Expected(desc)))
         }
     }
 
