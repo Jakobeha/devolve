@@ -272,7 +272,6 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn resolve_node_type_const(&mut self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
-        // TODO: here is where we check for BuiltinNodeType functions
         match self.resolved_rust_types.get(type_name) {
             None => match BuiltinNodeType::get(type_name) {
                 None => {
