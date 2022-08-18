@@ -1,4 +1,4 @@
-use derive_more::display_derive as Display;
+use derive_more::Display;
 use std::any::{type_name, TypeId};
 use std::collections::HashMap;
 use std::iter::zip;
@@ -21,7 +21,7 @@ pub enum RustType {
 /// Information about a Rust type that we don't have statically.
 /// Instead we have the type name and explicit struct members or enum variants.
 #[derive(Debug, Display, Clone, PartialEq)]
-#[display(fmt = "{}", name)]
+#[display(fmt = "{}", type_name)]
 pub struct StructuralRustType {
     /// Type name. Corresponds to [std::any::type_name],
     /// except in practice [std::any::type_name] returns with modules and this doesn't
@@ -316,7 +316,7 @@ impl TypeStructure {
             }
             (TypeStructure::Array { elem, length }, TypeStructure::Array { elem: other_elem, length: other_length }) => {
                 if length != other_length {
-                    IsSubTypeOf::No
+                    IsSubtypeOf::No
                 } else {
                     elem.is_rough_subtype_of(other_elem)
                 }
@@ -453,7 +453,7 @@ impl TypeStructure {
             TypeStructure::CReprStruct { body } => body.infer_size(),
             TypeStructure::Pointer { referenced: _ } => size_of::<*const ()>(),
             TypeStructure::Tuple { elements } => infer_tuple_size(elements),
-            TypeStructure::Array { elem, length } => infer_array_size(elem, length),
+            TypeStructure::Array { elem, length } => self.infer_array_size(elem, length),
             TypeStructure::Slice { elem: _ } => None
         }
     }
@@ -472,7 +472,7 @@ impl TypeStructure {
             TypeStructure::CReprStruct { body } => body.infer_align(),
             TypeStructure::Pointer { referenced: _ } => align_of::<*const ()>(),
             TypeStructure::Tuple { elements } => infer_tuple_align(elements),
-            TypeStructure::Array { elem, length } => infer_array_align(elem, length),
+            TypeStructure::Array { elem, length } => infer_array_align(elem, *length),
             TypeStructure::Slice { elem: _ } => None
         }
     }
@@ -530,7 +530,7 @@ impl Default for TypeStructBody {
 
 // Note: technically tuples don't have a defined repr according to Rust
 
-fn infer_tuple_size(elems: impl IntoIterator<Item=&RustType>) -> Option<usize> {
+fn infer_tuple_size<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
     let mut cumulative_size = 0;
     for elem in elems {
         let size = elem.infer_size()?;
@@ -543,7 +543,7 @@ fn infer_tuple_size(elems: impl IntoIterator<Item=&RustType>) -> Option<usize> {
     Some(cumulative_size)
 }
 
-fn infer_tuple_align(elems: impl IntoIterator<Item=&RustType>) -> Option<usize> {
+fn infer_tuple_align<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
     let mut max_align = 0;
     for elem in elems {
         let align = elem.infer_align()?;
@@ -552,6 +552,15 @@ fn infer_tuple_align(elems: impl IntoIterator<Item=&RustType>) -> Option<usize> 
         }
     }
     Some(max_align)
+}
+
+fn infer_array_align(elem: &RustType, length: usize) -> Option<usize> {
+    let mut aligned_size = elem.infer_size()?;
+    let align = elem.infer_align()?;
+    if aligned_size % align != 0 {
+        aligned_size += align - (aligned_size % align);
+    }
+    Some(aligned_size * length)
 }
 
 fn discriminant_size(_num_discriminants: usize) -> usize {

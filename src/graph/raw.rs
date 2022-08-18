@@ -1,8 +1,8 @@
 use std::any::TypeId;
 use std::mem::MaybeUninit;
+use crate::CompoundViewCtx;
 
-#[derive(Clone)]
-pub struct RawComputeFn(Box<dyn Fn(&mut CompoundViewCtx, RawInputs<'_>, RawOutputs<'_>) + Send + Clone>);
+pub struct RawComputeFn(Box<dyn RawComputeFnTrait>);
 
 // TODO: Ensure once we put in data it's consumed so we don't cause multiple drops
 pub struct RawInputs<'a>(&'a RawData);
@@ -13,6 +13,15 @@ pub struct RawOutputs<'a>(&'a mut RawData);
 pub struct RawData {
     pub types: Vec<TypeId>,
     pub data: Vec<Box<[MaybeUninit<u8>]>>
+}
+
+#[derive(Clone)]
+struct PanickingComputeFn;
+
+pub trait RawComputeFnTrait: Send + Sync {
+    fn box_clone(&self) -> Box<dyn RawComputeFnTrait>;
+
+    fn run(&self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>);
 }
 
 impl<'a> RawInputs<'a> {
@@ -49,13 +58,32 @@ impl<'a> From<&'a mut RawData> for RawOutputs<'a> {
 
 impl RawComputeFn {
     pub fn panicking() -> Self {
-        RawComputeFn(Box::new(|_, _, _| {
-            panic!("RawComputeFn::panicking() (dummy compute function, should've never been called)");
-        }))
+        RawComputeFn::from(PanickingComputeFn)
     }
 
     pub fn run(&self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) {
-        (self.0)(ctx, inputs, outputs)
+        self.0.run(ctx, inputs, outputs)
     }
 }
 
+impl Clone for RawComputeFn {
+    fn clone(&self) -> Self {
+        RawComputeFn(self.0.box_clone())
+    }
+}
+
+impl<T: RawComputeFnTrait> From<T> for RawComputeFn {
+    fn from(f: T) -> Self {
+        RawComputeFn(Box::new(f))
+    }
+}
+
+impl RawComputeFnTrait for PanickingComputeFn {
+    fn box_clone(&self) -> Box<dyn RawComputeFnTrait> {
+        Box::new(self.clone())
+    }
+
+    fn run(&self, _: &mut CompoundViewCtx, _: RawInputs<'_>, _: RawOutputs<'_>) {
+        panic!("RawComputeFn::panicking() (dummy compute function, should've never been called)");
+    }
+}

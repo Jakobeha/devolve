@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use std::iter::zip;
 use std::mem::{MaybeUninit, transmute};
 use std::ptr::copy_nonoverlapping;
+use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
-use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
+use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs};
 
 /// Compound view graph.
@@ -176,29 +177,29 @@ impl BuiltGraph {
         errors
     }
 
-    pub fn compute(&mut self, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) -> Result<(), GraphIOCheckErrors> {
-        let errors = self.check(inputs.types, outputs.types);
+    pub fn compute(&mut self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) -> Result<(), GraphIOCheckErrors> {
+        let errors = self.check(inputs.types(), outputs.types());
         if errors.is_empty() {
-            Ok(unsafe { self.compute_unchecked(inputs, outputs) })
+            Ok(unsafe { self.compute_unchecked(ctx, inputs, outputs) })
         } else {
             Err(errors)
         }
     }
 
-    pub unsafe fn compute_unchecked(&mut self, inputs: RawInputs, mut outputs: RawOutputs<'_>) {
+    pub unsafe fn compute_unchecked(&mut self, ctx: &mut CompoundViewCtx, inputs: RawInputs, mut outputs: RawOutputs<'_>) {
         debug_assert!(inputs.len() == self.input_types.len() && outputs.len() == self.output_types.len());
 
-        unsafe fn handle_inputs(inputs: &[NodeInput], input_data: &mut [Box<[MaybeUninit<u8>]>], compute_dag: &Vec<Node>) {
-            unsafe fn handle_input(input: &NodeInput, input_data: &mut [MaybeUninit<u8>], compute_dag: &Vec<Node>) {
+        unsafe fn handle_inputs(inputs: &[NodeInput], input_data: &mut [Box<[MaybeUninit<u8>]>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_dag: &Vec<Node>) {
+            unsafe fn handle_input(input: &NodeInput, input_data: &mut [MaybeUninit<u8>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_dag: &Vec<Node>) {
                 match input {
                     NodeInput::Const => {},
                     NodeInput::Dep(dep) => {
                         let other_output = match dep {
                             NodeInputDep::OtherNodeOutput { node_idx, field_idx } => {
-                                let other_node = &compute_dag[node_idx];
+                                let other_node = &compute_dag[*node_idx];
                                 &other_node.cached_output_data.data[field_idx];
                             }
-                            NodeInputDep::GraphInput { field_idx } => &inputs.data[field_idx]
+                            NodeInputDep::GraphInput { field_idx } => &graph_input_data[*field_idx]
                         };
                         debug_assert!(other_output.len() == input_data.len());
                         copy_nonoverlapping(other_output.as_ptr(), input_data as *mut _, other_output.len());
@@ -206,7 +207,7 @@ impl BuiltGraph {
                     NodeInput::Array(inputs) => {
                         let input_datas = input_data.chunks_mut(inputs.len());
                         for (input, input_data) in zip(inputs, input_datas) {
-                            handle_input(input, input_data, compute_dag);
+                            handle_input(input, input_data, graph_input_data, compute_dag);
                         }
                     }
                     NodeInput::Tuple(inputs) => {
@@ -216,21 +217,21 @@ impl BuiltGraph {
                                 offset += align - offset % align;
                             }
                             let input_data = &mut input_data[offset..offset + size];
-                            handle_input(input, input_data, compute_dag);
+                            handle_input(input, input_data, graph_input_data, compute_dag);
                             offset += size;
                         }
                     }
                 }
-            };
+            }
 
             for (input, mut input_data) in zip(inputs, input_data) {
-                handle_input(&input, input_data.as_mut(), compute_dag);
+                handle_input(&input, input_data.as_mut(), graph_input_data, compute_dag);
             }
-        };
+        }
 
         for node in self.compute_dag.iter_mut() {
             // Copy input data to nodes (const data is already there), then compute to output data
-            handle_inputs(&node.inputs, &mut node.cached_input_data.data, &self.compute_dag);
+            handle_inputs(&node.inputs, &mut node.cached_input_data.data, inputs.data(), &self.compute_dag);
             node.compute.run(ctx, RawInputs::from(&node.cached_input_data), RawOutputs::from(&mut node.cached_output_data))
         }
 
@@ -243,7 +244,7 @@ impl BuiltGraph {
             copy_nonoverlapping(const_data.as_ptr(), output_data.as_mut_ptr(), const_data.len());
         }
         // the rest
-        handle_inputs(&self.outputs, output_data, &self.compute_dag);
+        handle_inputs(&self.outputs, output_data, inputs.data(), &self.compute_dag);
     }
 }
 

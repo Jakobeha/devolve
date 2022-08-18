@@ -1,26 +1,23 @@
-mod serial_deps;
-mod size_and_align;
-
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::iter::zip;
-use std::ops::{Index, IndexMut};
-use crate::rust_type::{KnownRustType, PrimitiveType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
-use derive_more::{Display, Error, From};
-use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
 use std::mem::{align_of, size_of, take};
+
 use slab::Slab;
-use crate::graph::raw::RawComputeFn;
-use crate::graph::error::{GraphFormErrors, GraphFormError, GraphValidationError, GraphValidationErrors, NodeCycle, NodeNameFieldName};
-pub use node::*;
-use crate::misc::map_box::map_box;
+
 use crate::graph::builtins::BuiltinNodeType;
+use crate::graph::error::{GraphFormError, GraphFormErrors, NodeNameFieldName};
 use crate::graph::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData, NodeTypeName};
 use crate::graph::mutable::build::serial_deps::sort_nodes_by_deps;
 use crate::graph::mutable::build::size_and_align::{calculate_align, calculate_array_size, calculate_size};
-use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
+//noinspection RsUnusedImport (intelliJ fails to see SerialFieldElem use)
+use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
+use crate::graph::raw::RawComputeFn;
+use crate::misc::extract::extract;
+use crate::misc::map_box::map_box;
+use crate::rust_type::{KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+
+mod serial_deps;
+mod size_and_align;
 
 pub(super) struct GraphBuilder<'a> {
     errors: &'a mut GraphFormErrors,
@@ -72,7 +69,7 @@ impl<'a> GraphBuilder<'a> {
             },
             Some((input_id, input_node)) => {
                 debug_assert!(input_id == NodeId(usize::MAX), "input id is wrong, should be guaranteed to be first (-1)");
-                if !input_data.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
+                if !input_node.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
                     self.errors.push(GraphFormError::InputHasInputs);
                 }
                 if input_node.node_type.as_ref() != NodeTypeName::INPUT {
@@ -83,7 +80,7 @@ impl<'a> GraphBuilder<'a> {
                 } else {
                     // Remove input self-type
                     let input_type_data = self.resolved_node_types.remove(&input_node.node_type).unwrap();
-                    debug_assert!(input_type_data.inputs.len() == input_data.inputs.len(), "basic sanity check failed");
+                    debug_assert!(input_type_data.inputs.len() == input_node.inputs.len(), "basic sanity check failed");
                     input_type_data.outputs
                 }
             }
@@ -106,7 +103,7 @@ impl<'a> GraphBuilder<'a> {
                 } else {
                     // Remove output self-type
                     let output_type_data = self.resolved_node_types.remove(&output_node.node_type).unwrap();
-                    debug_assert!(output_type_data.inputs.len() == input_data.inputs.len(), "basic sanity check failed");
+                    debug_assert!(output_type_data.inputs.len() == output_node.inputs.len(), "basic sanity check failed");
                     if !output_type_data.outputs.is_empty() {
                         self.errors.push(GraphFormError::OutputHasOutputs);
                     }
@@ -195,6 +192,7 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_node(&mut self, name: &str, node: SerialNode) -> (NodeTypeData, Node) {
         let inherited_type = node.node_type.as_ref()
             .and_then(|node_type| self.resolve_node_type_if_builtin(node_type, name));
+        // TODO: Include field headers in MutableGraph?
         let (defined_input_types, defined_inputs) = node.input_fields.into_iter()
             .filter_map(|input_field| extract!(input_field, SerialFieldElem::Field(field)))
             .map(|field| self.resolve_node_field(field, name))
@@ -205,7 +203,7 @@ impl<'a> GraphBuilder<'a> {
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let mut inputs = defined_inputs;
-        if defined_outputs.iter().any(|output_value| !matches(output_value, NodeInput::Hole)) {
+        if defined_outputs.iter().any(|output_value| !matches!(output_value, NodeInput::Hole)) {
             self.errors.push(GraphFormError::OutputHasValue { node_name: name.to_string() });
         }
 
@@ -216,7 +214,7 @@ impl<'a> GraphBuilder<'a> {
                     inputs: defined_input_types,
                     outputs: defined_output_types
                 };
-                (NodeTypeName(name.to_string()), self_type_data, RawComputeFn::panicking())
+                (NodeTypeName::from(name.to_string()), self_type_data, RawComputeFn::panicking())
             },
             Some(inherited_type) => {
                 // Rearrange inputs and fill with holes, to match inherited type (there are no outputs)
@@ -241,9 +239,9 @@ impl<'a> GraphBuilder<'a> {
                 }
 
                 // Use inherited type
-                let inherited_type_name = NodeTypeName(node.node_type.unwrap());
+                let inherited_type_name = NodeTypeName::from(node.node_type.unwrap());
                 let inherited_type_data = inherited_type.type_data.clone();
-                (inherited_type_name, type_data, inherited_type.compute.clone())
+                (inherited_type_name, inherited_type_data, inherited_type.compute.clone())
             }
         };
 
@@ -257,7 +255,8 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn resolve_node_type_if_builtin(&self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
-        match types.get(type_name) {
+        // TODO: here is where we check for BuiltinNodeType functions
+        match self.resolved_rust_types.get(type_name) {
             None => match BuiltinNodeType::get(type_name) {
                 None => {
                     self.errors.push(GraphFormError::NodeTypeNotFound {
@@ -301,7 +300,7 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn resolve_type2(&mut self, serial_type: SerialRustType) -> RustType {
-        let structural_type = resolve_type_structurally2(serial_type, graph, errors);
+        let structural_type = self.resolve_type_structurally2(serial_type);
         self.further_resolve_structural_type(structural_type)
     }
 
@@ -606,7 +605,7 @@ impl<'a> GraphBuilder<'a> {
             self.resolve_type2(explicit_elem_type)
         });
         let inferred_type_by_field_type = match rust_type.structural().structure {
-            TypeStructure::Tuple { elements } => elements.get(index).ok().cloned(),
+            TypeStructure::Tuple { elements } => elements.get(index).cloned(),
             _ => None
         };
         let inferred_type_by_elem = RustType::Structural(self.infer_type_structurally((elem.as_ref(), &elem_children)));

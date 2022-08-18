@@ -1,6 +1,11 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use crate::graph::parse::types::{SerialBody, SerialField, SerialNode, SerialTupleItem, SerialValue, SerialValueHead};
+
+use iter_enum::Iterator;
+
+//noinspection RsUnusedImport (intelliJ fails to detect SerialFieldElem use)
+use crate::graph::parse::types::{SerialBody, SerialField, SerialFieldElem, SerialNode, SerialTupleItem, SerialValueHead};
+use crate::misc::extract::extract;
 
 struct SerialNodeDep<'a> {
     pub node_ident: &'a str,
@@ -38,24 +43,26 @@ fn node_deps(node: &SerialNode) -> impl Iterator<Item=SerialNodeDep<'_>> {
 }
 
 fn node_dep_nodes(node: &SerialNode) -> impl Iterator<Item=&str> {
-    iter_deps(node).map(|dep| dep.node_ident)
+    node_deps(node).map(|dep| dep.node_ident)
 }
 
 type ValueDeps<'a> = std::iter::Chain<&'a mut ValueHeadDeps<'a>, ValueChildrenDeps<'a>>;
 
+#[derive(Iterator)]
 enum ValueHeadDeps<'a> {
     None(std::iter::Empty<SerialNodeDep<'a>>),
     One(std::iter::Once<SerialNodeDep<'a>>),
     Many(std::iter::FlatMap<std::slice::Iter<'a, SerialValueHead>, ValueHeadDeps<'a>, fn(&SerialValueHead) -> ValueHeadDeps<'_>>)
 }
 
+#[derive(Iterator)]
 enum ValueChildrenDeps<'a> {
     None(std::iter::Empty<SerialNodeDep<'a>>),
     Many1(std::iter::FlatMap<std::slice::Iter<'a, SerialTupleItem>, ValueDeps<'a>, fn(&SerialTupleItem) -> ValueDeps<'_>>),
     Many2(std::iter::FlatMap<std::slice::Iter<'a, SerialField>, ValueDeps<'a>, fn(&SerialField) -> ValueDeps<'_>>)
 }
 
-fn value_deps(value: Option<&SerialValueHead>, value_children: &SerialBody) -> ValueDeps<'_> {
+fn value_deps<'a>(value: Option<&'a SerialValueHead>, value_children: &'a SerialBody) -> ValueDeps<'a> {
     value_head_deps(value).chain(value_children_deps(value_children))
 }
 

@@ -1,25 +1,17 @@
+use std::collections::{HashMap, HashSet};
+use std::ops::{Index, IndexMut};
+
+use slab::Slab;
+
+pub use node::*;
+
+use crate::graph::error::{GraphFormErrors, GraphValidationError, GraphValidationErrors, NodeCycle};
+use crate::graph::mutable::build::GraphBuilder;
+use crate::graph::parse::types::SerialGraph;
+use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
+
 mod node;
 mod build;
-
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::intrinsics::size_of;
-use std::iter::zip;
-use std::ops::{Index, IndexMut};
-use crate::rust_type::{KnownRustType, PrimitiveType, RustType, StructuralRustType, TypeStructure};
-use derive_more::{Display, Error, From};
-use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
-use std::mem::{align_of, MaybeUninit, transmute};
-use slab::Slab;
-use crate::graph::raw::RawComputeFn;
-use crate::graph::error::{GraphFormErrors, GraphFormError, GraphValidationError, GraphValidationErrors, NodeCycle};
-pub use node::*;
-use crate::misc::map_box::map_box;
-use crate::graph::builtins::BuiltinNodeType;
-use crate::graph::mutable::build::GraphBuilder;
-use crate::graph::parse::types::{SerialBody, SerialField, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
 
 /// Compound view graph.
 ///
@@ -155,13 +147,13 @@ impl<'a> TryIndex<&'a NodeTypeName> for MutableGraph {
     type Output = NodeTypeData;
 
     fn get(&self, index: &'a NodeTypeName) -> Result<&Self::Output, NotFound<&'a NodeTypeName>> {
-        self.types.try_index(index).map_err(NodeTypeName)
+        self.types.get(index).map_err(NodeTypeName::from)
     }
 }
 
 impl<'a> TryIndexMut<&'a NodeTypeName> for MutableGraph {
     fn get_mut(&mut self, index: &'a NodeTypeName) -> Result<&mut Self::Output, NotFound<&'a NodeTypeName>> {
-        self.types.try_index(index).map_err(NodeTypeName)
+        self.types.get(index).map_err(NodeTypeName::from)
     }
 }
 

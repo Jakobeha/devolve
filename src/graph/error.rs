@@ -86,13 +86,11 @@ pub enum GraphFormError {
         node_name: String,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "node can't be a struct or enum type: type name {}, node name {}", type_name, node_name)]
+    #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
     NodeIsDataType {
         type_name: String,
         node_name: String
     },
-    #[display(fmt = "type has same name as builtin computation: {} (currently this is an error, in the future it may be allowed)", name)]
-    TypeConflictsWithBuiltinComputation { name: String },
     #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structura", name)]
     TypeConflictsWithBuiltinType { name: String },
     #[display(fmt = "type mismatch: value is {}, type is {}. Note that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name)]
@@ -157,4 +155,4 @@ pub enum GraphIOCheckError {
     },
 }
 
-pub struct NodeCycle(Vec<NodeId>);
+pub struct NodeCycle(pub Vec<NodeId>);

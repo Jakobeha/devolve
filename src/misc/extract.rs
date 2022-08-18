@@ -1,7 +1,7 @@
 /// Like a limited form of [matches],
 /// but returns [Some] with with a tuple of identifiers, or [None] if didn't match.
-pub macro extract{
-    ($expression:expr, $pat_path1:ident :: $pat_path2:ident $( ( $( $pat_expr:expr ),* $(,)? ) )? $( if $guard:expr )? $(,)?) => {
+pub macro extract {
+    ($expression:expr, $pat_path1:ident :: $pat_path2:ident $( ( $( $pat_expr:tt ),* $(,)? ) )? $( if $guard:expr )? $(,)?) => {
         match $expression {
             $pat_path1 :: $pat_path2 $( ( $( $pat_expr ),* ) )? $( if $guard )? => Some($( __extract_return!($( $pat_expr ),*) )?),
             _ => None

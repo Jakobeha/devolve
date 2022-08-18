@@ -1,12 +1,6 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
-use logos::{Lexer, Logos, Span, SpannedIter};
+
 use derive_more::Display;
-use snailquote::unescape;
-use crate::graph::error::{ParseErrors, ParseError, ParseErrorBody};
-use crate::misc::extract::extract;
 
 pub struct SerialGraph {
     pub types: HashMap<String, SerialType>,

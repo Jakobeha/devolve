@@ -1,12 +1,6 @@
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
-use logos::{Lexer, Logos, Span, SpannedIter};
-use derive_more::Display;
-use snailquote::unescape;
-use crate::graph::error::{ParseErrors, ParseError, ParseErrorBody};
-use crate::misc::extract::extract;
+use logos::{Lexer, Logos};
+
+use crate::graph::error::ParseErrorBody;
 
 pub trait LexerExt {
     type Token;
@@ -15,7 +9,7 @@ pub trait LexerExt {
     fn munch_end(&mut self) -> Result<(), (usize, ParseErrorBody)>;
 }
 
-impl<Token> LexerExt for Lexer<Token> {
+impl<'a, Token: Logos<'a>> LexerExt for Lexer<'a, Token> {
     type Token = Token;
 
     fn munch<R>(&mut self, desc: &'static str, expected: impl Fn(Self::Token) -> Option<R>) -> Result<R, (usize, ParseErrorBody)> {

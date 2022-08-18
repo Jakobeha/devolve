@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use logos::{Lexer, Logos, Span, SpannedIter};
-use derive_more::Display;
+
+use logos::{Lexer, Logos, Span};
 use snailquote::unescape;
-use crate::graph::error::{ParseErrors, ParseError, ParseErrorBody};
-use crate::misc::extract::extract;
+
+use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::parse::lexer_ext::LexerExt;
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialType, SerialTypeBody, SerialValueHead};
+use crate::misc::extract::extract;
 
 #[derive(Logos)]
 enum GraphToken {
@@ -172,14 +173,13 @@ impl<'a> GraphParser<'a> {
             if !block.is_empty() {
                 self.parse_block(block);
                 block.clear();
-                sub_blocks.clear();
             }
         };
 
         for (line_num, line) in lines.enumerate() {
             match line {
                 Err(error) => {
-                    errors.push(ParseError {
+                    self.errors.push(ParseError {
                         path: self.path.to_path_buf(),
                         line: line_num,
                         column: 0,
@@ -289,7 +289,7 @@ impl<'a> GraphParser<'a> {
                     }
                 }
             },
-            _ => Err((span.start, ParseErrorBody::Expected("include, struct, enum, or ident")))?
+            _ => Err((lexer.span().start, ParseErrorBody::Expected("include, struct, enum, or ident")))?
         })
     }
 }
@@ -404,7 +404,7 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
                     .skip(line_index)
                     .take_while(|line| {
                         let indent = line.chars().filter(|c| c.is_whitespace()).count();
-                        indent != base_indent
+                        indent != self.base_indent
                     }).count();
                 let inner_lines = &lines[line_index..=end_index];
 
@@ -781,7 +781,7 @@ fn parse_tuple_item(line: &str) -> Result<SerialTupleItem, (usize, ParseErrorBod
     Ok(SerialTupleItem {
         value,
         rust_type,
-        value_children: children
+        value_children: SerialBody::None
     })
 }
 
