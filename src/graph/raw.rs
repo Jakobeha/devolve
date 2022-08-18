@@ -1,6 +1,7 @@
 use std::any::TypeId;
 use std::mem::MaybeUninit;
 use crate::CompoundViewCtx;
+use crate::rust_type::RustType;
 
 pub struct RawComputeFn(Box<dyn RawComputeFnTrait>);
 
@@ -11,7 +12,7 @@ pub struct RawInputs<'a>(&'a RawData);
 pub struct RawOutputs<'a>(&'a mut RawData);
 
 pub struct RawData {
-    pub types: Vec<TypeId>,
+    pub types: Vec<RustType>,
     pub data: Vec<Box<[MaybeUninit<u8>]>>
 }
 
@@ -25,22 +26,32 @@ pub trait RawComputeFnTrait: Send + Sync {
 }
 
 impl<'a> RawInputs<'a> {
-    pub fn types(&self) -> &[TypeId] {
+    pub fn types(&self) -> &[RustType] {
         &self.0.types
     }
 
     pub fn data(&self) -> &[Box<[MaybeUninit<u8>]>] {
         &self.0.data
     }
+
+    pub fn len(&self) -> usize {
+        debug_assert!(self.0.types.len() == self.0.data.len(), "sanity check failed");
+        self.0.types.len()
+    }
 }
 
 impl<'a> RawOutputs<'a> {
-    pub fn types(&self) -> &[TypeId] {
+    pub fn types(&self) -> &[RustType] {
         &self.0.types
     }
 
     pub fn data(&mut self) -> &mut [Box<[MaybeUninit<u8>]>] {
         &mut self.0.data
+    }
+
+    pub fn len(&self) -> usize {
+        debug_assert!(self.0.types.len() == self.0.data.len(), "sanity check failed");
+        self.0.types.len()
     }
 }
 

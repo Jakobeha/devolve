@@ -1,4 +1,3 @@
-use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::iter::zip;
 use std::mem::{MaybeUninit, transmute};
@@ -7,6 +6,7 @@ use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs};
+use crate::rust_type::RustType;
 
 /// Compound view graph.
 ///
@@ -106,8 +106,8 @@ impl BuiltGraph {
         }
         unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>) -> (RawData, Vec<NodeInput>) {
             let mut cached_input_data = RawData {
-                types: input_types.iter().map(|input| *input.rust_type.id).collect::<Vec<_>>(),
-                data: input_types.iter().map(|input| Box::new_uninit_slice(*input.rust_type.size)).collect::<Vec<_>>(),
+                types: input_types.iter().map(|input| *input.rust_type).collect::<Vec<_>>(),
+                data: input_types.iter().map(|input| Box::new_uninit_slice(*input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices))
@@ -119,8 +119,8 @@ impl BuiltGraph {
 
             let compute = node.compute;
             let cached_output_data = RawData {
-                types: node_type.outputs.iter().map(|input| *input.rust_type.id).collect::<Vec<_>>(),
-                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(*input.rust_type.size)).collect::<Vec<_>>(),
+                types: node_type.outputs.iter().map(|input| *input.rust_type).collect::<Vec<_>>(),
+                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(*input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
             };
             let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices);
 
@@ -142,7 +142,7 @@ impl BuiltGraph {
         }
     }
 
-    pub fn check(&self, input_types: &[TypeId], output_types: &[TypeId]) -> GraphIOCheckErrors {
+    pub fn check(&self, input_types: &[RustType], output_types: &[RustType]) -> GraphIOCheckErrors {
         let mut errors = Vec::new();
 
         if input_types.len() != self.input_types.len() {
@@ -158,7 +158,7 @@ impl BuiltGraph {
             });
         }
         for (actual_type, expected_type) in zip(input_types.iter(), self.input_types.iter()) {
-            if actual_type.type_id() != expected_type.rust_type.id {
+            if !actual_type.is_rough_subtype_of(&expected_type.rust_type) {
                 errors.push(GraphIOCheckError::InputTypeMismatch {
                     field_name: expected_type.name.clone(),
                     expected: expected_type.rust_type.clone()
@@ -166,7 +166,7 @@ impl BuiltGraph {
             }
         }
         for (actual_type, expected_type) in zip(output_types.iter(), self.output_types.iter()) {
-            if actual_type != &expected_type.rust_type.id {
+            if !actual_type.is_rough_subtype_of(&expected_type.rust_type) {
                 errors.push(GraphIOCheckError::OutputTypeMismatch {
                     field_name: expected_type.name.clone(),
                     expected: expected_type.rust_type.clone()
@@ -197,7 +197,7 @@ impl BuiltGraph {
                         let other_output = match dep {
                             NodeInputDep::OtherNodeOutput { node_idx, field_idx } => {
                                 let other_node = &compute_dag[*node_idx];
-                                &other_node.cached_output_data.data[field_idx];
+                                &other_node.cached_output_data.data[*field_idx]
                             }
                             NodeInputDep::GraphInput { field_idx } => &graph_input_data[*field_idx]
                         };

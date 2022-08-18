@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::num::{ParseIntError, ParseFloatError};
+use std::path::{PathBuf, Path};
 
 use logos::{Lexer, Logos, Span};
 use snailquote::unescape;
@@ -27,11 +28,11 @@ enum GraphToken {
     #[regex("`[^`]*`")]
     Ident,
     #[regex("-?[0-9]+", priority = 2, callback = |lex| lex.slice().parse::<i64>())]
-    Integer(Option<i64>),
+    Integer(Result<i64, ParseIntError>),
     #[regex("-?[0-9]+\\.[0-9]*", |lex| lex.slice().parse::<f64>())]
     #[regex("-?[0-9]+\\.[0-9]+e[0-9]+", |lex| lex.slice().parse::<f64>())]
     #[regex("-?[0-9]+e[0-9]+", |lex| lex.slice().parse::<f64>())]
-    Float(Option<f64>),
+    Float(Result<f64, ParseFloatError>),
     #[regex("\"([^\"]|\\\\\")*\"")]
     String,
 
@@ -272,11 +273,12 @@ impl<'a> GraphParser<'a> {
                 let name = lexer.slice().to_string();
                 let type_ = match lexer.next() {
                     None => None,
-                    Some((GraphToken::Colon, _)) => {
+                    Some(GraphToken::Punct(':')) => {
                         let rust_type = munch_type(&mut lexer)?;
                         lexer.munch_end()?;
                         Some(rust_type);
                     }
+                    _ => Err((lexer.span().start, ParseErrorBody::Expected(": or end of line")))
                 };
 
                 BlockParser::Node {
@@ -324,7 +326,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
         match self {
             BlockParser::Include { p, path } => {
                 p.path = path;
-                p.parse()
+                p.parse();
             },
             BlockParser::StructType { p, name, struct_type } => {
                 if p.graph.types.contains_key(&name) {
@@ -345,9 +347,9 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         line: start_line_num,
                         column: 0,
                         body: ParseErrorBody::DuplicateType { name }
-                    })
+                    });
                 } else {
-                    p.graph.types.insert(name, SerialType::Enum(enum_type))
+                    p.graph.types.insert(name, SerialType::Enum(enum_type));
                 }
             }
             BlockParser::Node { p, name, node,  } => {
@@ -357,9 +359,9 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         line: start_line_num,
                         column: 0,
                         body: ParseErrorBody::DuplicateNode { name }
-                    })
+                    });
                 } else {
-                    p.graph.nodes.insert(name, node)
+                    p.graph.nodes.insert(name, node);
                 }
             }
             BlockParser::Null => {}
@@ -402,7 +404,7 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
             if indent > self.base_indent {
                 let end_index = line_index + lines.iter()
                     .skip(line_index)
-                    .take_while(|line| {
+                    .take_while(|(_, line)| {
                         let indent = line.chars().filter(|c| c.is_whitespace()).count();
                         indent != self.base_indent
                     }).count();
@@ -431,7 +433,7 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
                     Ok(item) => self.current_item = Some((*line_num, item)),
                     Err((column, body)) => {
                         self.p.errors.push(ParseError {
-                            path: self.g.path.to_path_buf(),
+                            path: self.p.path.to_path_buf(),
                             line: *line_num,
                             column,
                             body
@@ -504,7 +506,7 @@ impl<'a, 'b> FieldElemParser<'a, 'b> {
                     FieldSide::Input => self.field_side = FieldSide::Output,
                     _ => {
                         p.errors.push(ParseError {
-                            path: p.path.as_path_buf(),
+                            path: p.path.to_path_buf(),
                             line: item_line_num,
                             column: 0,
                             body: ParseErrorBody::UnexpectedDivider
@@ -560,7 +562,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
                     BodyParserItem::TupleItem(tuple_item) => {
                         BodyParser::parse(p, lines, &mut tuple_item.value_children);
                     }
-                    FieldElemParserItem::Field(field) => {
+                    BodyParserItem::Field(field) => {
                         BodyParser::parse(p, lines, &mut field.value_children);
                     }
                 }
@@ -581,7 +583,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
             } else {
                 p.errors.push(ParseError {
                     path: p.path.to_path_buf(),
-                    line: *items.first().unwrap().0,
+                    line: items.first().unwrap().0,
                     column: 0,
                     body: ParseErrorBody::MixedFieldsAndTupleItems
                 })
@@ -614,7 +616,7 @@ impl<'a, 'b> EnumVariantTypeParser<'a, 'b> {
     fn _parse(&mut self, lines: &[(usize, String)]) {
         self.p.parse(
             lines,
-            parse_ident,
+            parse_enum_variant_type,
             |p, item, lines| {
                 TypeBodyParser::parse(p, lines, &mut item.body)
             }
@@ -678,7 +680,7 @@ impl<'a, 'b> TypeBodyParser<'a, 'b> {
             } else {
                 p.errors.push(ParseError {
                     path: p.path.to_path_buf(),
-                    line: *items.first().unwrap().0,
+                    line: items.first().unwrap().0,
                     column: 0,
                     body: ParseErrorBody::MixedFieldsAndTupleItems
                 })
@@ -699,7 +701,7 @@ fn parse_divider_or_header_or_field(line: &str) -> Result<FieldElemParserItem, (
 
 fn parse_field_or_tuple_item(line: &str) -> Result<BodyParserItem, (usize, ParseErrorBody)> {
     // fields are always lowercase
-    let first_char = line.chars().first().unwrap_or(' ');
+    let first_char = line.chars().next().unwrap_or(' ');
     if first_char.is_lowercase() || first_char == '_' {
         parse_field(line).map(BodyParserItem::Field)
     } else {
@@ -709,7 +711,7 @@ fn parse_field_or_tuple_item(line: &str) -> Result<BodyParserItem, (usize, Parse
 
 fn parse_field_type_or_tuple_item_type(line: &str) -> Result<TypeBodyParserItem, (usize, ParseErrorBody)> {
     // fields are always lowercase
-    let first_char = line.chars().first().unwrap_or(' ');
+    let first_char = line.chars().next().unwrap_or(' ');
     if first_char.is_lowercase() || first_char == '_' {
         parse_field_type(line).map(TypeBodyParserItem::Field)
     } else {
@@ -750,7 +752,7 @@ fn parse_abstract_field<Field>(line: &str, mk_field: fn(String, Option<SerialRus
                     lexer.munch_end()?;
                     (Some(rust_type), Some(value))
                 },
-                Some(_) => return Err((lexer.column(), ParseErrorBody::Expected("= or end of line")))
+                Some(_) => return Err((lexer.span().start, ParseErrorBody::Expected("= or end of line")))
             }
         },
         Some(GraphToken::Punct('=')) => {
@@ -758,7 +760,7 @@ fn parse_abstract_field<Field>(line: &str, mk_field: fn(String, Option<SerialRus
             lexer.munch_end()?;
             (None, Some(value))
         },
-        Some(_) => return Err((lexer.column(), ParseErrorBody::Expected(":, =, or end of line")))
+        Some(_) => return Err((lexer.span().start, ParseErrorBody::Expected(":, =, or end of line")))
     };
 
     Ok(mk_field(name, rust_type, value))
@@ -775,7 +777,7 @@ fn parse_tuple_item(line: &str) -> Result<SerialTupleItem, (usize, ParseErrorBod
             lexer.munch_end()?;
             Some(rust_type)
         },
-        Some(_) => return Err((lexer.column(), ParseErrorBody::Expected(": or end of line")))
+        Some(_) => return Err((lexer.span().start, ParseErrorBody::Expected(": or end of line")))
     };
 
     Ok(SerialTupleItem {
@@ -792,16 +794,17 @@ fn parse_rust_type(line: &str) -> Result<SerialRustType, (usize, ParseErrorBody)
     Ok(rust_type)
 }
 
-fn parse_ident(line: &str) -> Result<String, (usize, ParseErrorBody)> {
+fn parse_enum_variant_type(line: &str) -> Result<SerialEnumVariantType, (usize, ParseErrorBody)> {
     let mut lexer = Lexer::<GraphToken>::new(line);
     lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
-    Ok(lexer.slice().to_string())
+    Ok(SerialEnumVariantType { name: lexer.slice().to_string(), body: SerialTypeBody::None })
 }
 
 fn munch_value_or_underscore(lexer: &mut Lexer<GraphToken>) -> Result<Option<SerialValueHead>, (usize, ParseErrorBody)> {
     // lexer doesn't support peek but there are easy workarounds, here is one
-    let remaining_chars = lexer.remainder().trim_start().chars();
-    if remaining_chars.first() == Some('_') && !remaining_chars.get(1).map_or(false, |c| c.is_alphanumeric()) {
+    let remaining_chars = lexer.remainder().trim_start();
+    let next_char = remaining_chars.chars();
+    if next_char == Some('_') && !remaining_chars.next(1).map_or(false, |c| c.is_alphanumeric()) {
         lexer.munch("'_'", |token| extract!(token, GraphToken::Punct('_'))).expect("peek failed");
         Ok(None)
     } else {
@@ -813,12 +816,12 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<SerialValueHead, (usize,
     match lexer.next() {
         None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("value"))),
         Some(GraphToken::Integer(int)) => match int {
-            None => Err((lexer.span().start, ParseErrorBody::BadNumber)),
-            Some(int) => Ok(SerialValueHead::Integer(int))
+            Err(error) => Err((lexer.span().start, ParseErrorBody::BadInteger(error))),
+            Ok(int) => Ok(SerialValueHead::Integer(int))
         }
         Some(GraphToken::Float(float)) => match float {
-            None => Err((lexer.span().start, ParseErrorBody::BadNumber)),
-            Some(float) => Ok(SerialValueHead::Float(float))
+            Err(error) => Err((lexer.span().start, ParseErrorBody::BadFloat(error))),
+            Ok(float) => Ok(SerialValueHead::Float(float))
         }
         Some(GraphToken::String) => match unescape(lexer.slice()) {
             Err(error) => Err((lexer.span().start, ParseErrorBody::BadEscape(error))),
@@ -882,7 +885,7 @@ fn munch_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, P
             let name = lexer.slice().to_string();
             let mut generic_args = Vec::new();
             // lexer doesn't support peek but there are easy workarounds, here is one
-            if lexer.remainder().trim_start().chars().first() == Some('<') {
+            if lexer.remainder().trim_start().chars().next() == Some('<') {
                 lexer.munch("'<'", |token| extract!(token, GraphToken::Punct('<'))).expect("peek failed");
                 loop {
                     match munch_type(lexer) {
@@ -906,7 +909,7 @@ fn munch_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, P
         }
         Some(GraphToken::Punct('&')) => {
             let refd = Box::new(munch_type(lexer)?);
-            Ok(SerialRustType::Ref(refd))
+            Ok(SerialRustType::Reference(refd))
         }
         Some(GraphToken::Punct('[')) => {
             let elem = Box::new(munch_type(lexer)?);
@@ -952,7 +955,7 @@ fn expect_no_lines(p: &mut GraphParser, lines: &[(usize, String)]) {
     if !lines.is_empty() {
         p.errors.push(ParseError {
             path: p.path.to_path_buf(),
-            line: *lines.first().unwrap().0,
+            line: lines.first().unwrap().0,
             column: 0,
             body: ParseErrorBody::ExpectedLess
         })

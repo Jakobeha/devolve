@@ -97,7 +97,7 @@ impl NodeInput {
     pub fn dep_nodes(&self) -> impl Iterator<Item=NodeId> {
         self.deps().filter_map(|dep| match dep {
             NodeInputDep::GraphInput { idx: _ } => None,
-            NodeInputDep::OtherNodeOutput { id, idx: _ } => Some(*id)
+            NodeInputDep::OtherNodeOutput { id, idx: _ } => Some(id)
         })
     }
 }

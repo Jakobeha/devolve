@@ -21,6 +21,6 @@ macro __extract_return {
     () => { () },
     ($first:ident) => { ($first, ) },
     ($first:expr) => { () },
-    ($first:ident, $( $rest:expr ),*) => { ($first, $crate::misc::extract::__extract_return!($($rest),*)) },
-    ($first:expr, $( $rest:expr ),*) => { $crate::misc::extract::__extract_return!($($rest),*) }
+    ($first:ident, $( $rest:expr ),*) => { ($first, __extract_return!($($rest),*)) },
+    ($first:expr, $( $rest:expr ),*) => { __extract_return!($($rest),*) }
 }

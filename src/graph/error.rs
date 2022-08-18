@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use crate::rust_type::RustType;
 use derive_more::{Display, Error};
+use std::num::{ParseIntError, ParseFloatError};
+//noinspection RsUnisedImport (intelliJ fails to detect use)
 use join_lazy_fmt::Join;
 use snailquote::UnescapeError;
 use crate::graph::mutable::NodeId;
@@ -31,12 +33,16 @@ pub enum ParseErrorBody {
     Expected(&'static str),
     #[display(fmt = "duplicate type: {}", name)]
     DuplicateType { name: String },
+    #[display(fmt = "duplicate node: {}" name)]
+    DuplicateNode { name: String },
     #[display(fmt = "divider '===' not allowed here")]
     UnexpectedDivider,
     #[display(fmt = "mixed fields and tuple items")]
     MixedFieldsAndTupleItems,
-    #[display(fmt = "couldn't parse number (e.g. too large)")]
-    BadNumber,
+    #[display(fmt = "couldn't parse integer: {}")]
+    BadInteger(#[error(source)] ParseIntError),
+    #[display(fmt = "couldn't parse float: {}")]
+    BadFloat(#[error(source)] ParseFloatError),
     #[display(fmt = "bad escape in string: {}", _0)]
     BadEscape(#[error(source)] UnescapeError),
     #[display(fmt = "unopened '{}'", _0)]

@@ -8,7 +8,6 @@ license = "Apache-2.0"
 keywords = ["ui", "graphics"]
 categories = ["graphics", "rendering", "gui"]
 edition = "2021"
-rust-version = "1.64"
 
 [lib]
 crate-type = ["lib"]
@@ -21,8 +20,6 @@ snailquote = "0.3.1"
 derivative = "2.2.0"
 derive_more = "0.99.17"
 join-lazy-fmt = "0.9.2"
-iter-enum = "1.0.1"
-# auto_enums = "0.7.12"
 # Rust patterns
 slab = "0.4.7"
 lazy_static = "1.4.0"
