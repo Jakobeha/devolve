@@ -245,6 +245,7 @@ impl<'a> GraphBuilder<'a> {
         };
 
         let meta = NodeMetadata {
+            node_name: node_name.to_string(),
             input_headers,
             output_headers
         };
@@ -478,7 +479,7 @@ impl<'a> GraphBuilder<'a> {
             Some(SerialValueHead::Integer(_)) => StructuralRustType::i64(),
             Some(SerialValueHead::Float(_)) => StructuralRustType::f64(),
             Some(SerialValueHead::String(_)) => StructuralRustType::string(),
-            Some(SerialValueHead::Ref { node_ident, field_ident }) => match self.resolved_node_type(node_ident) {
+            Some(SerialValueHead::Ref { node_name: node_ident, field_name: field_ident }) => match self.resolved_node_type(node_ident) {
                 // Error will show up later
                 None => StructuralRustType::unknown(),
                 Some(node_type) => match node_type.outputs.iter().find(|io_type| &io_type.name == field_ident) {
@@ -636,7 +637,7 @@ impl<'a> GraphBuilder<'a> {
             SerialValueHead::Integer(int) => NodeInput::Const(Box::new(int.to_ne_bytes())),
             SerialValueHead::Float(float) => NodeInput::Const(Box::new(float.to_ne_bytes())),
             SerialValueHead::String(string) => NodeInput::Const(string.into_boxed_str().into_boxed_bytes()),
-            SerialValueHead::Ref { node_ident, field_ident } => {
+            SerialValueHead::Ref { node_name: node_ident, field_name: field_ident } => {
                 let (node_id, idx) = match self.resolved_node_and_type(&node_ident) {
                     None => {
                         self.errors.push(GraphFormError::NodeNotFound {

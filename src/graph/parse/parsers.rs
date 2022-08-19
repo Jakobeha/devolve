@@ -835,8 +835,8 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<SerialValueHead, (usize,
             lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
             let field_ident = lexer.slice().to_string();
             Ok(SerialValueHead::Ref {
-                node_ident,
-                field_ident
+                node_name: node_ident,
+                field_name: field_ident
             })
         }
         Some(GraphToken::Punct('[')) => {

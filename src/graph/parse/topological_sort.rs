@@ -54,7 +54,7 @@ impl<T: HasDeps> SortByDeps for Vec<(String, T)> {
 
     fn deps_map(&self) -> HashMap<String, HashSet<String>> {
         self.iter()
-            .map(|(name, elem)| (name.to_string(), elem.deps()))
+            .map(|(name, elem)| (name.to_string(), elem.deps_set()))
             .collect::<HashMap<_, _>>()
     }
 
@@ -71,7 +71,7 @@ impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a T)] {
 
     fn deps_map(&self) -> HashMap<String, HashSet<String>> {
         self.iter()
-            .map(|(name, elem)| (name.to_string(), elem.deps()))
+            .map(|(name, elem)| (name.to_string(), elem.deps_set()))
             .collect::<HashMap<_, _>>()
     }
 
@@ -84,12 +84,12 @@ impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a T)] {
 
 #[doc(hidden)]
 pub trait HasDeps {
-    fn deps(&self) -> HashSet<String>;
+    fn deps_set(&self) -> HashSet<String>;
     fn cmp_special_case(lhs_name: &str, rhs_name: &str) -> Ordering;
 }
 
 impl HasDeps for SerialNode {
-    fn deps(&self) -> HashSet<String> {
+    fn deps_set(&self) -> HashSet<String> {
         node_dep_nodes(self).map(String::from).collect::<HashSet<_>>()
     }
 
@@ -108,7 +108,7 @@ impl HasDeps for SerialNode {
 }
 
 impl HasDeps for SerialType {
-    fn deps(&self) -> HashSet<String> {
+    fn deps_set(&self) -> HashSet<String> {
         type_def_deps(self).map(String::from).collect::<HashSet<_>>()
     }
 
@@ -186,7 +186,7 @@ fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=S
         None | Some(SerialValueHead::Integer(_)) | Some(SerialValueHead::Float(_)) | Some(SerialValueHead::String(_)) => {
             Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
-        Some(SerialValueHead::Ref { node_ident, field_ident }) => {
+        Some(SerialValueHead::Ref { node_name: node_ident, field_name: field_ident }) => {
             Box::new(std::iter::once(SerialNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         Some(SerialValueHead::Array(elems)) => {

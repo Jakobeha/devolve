@@ -12,6 +12,7 @@ use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
 
 mod node;
 mod build;
+mod serialize;
 
 /// Compound view graph.
 ///
@@ -99,6 +100,7 @@ impl MutableGraph {
     }
 }
 
+// region serialization / deserialization
 impl TryFrom<SerialGraph> for MutableGraph {
     type Error = GraphFormErrors;
 
@@ -113,6 +115,13 @@ impl TryFrom<SerialGraph> for MutableGraph {
         }
     }
 }
+
+impl Into<SerialGraph> for MutableGraph {
+    fn into(self) -> SerialGraph {
+        GraphSerializer::serialize(self)
+    }
+}
+// endregion
 
 // region index boilerplate
 impl TryIndex<NodeId> for MutableGraph {

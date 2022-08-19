@@ -93,11 +93,30 @@ pub enum SerialValueHead {
     Float(f64),
     String(String),
     Ref {
-        node_ident: String,
-        field_ident: String
+        node_name: String,
+        field_name: String
     },
     Array(Vec<SerialValueHead>),
     Tuple(Vec<SerialValueHead>)
+}
+
+impl SerialGraph {
+    pub fn new() -> SerialGraph {
+        SerialGraph {
+            rust_types: HashMap::new(),
+            nodes: HashMap::new()
+        }
+    }
+}
+
+impl SerialNode {
+    pub fn new(node_type: Option<String>) -> SerialNode {
+        SerialNode {
+            node_type,
+            input_fields: Vec::new(),
+            output_fields: Vec::new()
+        }
+    }
 }
 
 impl Default for SerialBody {
@@ -289,7 +308,7 @@ impl Display for SerialValueHead {
             SerialValueHead::Integer(value) => write!(f, "{}", value),
             SerialValueHead::Float(value) => write!(f, "{}", value),
             SerialValueHead::String(value) => write!(f, "{}", escape(value)),
-            SerialValueHead::Ref { node_ident, field_ident } => write!(f, "{}.{}", node_ident, field_ident),
+            SerialValueHead::Ref { node_name: node_ident, field_name: field_ident } => write!(f, "{}.{}", node_ident, field_ident),
             SerialValueHead::Tuple(items) => write!(f, "({})", ", ".join(items)),
             SerialValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems)),
         }

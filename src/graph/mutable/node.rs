@@ -52,6 +52,7 @@ pub struct Node {
 
 /// Display info which is not used in actual computations
 pub struct NodeMetadata {
+    pub node_name: String,
     pub input_headers: Vec<FieldHeader>,
     pub output_headers: Vec<FieldHeader>,
 }
