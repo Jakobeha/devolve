@@ -191,11 +191,12 @@ impl GraphSerializer {
             },
             TypeStructBody::Fields(fields) => {
                 SerialTypeBody::Fields(fields.iter().map(|TypeStructField { name, rust_type }| {
+                    // TODO: Default values are planned for later, currently is just None and None because we haven't implemented
                     SerialFieldType {
                         name: name.to_string(),
                         rust_type: self.serialize_rust_type(&rust_type),
                         default_value: None,
-                        default_value_children: Default::default()
+                        default_value_children: SerialBody::None
                     }
                 }).collect::<Vec<_>>())
             }

@@ -66,6 +66,16 @@ pub enum TypeStructBody {
     Fields(Vec<TypeStructField>)
 }
 
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TypeStructBodyForm {
+    #[display(fmt = "none")]
+    None,
+    #[display(fmt = "tuple")]
+    Tuple,
+    #[display(fmt = "fields")]
+    Fields
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeStructField {
     pub name: String,
@@ -185,6 +195,16 @@ impl IntrinsicRustType {
             .map(|type_name| type_name.rsplit("::").next().unwrap())
             .collect::<Vec<&str>>()
             .join("")
+    }
+}
+
+impl TypeStructBody {
+    pub fn form(&self) -> TypeStructBodyForm {
+        match self {
+            TypeStructBody::None => TypeStructBodyForm::None,
+            TypeStructBody::Tuple(_) => TypeStructBodyForm::Tuple,
+            TypeStructBody::Fields(_) => TypeStructBodyForm::Fields
+        }
     }
 }
 

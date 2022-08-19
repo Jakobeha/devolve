@@ -5,6 +5,7 @@ use join_lazy_fmt::Join;
 use snailquote::escape;
 use crate::graph::parse::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, Indent};
+use crate::rust_type::TypeStructBodyForm;
 
 pub struct SerialGraph {
     pub rust_types: HashMap<String, SerialType>,
@@ -97,7 +98,16 @@ pub enum SerialValueHead {
         field_name: String
     },
     Array(Vec<SerialValueHead>),
-    Tuple(Vec<SerialValueHead>)
+    Tuple(Vec<SerialValueHead>),
+    Struct {
+        type_name: String,
+        inline_params: Option<Vec<SerialValueHead>>,
+    },
+    Enum {
+        type_name: String,
+        variant_name: String,
+        inline_params: Option<Vec<SerialValueHead>>,
+    },
 }
 
 impl SerialGraph {
@@ -115,6 +125,16 @@ impl SerialNode {
             node_type,
             input_fields: Vec::new(),
             output_fields: Vec::new()
+        }
+    }
+}
+
+impl SerialBody {
+    pub fn form(&self) -> TypeStructBodyForm {
+        match self {
+            SerialBody::None => TypeStructBodyForm::None,
+            SerialBody::Tuple(_) => TypeStructBodyForm::Tuple,
+            SerialBody::Fields(_) => TypeStructBodyForm::Fields
         }
     }
 }
@@ -329,6 +349,20 @@ impl Display for SerialValueHead {
             SerialValueHead::Ref { node_name: node_ident, field_name: field_ident } => write!(f, "{}.{}", node_ident, field_ident),
             SerialValueHead::Tuple(items) => write!(f, "({})", ", ".join(items)),
             SerialValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems)),
+            SerialValueHead::Struct { type_name, inline_params } => {
+                write!(f, "{}", type_name)?;
+                if let Some(inline_params) = inline_params.as_ref() {
+                    write!(f, "({})", ", ".join(inline_params))?;
+                }
+                Ok(())
+            },
+            SerialValueHead::Enum { type_name, variant_name, inline_params } => {
+                write!(f, "{}.{}", type_name, variant_name)?;
+                if let Some(inline_params) = inline_params.as_ref() {
+                    write!(f, "({})", ", ".join(inline_params))?;
+                }
+                Ok(())
+            },
         }
     }
 }

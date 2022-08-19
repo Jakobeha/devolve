@@ -195,6 +195,13 @@ fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=S
         Some(SerialValueHead::Tuple(elems)) => {
             Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
+        Some(SerialValueHead::Struct { type_name: _, inline_params }) |
+        Some(SerialValueHead::Enum { type_name: _, variant_name: _, inline_params }) => match inline_params {
+            None => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>,
+            Some(inline_params) => {
+                Box::new(inline_params.iter().flat_map(|inline_param| value_head_deps(Some(inline_param)))) as Box<dyn Iterator<Item=SerialNodeDep>>
+            }
+        }
     }
 }
 

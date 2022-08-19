@@ -100,6 +100,8 @@ impl Node {
 }
 
 impl NodeInput {
+    pub const ZST: NodeInput = NodeInput::Tuple(Vec::new());
+
     pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
         match &self {
             NodeInput::Hole | NodeInput::Const(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeInputDep>>,

@@ -8,7 +8,7 @@ use snailquote::UnescapeError;
 use join_lazy_fmt::Join;
 
 use crate::graph::mutable::NodeId;
-use crate::rust_type::RustType;
+use crate::rust_type::{RustType, TypeStructBodyForm};
 
 pub type ParseErrors = Vec<ParseError>;
 
@@ -101,13 +101,46 @@ pub enum GraphFormError {
         type_name: String,
         referenced_from: NodeNameFieldName,
     },
+    #[display(fmt = "type not found: {} (referenced from struct constructor, in node {})", type_name, referenced_from)]
+    RustTypeNotFoundFromStructConstructor {
+        type_name: String,
+        referenced_from: NodeNameFieldName,
+    },
+    #[display(fmt = "type not found: {} (referenced from enum variant constructor, in node {})", type_name, referenced_from)]
+    RustTypeNotFoundFromEnumVariantConstructor {
+        type_name: String,
+        referenced_from: NodeNameFieldName,
+    },
+    #[display(fmt = "type is not a struct but value is a struct constructor: type = {} (referenced in node {})", type_name, referenced_from)]
+    RustTypeNotStructFromConstructor {
+        type_name: String,
+        referenced_from: NodeNameFieldName,
+    },
+    #[display(fmt = "type constructor has bad form: got {} expected {} (type = {}, referenced in node {})", expected_form, actual_form, type_name, referenced_from)]
+    RustTypeConstructorBadForm {
+        expected_form: TypeStructBodyForm,
+        actual_form: TypeStructBodyForm,
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "type is not an enum but value is an enum constructor: type = {} (referenced in node {})", type_name, referenced_from)]
+    RustTypeNotEnumFromConstructor {
+        type_name: String,
+        referenced_from: NodeNameFieldName,
+    },
+    #[display(fmt = "variant not in type {}: {} (referenced from constructor in node {})", type_name, variant_name, referenced_from)]
+    EnumVariantNotFound {
+        type_name: String,
+        variant_name: String,
+        referenced_from: NodeNameFieldName,
+    },
     #[display(fmt = "node not found: {} (referenced from node {})", node_name, referenced_from)]
     NodeNotFound {
         node_name: String,
         referenced_from: NodeNameFieldName,
     },
     #[display(fmt = "field {} not in node {} (referenced from {})", field_name, node_name, referenced_from)]
-    FieldNotFound {
+    NodeFieldNotFound {
         field_name: String,
         node_name: String,
         referenced_from: NodeNameFieldName
@@ -119,10 +152,34 @@ pub enum GraphFormError {
     },
     #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structura", name)]
     TypeConflictsWithBuiltinType { #[error(not(source))] name: String },
+    #[display(fmt = "type mismatch, lengths of tuples are different: got {} expected {} (for type {}, referenced in {})", inferred_length, type_length, type_name, referenced_from)]
+    TupleLengthMismatch {
+        inferred_length: usize,
+        type_length: usize,
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "field {} not in rust type {} (referenced in {})", field_name, type_name, referenced_from)]
+    RustFieldNotFound {
+        field_name: String,
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "multiple occurrences of field {} (referenced in {})", field_name, referenced_from)]
+    RustFieldMultipleOccurrences {
+        field_name: String,
+        referenced_from: NodeNameFieldName
+    },
     #[display(fmt = "type mismatch: value is {}, type is {}. Note that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name)]
     ValueTypeMismatch {
         inferred_type_name: String,
         explicit_type_name: String
+    },
+    #[display(fmt = "type mismatch: value is {}, type is {}. Note that if the type names are the same, the contents are still different (referenced in {})", inferred_type_name, explicit_type_name, referenced_from)]
+    NestedValueTypeMismatch {
+        inferred_type_name: String,
+        explicit_type_name: String,
+        referenced_from: NodeNameFieldName
     },
     #[display(fmt = "type mismatch: array elements are {} and {}. Note that if the type names are the same, the contents are still different", type_name_lhs, type_name_rhs)]
     ArrayElemTypeMismatch {
@@ -134,8 +191,8 @@ pub enum GraphFormError {
         #[error(not(source))]
         source: NodeNameFieldName
     },
-    #[display(fmt = "tuple elem layout not resolved, we need to know the size and alignment of each item (inferred type = {}, referenced from {}", inferred_type, referenced_from)]
-    TupleElemLayoutNotResolved {
+    #[display(fmt = "layout not resolved, we need to know the size and alignment of each item (inferred type = {}, referenced from {}", inferred_type, referenced_from)]
+    ElemLayoutNotResolved {
         inferred_type: String,
         referenced_from: NodeNameFieldName
     },

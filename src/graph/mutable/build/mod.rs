@@ -3,6 +3,7 @@ use std::iter::zip;
 use std::mem::{align_of, size_of, take};
 
 use slab::Slab;
+use smallvec::SmallVec;
 
 use crate::graph::builtins::{BuiltinNodeType, BuiltinNodeTypeFnCtx};
 use crate::graph::error::{GraphFormError, GraphFormErrors, NodeNameFieldName};
@@ -13,7 +14,7 @@ use crate::graph::parse::topological_sort::SortByDeps;
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
 use crate::graph::raw::RawComputeFn;
 use crate::misc::map_box::map_box;
-use crate::rust_type::{infer_tuple_align, infer_tuple_size, IsSubtypeOf, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use crate::rust_type::{infer_tuple_align, infer_tuple_size, IsSubtypeOf, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructBodyForm, TypeStructField, TypeStructure};
 
 mod size_and_align;
 
@@ -23,6 +24,20 @@ pub(super) struct GraphBuilder<'a> {
     resolved_rust_types: HashMap<String, StructuralRustType>,
     resolved_node_types: HashMap<NodeTypeName, NodeTypeData>,
     resolved_nodes: HashMap<String, (NodeId, Node)>,
+}
+
+enum SerialBodyOrInlineTuple {
+    SerialBody(SerialBody),
+    InlineTuple { items: Vec<SerialValueHead> }
+}
+
+impl SerialBodyOrInlineTuple {
+    pub fn form(&self) -> TypeStructBodyForm {
+        match self {
+            SerialBodyOrInlineTuple::SerialBody(body) => body.form(),
+            SerialBodyOrInlineTuple::InlineTuple { .. } => TypeStructBodyForm::Tuple
+        }
+    }
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -519,51 +534,93 @@ impl<'a> GraphBuilder<'a> {
                     structure
                 }
             }
+            Some(SerialValueHead::Struct { type_name, inline_params }) => {
+                let (size, align, body) = self.infer_type_body_structurally(inline_params.as_deref(), value_children);
+                StructuralRustType {
+                    type_name: type_name.to_string(),
+                    size,
+                    align,
+                    structure: TypeStructure::CReprStruct { body }
+                }
+            }
+            Some(SerialValueHead::Enum { type_name, variant_name, inline_params }) => {
+                let (size, align, body) = self.infer_type_body_structurally(inline_params.as_deref(), value_children);
+                StructuralRustType {
+                    type_name: type_name.to_string(),
+                    size,
+                    align,
+                    structure: TypeStructure::CReprEnum {
+                        // We can only infer this one variant
+                        variants: vec![TypeEnumVariant {
+                            name: variant_name.to_string(),
+                            body
+                        }]
+                    }
+                }
+            }
         }
     }
 
-    fn infer_type_structurally2(
+    fn infer_type_structurally2(&mut self, value_children: &SerialBody) -> StructuralRustType {
+        if matches!(value_children, SerialBody::None) {
+            return StructuralRustType::unknown();
+        }
+        let (size, align, body) = self.infer_type_body_structurally2(value_children);
+        StructuralRustType {
+            type_name: "{anonymous struct}".to_string(),
+            size,
+            align,
+            structure: TypeStructure::CReprStruct { body }
+        }
+    }
+
+    fn infer_type_body_structurally(
+        &mut self,
+        inline_params: Option<&[SerialValueHead]>,
+        value_children: &SerialBody
+    ) -> (Option<usize>, Option<usize>, TypeStructBody) {
+        match inline_params {
+            None => self.infer_type_body_structurally2(value_children),
+            Some(inline_params) => {
+                let elements = inline_params.iter().map(|elem| self.infer_type_structurally((Some(elem), &SerialBody::None))).collect::<Vec<_>>();
+                let size = calculate_size(&elements);
+                let align = calculate_align(&elements);
+                let body = TypeStructBody::Tuple(elements.into_iter().map(RustType::Structural).collect());
+                (size, align, body)
+            }
+        }
+    }
+
+    fn infer_type_body_structurally2(
         &mut self,
         value_children: &SerialBody
-    ) -> StructuralRustType {
+    ) -> (Option<usize>, Option<usize>, TypeStructBody) {
         match value_children {
-            SerialBody::None => StructuralRustType::unknown(),
+            SerialBody::None => (Some(0), Some(0), TypeStructBody::None),
             SerialBody::Tuple(tuple_items) => {
                 let item_types = tuple_items.iter().map(|tuple_item| {
-                    // TODO: why do we have to clone rust_type here? are we doing something redundant?
+                    // why do we have to clone rust_type here? are we doing something redundant?
                     self.resolve_type(tuple_item.rust_type.clone(), (tuple_item.value.as_ref(), &tuple_item.value_children))
                 }).collect::<Vec<_>>();
                 let size = infer_tuple_size(&item_types);
                 let align = infer_tuple_align(&item_types);
-                let structure = TypeStructure::CReprStruct { body: TypeStructBody::Tuple(item_types) };
-                StructuralRustType {
-                    type_name: "{anonymous tuple struct}".to_string(),
-                    size,
-                    align,
-                    structure
-                }
+                let body = TypeStructBody::Tuple(item_types);
+                (size, align, body)
             },
             SerialBody::Fields(fields) => {
                 let item_types = fields.iter().map(|field| {
-                    // TODO: why do we have to clone rust_type here? (see above)
+                    // why do we have to clone rust_type here? (see above)
                     self.resolve_type(field.rust_type.clone(), (field.value.as_ref(), &field.value_children))
                 }).collect::<Vec<_>>();
                 let size = infer_tuple_size(&item_types);
                 let align = infer_tuple_align(&item_types);
-                let structure = TypeStructure::CReprStruct {
-                    body: TypeStructBody::Fields(
-                        zip(
-                            fields.iter().map(|field| &field.name).cloned(),
-                            item_types.into_iter()
-                        ).map(|(name, rust_type)| TypeStructField { name, rust_type }).collect::<Vec<_>>()
-                    )
-                };
-                StructuralRustType {
-                    type_name: "{anonymous field struct}".to_string(),
-                    size,
-                    align,
-                    structure
-                }
+                let body = TypeStructBody::Fields(
+                    zip(
+                        fields.iter().map(|field| &field.name).cloned(),
+                        item_types.into_iter()
+                    ).map(|(name, rust_type)| TypeStructField { name, rust_type }).collect::<Vec<_>>()
+                );
+                (size, align, body)
             }
         }
     }
@@ -612,12 +669,21 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_value(
         &mut self,
         (value, value_children): (Option<SerialValueHead>, SerialBody),
+        // TODO: Make rust_type a Cow
         rust_type: &RustType,
         node_name: &str,
         field_name: &str
     ) -> NodeInput {
         match value {
             None => self.resolve_value_via_children(value_children, rust_type, node_name, field_name),
+            Some(SerialValueHead::Struct { type_name, inline_params }) => {
+                let body = self.resolve_serial_constructor_body(inline_params, value_children, node_name, field_name);
+                NodeInput::Tuple(self.resolve_struct_constructor(type_name, body, rust_type, node_name, field_name))
+            }
+            Some(SerialValueHead::Enum { type_name, variant_name, inline_params }) => {
+                let body = self.resolve_serial_constructor_body(inline_params, value_children, node_name, field_name);
+                NodeInput::Tuple(self.resolve_enum_constructor(type_name, variant_name, body, rust_type, node_name, field_name))
+            }
             Some(value) => {
                 if !matches!(value_children, SerialBody::None) {
                     self.errors.push(GraphFormError::InlineValueHasChildren {
@@ -632,7 +698,13 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_value_via_head(&mut self, value: SerialValueHead, rust_type: &RustType, node_name: &str, field_name: &str) -> NodeInput {
+    fn resolve_value_via_head(
+        &mut self,
+        value: SerialValueHead,
+        rust_type: &RustType,
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInput {
         match value {
             SerialValueHead::Integer(int) => NodeInput::Const(Box::new(int.to_ne_bytes())),
             SerialValueHead::Float(float) => NodeInput::Const(Box::new(float.to_ne_bytes())),
@@ -653,7 +725,7 @@ impl<'a> GraphBuilder<'a> {
                         Some(*node_id),
                         match node_type.outputs.iter().position(|output| output.name == field_ident) {
                             None => {
-                                self.errors.push(GraphFormError::FieldNotFound {
+                                self.errors.push(GraphFormError::NodeFieldNotFound {
                                     field_name: field_ident.to_string(),
                                     node_name: node_ident.to_string(),
                                     referenced_from: NodeNameFieldName {
@@ -684,11 +756,382 @@ impl<'a> GraphBuilder<'a> {
                 }).collect())
             }
             SerialValueHead::Tuple(elems) => {
-                NodeInput::Tuple(elems.into_iter().enumerate().map(|(index, elem)| {
-                    self.resolve_value_child(index, (Some(elem), SerialBody::None), (rust_type, None), node_name, field_name)
-                }).collect())
+                self.resolve_tuple_via_head(elems, rust_type, node_name, field_name)
+            },
+            SerialValueHead::Struct { .. } | SerialValueHead::Enum { .. } => unreachable!("struct and enum may have children")
+        }
+    }
+
+    fn resolve_serial_constructor_body(
+        &mut self,
+        inline_params: Option<Vec<SerialValueHead>>,
+        value_children: SerialBody,
+        node_name: &str,
+        field_name: &str
+    ) -> SerialBodyOrInlineTuple {
+        match inline_params {
+            None => SerialBodyOrInlineTuple::SerialBody(value_children),
+            Some(inline_params) => {
+                if !matches!(value_children, SerialBody::None) {
+                    self.errors.push(GraphFormError::InlineValueHasChildren {
+                        source: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                SerialBodyOrInlineTuple::InlineTuple { items: inline_params }
             }
         }
+    }
+
+    fn resolve_struct_constructor(
+        &mut self,
+        type_name: String,
+        body: SerialBodyOrInlineTuple,
+        rust_type: &RustType,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInputWithLayout> {
+        match self.resolved_rust_types.get(type_name.as_str()) {
+            None => {
+                self.errors.push(GraphFormError::RustTypeNotFoundFromStructConstructor {
+                    type_name: type_name.to_string(),
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                // Best guess
+                if matches!(rust_type.structure(), TypeStructure::CReprStruct { body: _ }) {
+                    self.resolve_struct_constructor_with_type(rust_type.clone_structural(), body, node_name, field_name)
+                } else {
+                    self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
+                }
+            }
+            Some(explicit_rust_type) => {
+                if explicit_rust_type.structure.is_structural_subtype_of(rust_type.structure()) == IsSubtypeOf::No ||
+                    rust_type.structure().is_structural_subtype_of(&explicit_rust_type.structure) == IsSubtypeOf::No {
+                    self.errors.push(GraphFormError::NestedValueTypeMismatch {
+                        inferred_type_name: rust_type.to_string(),
+                        explicit_type_name: explicit_rust_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                let mut final_rust_type = explicit_rust_type.clone();
+                final_rust_type.structure.refine_from(rust_type.structure().clone());
+                self.resolve_struct_constructor_with_type(final_rust_type, body, node_name, field_name)
+            }
+        }
+    }
+
+    fn resolve_enum_constructor(
+        &mut self,
+        type_name: String,
+        variant_name: String,
+        body: SerialBodyOrInlineTuple,
+        rust_type: &RustType,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInputWithLayout> {
+        match self.resolved_rust_types.get(type_name.as_str()) {
+            None => {
+                self.errors.push(GraphFormError::RustTypeNotFoundFromEnumVariantConstructor {
+                    type_name: type_name.to_string(),
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                // Best guess
+                if matches!(rust_type.structure(), TypeStructure::CReprEnum { variants: _ }) {
+                    self.resolve_enum_constructor_with_type(rust_type.clone_structural(), variant_name, body, node_name, field_name)
+                } else {
+                    self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
+                }
+            }
+            Some(explicit_rust_type) => {
+                if explicit_rust_type.structure.is_structural_subtype_of(rust_type.structure()) == IsSubtypeOf::No ||
+                    rust_type.structure().is_structural_subtype_of(&explicit_rust_type.structure) == IsSubtypeOf::No {
+                    self.errors.push(GraphFormError::NestedValueTypeMismatch {
+                        inferred_type_name: rust_type.to_string(),
+                        explicit_type_name: explicit_rust_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                let mut final_rust_type = explicit_rust_type.clone();
+                final_rust_type.structure.refine_from(rust_type.structure().clone());
+                self.resolve_enum_constructor_with_type(final_rust_type, variant_name, body, node_name, field_name)
+            }
+        }
+    }
+
+    fn fallback_resolve_constructor_infer_type(
+        &mut self,
+        body: SerialBodyOrInlineTuple,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInputWithLayout> {
+        self._fallback_resolve_constructor_infer_type(body, node_name, field_name)
+            .into_iter()
+            .map(|input| {
+                // Yeah we won't infer size and align because we can't compile anyways
+                NodeInputWithLayout {
+                    size: usize::MAX,
+                    align: usize::MAX,
+                    input
+                }
+            })
+            .collect()
+    }
+
+    fn _fallback_resolve_constructor_infer_type(
+        &mut self,
+        body: SerialBodyOrInlineTuple,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInput> {
+        match body {
+            SerialBodyOrInlineTuple::InlineTuple { items } => {
+                items.into_iter().map(|item| {
+                    self.resolve_value_via_head(item, &RustType::unknown(), node_name, field_name)
+                }).collect()
+            },
+            SerialBodyOrInlineTuple::SerialBody(SerialBody::None) => Vec::new(),
+            SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items)) => {
+                tuple_items.into_iter().map(|tuple_item| {
+                    // ??? if creating the rust type here is correct. Maybe this is why we clone in the other place...
+                    let rust_type = self.resolve_type3(tuple_item.rust_type);
+                    self.resolve_value(
+                        (tuple_item.value, tuple_item.value_children),
+                        &rust_type,
+                        node_name,
+                        field_name
+                    )
+                }).collect()
+            }
+            SerialBodyOrInlineTuple::SerialBody(SerialBody::Fields(fields)) => {
+                fields.into_iter().map(|field| {
+                    // ??? if creating the rust type here is correct. Maybe this is why we clone in the other place...
+                    let rust_type = self.resolve_type3(field.rust_type);
+                    self.resolve_value(
+                        (field.value, field.value_children),
+                        &rust_type,
+                        node_name,
+                        field_name
+                    )
+                }).collect()
+            }
+        }
+    }
+
+    fn resolve_struct_constructor_with_type(
+        &mut self,
+        rust_type: StructuralRustType,
+        body: SerialBodyOrInlineTuple,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInputWithLayout> {
+        let type_name = rust_type.type_name;
+        match rust_type.structure {
+            TypeStructure::CReprStruct { body: type_body } => {
+                self.resolve_constructor_with_type(type_body, &type_name, body, node_name, field_name)
+            },
+            _ => {
+                self.errors.push(GraphFormError::RustTypeNotStructFromConstructor {
+                    // The one time we don't have to clone because we consume rust_type...
+                    type_name,
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
+            }
+        }
+    }
+
+    fn resolve_enum_constructor_with_type(
+        &mut self,
+        rust_type: StructuralRustType,
+        variant_name: String,
+        body: SerialBodyOrInlineTuple,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInputWithLayout> {
+        let type_name = rust_type.type_name;
+        match rust_type.structure {
+            TypeStructure::CReprEnum { variants } => {
+                match variants.into_iter().find(|variant| &variant.name == &variant_name) {
+                    None => {
+                        self.errors.push(GraphFormError::EnumVariantNotFound {
+                            type_name,
+                            variant_name,
+                            referenced_from: NodeNameFieldName {
+                                node_name: node_name.to_string(),
+                                field_name: field_name.to_string()
+                            }
+                        });
+                        self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
+                    }
+                    Some(variant) => {
+                        self.resolve_constructor_with_type(
+                            variant.body,
+                            &type_name,
+                            body,
+                            node_name,
+                            field_name
+                        )
+                    }
+                }
+            },
+            _ => {
+                self.errors.push(GraphFormError::RustTypeNotEnumFromConstructor {
+                    // The one time we don't have to clone because we consume rust_type...
+                    // (other because of not abstracting)
+                    type_name,
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
+            }
+        }
+    }
+
+    fn resolve_constructor_with_type(
+        &mut self,
+        type_body: TypeStructBody,
+        type_name: &str,
+        body: SerialBodyOrInlineTuple,
+        node_name: &str,
+        field_name: &str
+    ) -> Vec<NodeInputWithLayout> {
+        match (type_body, body) {
+            (TypeStructBody::None, SerialBodyOrInlineTuple::SerialBody(SerialBody::None)) => Vec::new(),
+            (TypeStructBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items))) => {
+                if tuple_item_types.len() != tuple_items.len() {
+                    self.errors.push(GraphFormError::TupleLengthMismatch {
+                        inferred_length: tuple_items.len(),
+                        type_length: tuple_item_types.len(),
+                        type_name: type_name.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                zip(tuple_item_types.into_iter(), tuple_items.into_iter()).map(|(tuple_item_type, tuple_item)| {
+                    self.resolve_value_child(
+                        (tuple_item.value, tuple_item.value_children),
+                        (Some(tuple_item_type), tuple_item.rust_type),
+                        node_name,
+                        field_name
+                    )
+                }).collect()
+            }
+            (TypeStructBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::InlineTuple { items }) => {
+                if tuple_item_types.len() != items.len() {
+                    self.errors.push(GraphFormError::TupleLengthMismatch {
+                        inferred_length: items.len(),
+                        type_length: tuple_item_types.len(),
+                        type_name: type_name.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                zip(tuple_item_types.into_iter(), items.into_iter()).map(|(tuple_item_type, item)| {
+                    self.resolve_value_child(
+                        (Some(item), SerialBody::None),
+                        (Some(tuple_item_type), None),
+                        node_name,
+                        field_name
+                    )
+                }).collect()
+            }
+            (TypeStructBody::Fields(field_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Fields(mut fields))) => {
+                for field in &fields {
+                    if !field_types.iter().any(|field_type| &field_type.name == &field.name) {
+                        self.errors.push(GraphFormError::RustFieldNotFound {
+                            field_name: field.name.to_string(),
+                            type_name: type_name.to_string(),
+                            referenced_from: NodeNameFieldName {
+                                node_name: node_name.to_string(),
+                                field_name: field_name.to_string()
+                            }
+                        });
+                    }
+                }
+                field_types.into_iter().map(|field_type| {
+                    let fields = fields
+                        .drain_filter(|field| &field.name == &field_type.name)
+                        .collect::<SmallVec<[SerialField; 1]>>();
+                    if fields.len() > 1 {
+                        self.errors.push(GraphFormError::RustFieldMultipleOccurrences {
+                            field_name: field_type.name.to_string(),
+                            referenced_from: NodeNameFieldName {
+                                node_name: node_name.to_string(),
+                                field_name: field_name.to_string()
+                            }
+                        });
+                    }
+                    let field = fields.into_iter().next();
+                    let field_type = field_type.rust_type;
+
+                    match field {
+                        None => NodeInputWithLayout {
+                            // idk what to put for the default size.
+                            // It shouldn't build with holes which aren't filled by default values anyways,
+                            // so I don't think it matters, but usize::MAX may trigger a panic overflow
+                            size: field_type.infer_size().unwrap_or(usize::MAX),
+                            align: field_type.infer_align().unwrap_or(usize::MAX),
+                            input: NodeInput::Hole
+                        },
+                        Some(field) => {
+                            self.resolve_value_child(
+                                (field.value, field.value_children),
+                                (Some(field_type), field.rust_type),
+                                node_name,
+                                field_name
+                            )
+                        }
+                    }
+                }).collect()
+            },
+            (type_body, body) => {
+                self.errors.push(GraphFormError::RustTypeConstructorBadForm {
+                    expected_form: type_body.form(),
+                    actual_form: body.form(),
+                    type_name: type_name.to_string(),
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
+            }
+        }
+    }
+
+    fn resolve_tuple_via_head(
+        &mut self,
+        tuple_elems: Vec<SerialValueHead>,
+        rust_type: &RustType,
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInput {
+        NodeInput::Tuple(tuple_elems.into_iter().enumerate().map(|(index, elem)| {
+            self.resolve_tuple_child(index, (Some(elem), SerialBody::None), (rust_type, None), node_name, field_name)
+        }).collect())
     }
 
     fn resolve_value_via_children(&mut self, value: SerialBody, rust_type: &RustType, node_name: &str, field_name: &str) -> NodeInput {
@@ -696,54 +1139,128 @@ impl<'a> GraphBuilder<'a> {
             SerialBody::None => NodeInput::Hole,
             SerialBody::Tuple(tuple_items) => {
                 NodeInput::Tuple(tuple_items.into_iter().enumerate().map(|(index, tuple_item)| {
-                    self.resolve_value_child(index, (tuple_item.value, tuple_item.value_children), (rust_type, tuple_item.rust_type), node_name, field_name)
+                    self.resolve_tuple_struct_child(index, (tuple_item.value, tuple_item.value_children), (rust_type, tuple_item.rust_type), node_name, field_name)
                 }).collect())
             }
             SerialBody::Fields(fields) => {
-                // field names are ignored in the input, and the data is equivalent to a tuple or unnamed struct
-                NodeInput::Tuple(fields.into_iter().enumerate().map(|(index, field)| {
-                    self.resolve_value_child(index, (field.value, field.value_children), (rust_type, field.rust_type), node_name, field_name)
+                NodeInput::Tuple(fields.into_iter().map(|field| {
+                    self.resolve_field_struct_child(&field.name, (field.value, field.value_children), (rust_type, field.rust_type), node_name, field_name)
                 }).collect())
             }
         }
     }
 
-    fn resolve_value_child(
+    fn resolve_tuple_child(
         &mut self,
-        index: usize,
+        elem_index: usize,
         (elem, elem_children): (Option<SerialValueHead>, SerialBody),
         (rust_type, explicit_elem_type): (&RustType, Option<SerialRustType>),
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInputWithLayout {
+        let inferred_elem_type = if let TypeStructure::Tuple { elements } = rust_type.structure() {
+            elements.get(elem_index).cloned()
+        } else {
+            None
+        };
+        self.resolve_value_child(
+            (elem, elem_children),
+            (inferred_elem_type, explicit_elem_type),
+            node_name,
+            field_name
+        )
+    }
+
+    fn resolve_tuple_struct_child(
+        &mut self,
+        elem_index: usize,
+        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
+        (rust_type, explicit_elem_type): (&RustType, Option<SerialRustType>),
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInputWithLayout {
+        let inferred_elem_type = if let TypeStructure::CReprStruct {
+            body: TypeStructBody::Tuple(elements)
+        } = rust_type.structure() {
+            elements.get(elem_index).cloned()
+        } else {
+            None
+        };
+        self.resolve_value_child(
+            (elem, elem_children),
+            (inferred_elem_type, explicit_elem_type),
+            node_name,
+            field_name
+        )
+    }
+
+    fn resolve_field_struct_child(
+        &mut self,
+        elem_field_name: &str,
+        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
+        (rust_type, explicit_elem_type): (&RustType, Option<SerialRustType>),
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInputWithLayout {
+        let inferred_elem_type = if let TypeStructure::CReprStruct {
+            body: TypeStructBody::Fields(fields)
+        } = rust_type.structure() {
+            fields.iter()
+                .find(|field| &field.name == elem_field_name)
+                .map(|field| field.rust_type.clone())
+        } else {
+            None
+        };
+        self.resolve_value_child(
+            (elem, elem_children),
+            (inferred_elem_type, explicit_elem_type),
+            node_name,
+            field_name
+        )
+    }
+
+    fn resolve_value_child(
+        &mut self,
+        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
+        (inferred_elem_type, explicit_elem_type): (Option<RustType>, Option<SerialRustType>),
         node_name: &str,
         field_name: &str
     ) -> NodeInputWithLayout {
         let explicit_elem_type = explicit_elem_type.map(|explicit_elem_type| {
             self.resolve_type2(explicit_elem_type)
         });
-        let inferred_type_by_field_type = match rust_type.structure() {
-            TypeStructure::Tuple { elements } => elements.get(index).cloned(),
-            _ => None
-        };
-        let inferred_type_by_elem = RustType::Structural(self.infer_type_structurally((elem.as_ref(), &elem_children)));
-        let inferred_type_without_explicit = match inferred_type_by_field_type {
-            None => inferred_type_by_elem,
-            Some(mut inferred_type_by_field_type) => {
-                inferred_type_by_field_type.refine_from(inferred_type_by_elem);
-                inferred_type_by_field_type
+        let rough_inferred_elem_type = RustType::Structural(self.infer_type_structurally((elem.as_ref(), &elem_children)));
+        let inferred_elem_type = match inferred_elem_type {
+            None => rough_inferred_elem_type,
+            Some(mut provided_elem_type) => {
+                provided_elem_type.refine_from(rough_inferred_elem_type);
+                provided_elem_type
             }
         };
-        let inferred_type = match explicit_elem_type {
-            None => inferred_type_without_explicit,
-            Some(mut explicit_type) => {
-                explicit_type.refine_from(inferred_type_without_explicit);
-                explicit_type
+        let elem_type = match explicit_elem_type {
+            None => inferred_elem_type,
+            Some(mut explicit_elem_type) => {
+                if inferred_elem_type.is_rough_subtype_of(&explicit_elem_type) == IsSubtypeOf::No ||
+                    explicit_elem_type.is_rough_subtype_of(&inferred_elem_type) == IsSubtypeOf::No {
+                    self.errors.push(GraphFormError::NestedValueTypeMismatch {
+                        inferred_type_name: inferred_elem_type.to_string(),
+                        explicit_type_name: explicit_elem_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                explicit_elem_type.refine_from(inferred_elem_type);
+                explicit_elem_type
             }
         };
-        let inferred_size = inferred_type.infer_size();
-        let inferred_align = inferred_type.infer_align();
+        let inferred_size = elem_type.infer_size();
+        let inferred_align = elem_type.infer_align();
 
         if inferred_size.is_none() || inferred_align.is_none() {
-            self.errors.push(GraphFormError::TupleElemLayoutNotResolved {
-                inferred_type: inferred_type.to_string(),
+            self.errors.push(GraphFormError::ElemLayoutNotResolved {
+                inferred_type: elem_type.to_string(),
                 referenced_from: NodeNameFieldName {
                     node_name: node_name.to_string(),
                     field_name: field_name.to_string()
@@ -752,7 +1269,7 @@ impl<'a> GraphBuilder<'a> {
         }
         let size = inferred_size.unwrap_or(0);
         let align = inferred_align.unwrap_or(0);
-        let input = self.resolve_value((elem, elem_children), rust_type, node_name, field_name);
+        let input = self.resolve_value((elem, elem_children), &elem_type, node_name, field_name);
         NodeInputWithLayout { input, size, align }
     }
 
