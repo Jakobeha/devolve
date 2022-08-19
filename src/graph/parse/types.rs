@@ -119,6 +119,24 @@ impl SerialNode {
     }
 }
 
+impl SerialRustType {
+    pub fn unknown() -> Self {
+        SerialRustType::Ident {
+            name: "{unknown}".to_string(),
+            generic_args: Vec::new()
+        }
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        match self {
+            SerialRustType::Ident { name, generic_args: _ } => {
+                name.starts_with('{') && name.ends_with('}')
+            }
+            _ => false
+        }
+    }
+}
+
 impl Default for SerialBody {
     fn default() -> Self {
         SerialBody::None

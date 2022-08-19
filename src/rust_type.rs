@@ -193,7 +193,7 @@ impl RustType {
         RustType::Structural(StructuralRustType::unknown())
     }
 
-    pub fn structural(&self) -> StructuralRustType {
+    pub fn clone_structural(&self) -> StructuralRustType {
         match self {
             RustType::Structural(st) => st.clone(),
             RustType::Known(known) => StructuralRustType {
@@ -203,6 +203,21 @@ impl RustType {
                 structure: known.structure.clone()
             }
         }
+    }
+
+    pub fn structure(&self) -> &TypeStructure {
+        match self {
+            RustType::Structural(st) => &st.structure,
+            RustType::Known(known) => &known.structure
+        }
+    }
+
+    pub fn array_elem_type(&self) -> Option<&RustType> {
+        self.structure().array_elem_type()
+    }
+
+    pub fn tuple_elem_types(&self) -> Option<&Vec<RustType>> {
+        self.structure().tuple_elem_types()
     }
 }
 
@@ -249,6 +264,22 @@ impl StructuralRustType {
             size: Some(size_of::<String>()),
             align: Some(align_of::<String>()),
             structure: TypeStructure::Opaque
+        }
+    }
+}
+
+impl TypeStructure {
+    pub fn array_elem_type(&self) -> Option<&RustType> {
+        match self {
+            TypeStructure::Array { elem, .. } => Some(elem),
+            _ => None
+        }
+    }
+
+    pub fn tuple_elem_types(&self) -> Option<&Vec<RustType>> {
+        match self {
+            TypeStructure::Tuple { elements } => Some(elements),
+            _ => None
         }
     }
 }

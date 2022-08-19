@@ -26,6 +26,13 @@ impl ParenType {
         open: '<',
         close: '>'
     };
+
+    pub const ALL_IN_RUST: [ParenType; 4] = [
+        ParenType::PAREN,
+        ParenType::BRACKET,
+        ParenType::BRACE,
+        ParenType::ANGLE
+    ];
 }
 
 pub struct Iter<'a, 'b> {
@@ -46,7 +53,7 @@ impl SplitBalanced for str {
 }
 
 impl<'a, 'b> Iter<'a, 'b> {
-    fn new<'a, 'b>(str: &'a str, delimiter: char, paren_types: &'b [ParenType]) -> Iter {
+    fn new(str: &'a str, delimiter: char, paren_types: &'b [ParenType]) -> Self {
         Iter {
             str,
             delimiter,
@@ -70,7 +77,7 @@ impl<'a, 'b> Iterator for Iter<'a, 'b> {
                 // Skip over char
                 self.str = &right[1..];
                 return Some(left);
-            } else if level.last() == Some(char) {
+            } else if level.last().copied() == Some(char) {
                 level.pop();
             } else {
                 for paren_type in self.paren_types {

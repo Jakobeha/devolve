@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::iter::empty;
 use std::ops::{Index, IndexMut};
 
 use slab::Slab;
@@ -7,8 +8,10 @@ pub use node::*;
 
 use crate::graph::error::{GraphFormErrors, GraphValidationError, GraphValidationErrors, NodeCycle};
 use crate::graph::mutable::build::GraphBuilder;
+use crate::graph::mutable::serialize::GraphSerializer;
 use crate::graph::parse::types::SerialGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
+use crate::rust_type::StructuralRustType;
 
 mod node;
 mod build;
@@ -118,7 +121,13 @@ impl TryFrom<SerialGraph> for MutableGraph {
 
 impl Into<SerialGraph> for MutableGraph {
     fn into(self) -> SerialGraph {
-        GraphSerializer::serialize(self)
+        GraphSerializer::serialize(self, empty())
+    }
+}
+
+impl<'a> Into<SerialGraph> for (MutableGraph, &'a [StructuralRustType]) {
+    fn into(self) -> SerialGraph {
+        GraphSerializer::serialize(self.0, self.1.into_iter())
     }
 }
 // endregion

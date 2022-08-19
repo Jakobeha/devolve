@@ -7,7 +7,7 @@ use crate::graph::mutable::NodeTypeName;
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialFieldElem, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
 use crate::misc::extract::extract;
 
-struct SerialNodeDep<'a> {
+pub struct SerialNodeDep<'a> {
     pub node_ident: &'a str,
     pub field_ident: &'a str
 }

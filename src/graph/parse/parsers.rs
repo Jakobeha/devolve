@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::num::{ParseIntError, ParseFloatError};
@@ -141,13 +140,6 @@ impl SerialGraph {
             Ok(graph)
         } else {
             Err(errors)
-        }
-    }
-
-    fn new() -> Self {
-        SerialGraph {
-            rust_types: HashMap::new(),
-            nodes: HashMap::new()
         }
     }
 }

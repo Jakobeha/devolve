@@ -485,7 +485,7 @@ impl<'a> GraphBuilder<'a> {
                 Some(node_type) => match node_type.outputs.iter().find(|io_type| &io_type.name == field_ident) {
                     // Error will show up later
                     None => StructuralRustType::unknown(),
-                    Some(io_type) => io_type.rust_type.structural()
+                    Some(io_type) => io_type.rust_type.clone_structural()
                 }
             },
             Some(SerialValueHead::Tuple(elements)) => {
@@ -719,7 +719,7 @@ impl<'a> GraphBuilder<'a> {
         let explicit_elem_type = explicit_elem_type.map(|explicit_elem_type| {
             self.resolve_type2(explicit_elem_type)
         });
-        let inferred_type_by_field_type = match rust_type.structural().structure {
+        let inferred_type_by_field_type = match rust_type.structure() {
             TypeStructure::Tuple { elements } => elements.get(index).cloned(),
             _ => None
         };
