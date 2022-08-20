@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
-use std::iter::zip;
+use std::iter::{repeat_with, zip};
 use std::mem::size_of;
-use log::error;
+use log::{error, warn};
 use join_lazy_fmt::Join;
 use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData, NodeTypeName};
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialType, SerialTypeBody, SerialValueHead};
@@ -385,18 +385,43 @@ impl GraphSerializer {
                     }
                 }).collect()))
             }
-            NodeInput::Tuple(tuple_items) => {
-                let tuple_elem_types = rust_type.tuple_elem_types();
-                (None, SerialBody::Tuple(tuple_items.iter().enumerate().map(|(index, NodeInputWithLayout { input: elem, size: _, align: _ })| {
-                    let tuple_elem_type = tuple_elem_types.map(|tuple_elem_types| &tuple_elem_types[index]);
-                    let rust_type = tuple_elem_type.and_then(|tuple_elem_type| self.serialize_rust_type(tuple_elem_type));
-                    let (value, value_children) = self.serialize_node_value(elem, tuple_elem_type.unwrap_or(&RustType::unknown()));
-                    SerialTupleItem {
-                        rust_type,
-                        value,
-                        value_children
+            NodeInput::Tuple(tuple_items) => match rust_type.structure() {
+                TypeStructure::CReprStruct { body: body_type } => {
+                    let head = SerialValueHead::Struct {
+                        type_name: rust_type.to_string(),
+                        inline_params: None
+                    };
+                    let body = self.serialize_body(body_type, tuple_items);
+                    (Some(head), body)
+                }
+                TypeStructure::CReprEnum { variants } => {
+                    if variants.len() == 0 {
+                        error!("deserialized 'bottom' value, something is clearly wrong");
+                        return (None, SerialBody::None);
+                    } else if variants.len() != 1 {
+                        warn!("deserializing tuple with multiple variants, don't know which one to pick");
                     }
-                }).collect()))
+                    let variant_type = &variants[0];
+
+                    let head = SerialValueHead::Enum {
+                        type_name: rust_type.to_string(),
+                        variant_name: variant_type.name.clone(),
+                        inline_params: None
+                    };
+                    let body = self.serialize_body(&variant_type.body, tuple_items);
+                    (Some(head), body)
+                }
+                TypeStructure::Tuple { elements: tuple_item_types } => {
+                    let body = self.serialize_tuple_body(tuple_item_types, tuple_items);
+                    (None, body)
+                }
+                _ => {
+                    warn!("deserializing tuple with unknown item types");
+                    let mut tuple_item_types = Vec::with_capacity(tuple_items.len());
+                    tuple_item_types.extend(repeat_with(RustType::unknown).take(tuple_items.len()));
+                    let body = self.serialize_tuple_body(&tuple_item_types, tuple_items);
+                    (None, body)
+                }
             }
         }
     }
@@ -582,5 +607,42 @@ impl GraphSerializer {
             elems.push(mk_serial_elem(elem_rust_type, elem_value, elem_value_children, elem_assoc));
         }
         Some(elems)
+    }
+
+    fn serialize_body(&mut self, body_type: &TypeStructBody, tuple_items: &[NodeInputWithLayout]) -> SerialBody {
+        match body_type {
+            TypeStructBody::None => SerialBody::None,
+            TypeStructBody::Tuple(tuple_item_types) => {
+                self.serialize_tuple_body(tuple_item_types, tuple_items)
+            }
+            TypeStructBody::Fields(field_types) => {
+                self.serialize_field_body(field_types, tuple_items)
+            }
+        }
+    }
+
+    fn serialize_tuple_body(&mut self, tuple_item_types: &[RustType], tuple_items: &[NodeInputWithLayout]) -> SerialBody {
+        SerialBody::Tuple(zip(tuple_item_types.iter(), tuple_items.iter()).map(|(tuple_item_type, NodeInputWithLayout { input: tuple_item, .. })| {
+            let rust_type = self.serialize_rust_type(tuple_item_type);
+            let (value, value_children) = self.serialize_node_value(tuple_item, tuple_item_type);
+            SerialTupleItem {
+                rust_type,
+                value,
+                value_children
+            }
+        }).collect())
+    }
+
+    fn serialize_field_body(&mut self, field_types: &[TypeStructField], fields: &[NodeInputWithLayout]) -> SerialBody {
+        SerialBody::Fields(zip(field_types.iter(), fields.iter()).map(|(field_type, NodeInputWithLayout { input: field, .. })| {
+            let rust_type = self.serialize_rust_type(&field_type.rust_type);
+            let (value, value_children) = self.serialize_node_value(field, &field_type.rust_type);
+            SerialField {
+                name: field_type.name.clone(),
+                rust_type,
+                value,
+                value_children
+            }
+        }).collect())
     }
 }
