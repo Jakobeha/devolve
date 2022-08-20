@@ -232,12 +232,27 @@ impl RustType {
         }
     }
 
-    pub fn array_elem_type(&self) -> Option<&RustType> {
-        self.structure().array_elem_type()
+    pub fn into_structure(self) -> TypeStructure {
+        match self {
+            RustType::Structural(st) => st.structure,
+            RustType::Known(known) => known.structure
+        }
+    }
+
+    pub fn array_elem_type_and_length(&self) -> Option<(&RustType, usize)> {
+        self.structure().array_elem_type_and_length()
     }
 
     pub fn tuple_elem_types(&self) -> Option<&Vec<RustType>> {
         self.structure().tuple_elem_types()
+    }
+
+    pub fn tuple_struct_tuple_item_types(&self) -> Option<&Vec<RustType>> {
+        self.structure().tuple_struct_tuple_item_types()
+    }
+
+    pub fn field_struct_field_types(&self) -> Option<&Vec<TypeStructField>> {
+        self.structure().field_struct_field_types()
     }
 }
 
@@ -289,9 +304,9 @@ impl StructuralRustType {
 }
 
 impl TypeStructure {
-    pub fn array_elem_type(&self) -> Option<&RustType> {
+    pub fn array_elem_type_and_length(&self) -> Option<(&RustType, usize)> {
         match self {
-            TypeStructure::Array { elem, .. } => Some(elem),
+            TypeStructure::Array { elem, length } => Some((elem, *length)),
             _ => None
         }
     }
@@ -299,6 +314,20 @@ impl TypeStructure {
     pub fn tuple_elem_types(&self) -> Option<&Vec<RustType>> {
         match self {
             TypeStructure::Tuple { elements } => Some(elements),
+            _ => None
+        }
+    }
+
+    pub fn tuple_struct_tuple_item_types(&self) -> Option<&Vec<RustType>> {
+        match self {
+            TypeStructure::CReprStruct { body: TypeStructBody::Tuple(tuple_items) } => Some(tuple_items),
+            _ => None
+        }
+    }
+
+    pub fn field_struct_field_types(&self) -> Option<&Vec<TypeStructField>> {
+        match self {
+            TypeStructure::CReprStruct { body: TypeStructBody::Fields(fields) } => Some(fields),
             _ => None
         }
     }

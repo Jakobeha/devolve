@@ -37,7 +37,7 @@ pub enum SerialBody {
 }
 
 pub struct SerialTupleItem {
-    // TODO: Allow rust type?
+    // TODO: Allow rust type here?
     pub rust_type: Option<SerialRustType>,
     pub value: Option<SerialValueHead>,
     pub value_children: SerialBody

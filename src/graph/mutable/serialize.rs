@@ -95,11 +95,14 @@ impl GraphSerializer {
     }
 
     fn serialize_field(&mut self, field_type: &NodeIOType, field_value: &NodeInput) -> SerialField {
-        let (value, value_children) = self.serialize_node_value(field_value, &field_type.rust_type);
+        let (mut value, mut value_children) = self.serialize_node_value(field_value, &field_type.rust_type);
+        self.inline_value_if_small_enough((&mut value, &mut value_children));
+        let rust_type = self.elide_type_if_trivial((value.as_ref(), &value_children), |this| {
+            this.serialize_rust_type(&field_type.rust_type)
+        });
         SerialField {
             name: field_type.name.to_string(),
-            // TODO: elide type if trivial (e.g. a constant), currently we only elide if we have no idea
-            rust_type: self.serialize_rust_type(&field_type.rust_type),
+            rust_type,
             value,
             value_children
         }
@@ -355,7 +358,6 @@ impl GraphSerializer {
     }
 
     fn serialize_node_value(&mut self, node_value: &NodeInput, rust_type: &RustType) -> (Option<SerialValueHead>, SerialBody) {
-        // TODO: Serialize inline tuple / array types if small enough (after calling this we can check by printing)
         match node_value {
             NodeInput::Hole => (None, SerialBody::None),
             NodeInput::Dep(dep) => {
@@ -374,7 +376,12 @@ impl GraphSerializer {
                 self.serialize_constant(constant_data, rust_type)
             }
             NodeInput::Array(elems) => {
-                let array_elem_type = rust_type.array_elem_type();
+                let array_elem_type = rust_type.array_elem_type_and_length().map(|(array_elem_type, length)| {
+                    if length != elems.len() {
+                        error!("array length mismatch: {} != {}", length, elems.len());
+                    }
+                    array_elem_type
+                });
                 (None, SerialBody::Tuple(elems.iter().map(|elem| {
                     let rust_type = array_elem_type.and_then(|array_elem_type| self.serialize_rust_type(array_elem_type));
                     let (value, value_children) = self.serialize_node_value(elem, array_elem_type.unwrap_or(&RustType::unknown()));
@@ -644,5 +651,60 @@ impl GraphSerializer {
                 value_children
             }
         }).collect())
+    }
+
+    fn inline_value_if_small_enough(
+        &self,
+        (_value, _value_children): (&mut Option<SerialValueHead>, &mut SerialBody)
+    ) {
+        // TODO
+    }
+
+    fn elide_type_if_trivial(
+        &mut self,
+        (value, value_children): (Option<&SerialValueHead>, &SerialBody),
+        get_type: impl FnOnce(&mut Self) -> Option<SerialRustType>
+    ) -> Option<SerialRustType> {
+        if self.is_type_trivial((value, value_children)) {
+            None
+        } else {
+            get_type(self)
+        }
+    }
+
+    fn is_type_trivial(&self, (value, value_children): (Option<&SerialValueHead>, &SerialBody)) -> bool {
+        match value {
+            Some(SerialValueHead::Integer(_)) |
+            Some(SerialValueHead::Float(_)) |
+            Some(SerialValueHead::String(_)) |
+            Some(SerialValueHead::Struct { .. }) |
+            Some(SerialValueHead::Enum { .. }) => true,
+            Some(SerialValueHead::Ref { .. }) => false,
+            Some(SerialValueHead::Tuple(tuple_items)) => {
+                tuple_items.iter().all(|tuple_item| {
+                    self.is_type_trivial((Some(tuple_item), &SerialBody::None))
+                })
+            },
+            Some(SerialValueHead::Array(array_items)) => {
+                array_items.iter().any(|array_item| {
+                    self.is_type_trivial((Some(array_item), &SerialBody::None))
+                })
+            },
+            None => match value_children {
+                SerialBody::None => false,
+                SerialBody::Tuple(tuple_items) => {
+                    tuple_items.iter().all(|tuple_item| {
+                        tuple_item.rust_type.is_some() ||
+                            self.is_type_trivial((tuple_item.value.as_ref(), &tuple_item.value_children))
+                    })
+                },
+                SerialBody::Fields(fields) => {
+                    fields.iter().all(|field| {
+                        field.rust_type.is_some() ||
+                            self.is_type_trivial((field.value.as_ref(), &field.value_children))
+                    })
+                }
+            }
+        }
     }
 }

@@ -152,9 +152,23 @@ pub enum GraphFormError {
     },
     #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structura", name)]
     TypeConflictsWithBuiltinType { #[error(not(source))] name: String },
-    #[display(fmt = "type mismatch, lengths of tuples are different: got {} expected {} (for type {}, referenced in {})", inferred_length, type_length, type_name, referenced_from)]
+    #[display(fmt = "type mismatch, lengths of arrays are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, type_name, referenced_from)]
+    ArrayLengthMismatch {
+        actual_length: usize,
+        type_length: usize,
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "type mismatch, lengths of tuples are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, type_name, referenced_from)]
     TupleLengthMismatch {
-        inferred_length: usize,
+        actual_length: usize,
+        type_length: usize,
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "type mismatch, lengths of tuples or structs are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, type_name, referenced_from)]
+    TupleOrTupleStructLengthMismatch {
+        actual_length: usize,
         type_length: usize,
         type_name: String,
         referenced_from: NodeNameFieldName
@@ -170,12 +184,32 @@ pub enum GraphFormError {
         field_name: String,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "type mismatch: value is {}, type is {}. Note that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name)]
+    #[display(fmt = "not a tuple (type = {}, referenced in {})", type_name, referenced_from)]
+    NotATuple {
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "not a tuple or tuple struct (type = {}, referenced in {})", type_name, referenced_from)]
+    NotATupleOrTupleStruct {
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "not a field struct (type = {}, referenced in {})", type_name, referenced_from)]
+    NotAFieldStruct {
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "not an array (type = {}, referenced in {})", type_name, referenced_from)]
+    NotAnArray {
+        type_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "type mismatch: value is {}, type is {}\nNote that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name)]
     ValueTypeMismatch {
         inferred_type_name: String,
         explicit_type_name: String
     },
-    #[display(fmt = "type mismatch: value is {}, type is {}. Note that if the type names are the same, the contents are still different (referenced in {})", inferred_type_name, explicit_type_name, referenced_from)]
+    #[display(fmt = "type mismatch: value is {}, type is {} (referenced in {})\nNote that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name, referenced_from)]
     NestedValueTypeMismatch {
         inferred_type_name: String,
         explicit_type_name: String,

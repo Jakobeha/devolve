@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
 use std::mem::{align_of, size_of, take};
@@ -359,7 +360,7 @@ impl<'a> GraphBuilder<'a> {
             field.rust_type,
             (field.value.as_ref(), &field.value_children),
         );
-        let value = self.resolve_value((field.value, field.value_children), &rust_type, node_name, &field.name);
+        let value = self.resolve_value((field.value, field.value_children), Cow::Borrowed(&rust_type), node_name, &field.name);
         let io_type = NodeIOType {
             name: field.name,
             rust_type
@@ -494,10 +495,10 @@ impl<'a> GraphBuilder<'a> {
             Some(SerialValueHead::Integer(_)) => StructuralRustType::i64(),
             Some(SerialValueHead::Float(_)) => StructuralRustType::f64(),
             Some(SerialValueHead::String(_)) => StructuralRustType::string(),
-            Some(SerialValueHead::Ref { node_name: node_ident, field_name: field_ident }) => match self.resolved_node_type(node_ident) {
+            Some(SerialValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name }) => match self.resolved_node_type(refd_node_name) {
                 // Error will show up later
                 None => StructuralRustType::unknown(),
-                Some(node_type) => match node_type.outputs.iter().find(|io_type| &io_type.name == field_ident) {
+                Some(node_type) => match node_type.outputs.iter().find(|io_type| &io_type.name == refd_field_name) {
                     // Error will show up later
                     None => StructuralRustType::unknown(),
                     Some(io_type) => io_type.rust_type.clone_structural()
@@ -669,8 +670,7 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_value(
         &mut self,
         (value, value_children): (Option<SerialValueHead>, SerialBody),
-        // TODO: Make rust_type a Cow
-        rust_type: &RustType,
+        rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> NodeInput {
@@ -701,7 +701,7 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_value_via_head(
         &mut self,
         value: SerialValueHead,
-        rust_type: &RustType,
+        rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> NodeInput {
@@ -709,51 +709,11 @@ impl<'a> GraphBuilder<'a> {
             SerialValueHead::Integer(int) => NodeInput::Const(Box::new(int.to_ne_bytes())),
             SerialValueHead::Float(float) => NodeInput::Const(Box::new(float.to_ne_bytes())),
             SerialValueHead::String(string) => NodeInput::Const(string.into_boxed_str().into_boxed_bytes()),
-            SerialValueHead::Ref { node_name: node_ident, field_name: field_ident } => {
-                let (node_id, idx) = match self.resolved_node_and_type(&node_ident) {
-                    None => {
-                        self.errors.push(GraphFormError::NodeNotFound {
-                            node_name: node_ident.to_string(),
-                            referenced_from: NodeNameFieldName {
-                                node_name: node_name.to_string(),
-                                field_name: field_name.to_string()
-                            }
-                        });
-                        (None, None)
-                    },
-                    Some((node_id, node_type, _)) => (
-                        Some(*node_id),
-                        match node_type.outputs.iter().position(|output| output.name == field_ident) {
-                            None => {
-                                self.errors.push(GraphFormError::NodeFieldNotFound {
-                                    field_name: field_ident.to_string(),
-                                    node_name: node_ident.to_string(),
-                                    referenced_from: NodeNameFieldName {
-                                        node_name: node_name.to_string(),
-                                        field_name: field_name.to_string()
-                                    }
-                                });
-                                None
-                            }
-                            Some(idx) => Some(idx)
-                        }
-                    )
-                };
-                NodeInput::Dep(if node_id == Some(NodeId(usize::MAX)) {
-                    NodeInputDep::GraphInput {
-                        idx: idx.unwrap_or(usize::MAX)
-                    }
-                } else {
-                    NodeInputDep::OtherNodeOutput {
-                        id: node_id.unwrap_or(NodeId(usize::MAX)),
-                        idx: idx.unwrap_or(usize::MAX)
-                    }
-                })
+            SerialValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name } => {
+                self.resolve_ref(refd_node_name, refd_field_name, node_name, field_name)
             }
             SerialValueHead::Array(elems) => {
-                NodeInput::Array(elems.into_iter().map(|elem| {
-                    self.resolve_value_via_head(elem, rust_type, node_name, field_name)
-                }).collect())
+                self.resolve_array_via_head(elems, rust_type, node_name, field_name)
             }
             SerialValueHead::Tuple(elems) => {
                 self.resolve_tuple_via_head(elems, rust_type, node_name, field_name)
@@ -789,7 +749,7 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         type_name: String,
         body: SerialBodyOrInlineTuple,
-        rust_type: &RustType,
+        rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
@@ -822,7 +782,7 @@ impl<'a> GraphBuilder<'a> {
                     });
                 }
                 let mut final_rust_type = explicit_rust_type.clone();
-                final_rust_type.structure.refine_from(rust_type.structure().clone());
+                final_rust_type.structure.refine_from(rust_type.into_owned().into_structure());
                 self.resolve_struct_constructor_with_type(final_rust_type, body, node_name, field_name)
             }
         }
@@ -833,7 +793,7 @@ impl<'a> GraphBuilder<'a> {
         type_name: String,
         variant_name: String,
         body: SerialBodyOrInlineTuple,
-        rust_type: &RustType,
+        rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
@@ -866,7 +826,7 @@ impl<'a> GraphBuilder<'a> {
                     });
                 }
                 let mut final_rust_type = explicit_rust_type.clone();
-                final_rust_type.structure.refine_from(rust_type.structure().clone());
+                final_rust_type.structure.refine_from(rust_type.into_owned().into_structure());
                 self.resolve_enum_constructor_with_type(final_rust_type, variant_name, body, node_name, field_name)
             }
         }
@@ -900,7 +860,7 @@ impl<'a> GraphBuilder<'a> {
         match body {
             SerialBodyOrInlineTuple::InlineTuple { items } => {
                 items.into_iter().map(|item| {
-                    self.resolve_value_via_head(item, &RustType::unknown(), node_name, field_name)
+                    self.resolve_value_via_head(item, Cow::Owned(RustType::unknown()), node_name, field_name)
                 }).collect()
             },
             SerialBodyOrInlineTuple::SerialBody(SerialBody::None) => Vec::new(),
@@ -910,7 +870,7 @@ impl<'a> GraphBuilder<'a> {
                     let rust_type = self.resolve_type3(tuple_item.rust_type);
                     self.resolve_value(
                         (tuple_item.value, tuple_item.value_children),
-                        &rust_type,
+                        Cow::Owned(rust_type),
                         node_name,
                         field_name
                     )
@@ -922,7 +882,7 @@ impl<'a> GraphBuilder<'a> {
                     let rust_type = self.resolve_type3(field.rust_type);
                     self.resolve_value(
                         (field.value, field.value_children),
-                        &rust_type,
+                        Cow::Owned(rust_type),
                         node_name,
                         field_name
                     )
@@ -1019,7 +979,7 @@ impl<'a> GraphBuilder<'a> {
             (TypeStructBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items))) => {
                 if tuple_item_types.len() != tuple_items.len() {
                     self.errors.push(GraphFormError::TupleLengthMismatch {
-                        inferred_length: tuple_items.len(),
+                        actual_length: tuple_items.len(),
                         type_length: tuple_item_types.len(),
                         type_name: type_name.to_string(),
                         referenced_from: NodeNameFieldName {
@@ -1040,7 +1000,7 @@ impl<'a> GraphBuilder<'a> {
             (TypeStructBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::InlineTuple { items }) => {
                 if tuple_item_types.len() != items.len() {
                     self.errors.push(GraphFormError::TupleLengthMismatch {
-                        inferred_length: items.len(),
+                        actual_length: items.len(),
                         type_length: tuple_item_types.len(),
                         type_name: type_name.to_string(),
                         referenced_from: NodeNameFieldName {
@@ -1121,102 +1081,204 @@ impl<'a> GraphBuilder<'a> {
             }
         }
     }
+    
+    fn resolve_ref(
+        &mut self,
+        refd_node_name: String,
+        refd_field_name: String,
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInput {
+        let (node_id, idx) = match self.resolved_node_and_type(&refd_node_name) {
+            None => {
+                self.errors.push(GraphFormError::NodeNotFound {
+                    node_name: refd_node_name.to_string(),
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                (None, None)
+            },
+            Some((node_id, node_type, _)) => (
+                Some(*node_id),
+                match node_type.outputs.iter().position(|output| output.name == refd_field_name) {
+                    None => {
+                        self.errors.push(GraphFormError::NodeFieldNotFound {
+                            field_name: refd_field_name.to_string(),
+                            node_name: refd_node_name.to_string(),
+                            referenced_from: NodeNameFieldName {
+                                node_name: node_name.to_string(),
+                                field_name: field_name.to_string()
+                            }
+                        });
+                        None
+                    }
+                    Some(idx) => Some(idx)
+                }
+            )
+        };
+        NodeInput::Dep(if node_id == Some(NodeId(usize::MAX)) {
+            NodeInputDep::GraphInput {
+                idx: idx.unwrap_or(usize::MAX)
+            }
+        } else {
+            NodeInputDep::OtherNodeOutput {
+                id: node_id.unwrap_or(NodeId(usize::MAX)),
+                idx: idx.unwrap_or(usize::MAX)
+            }
+        })
+    }
+    
+    fn resolve_array_via_head(
+        &mut self,
+        elements: Vec<SerialValueHead>,
+        rust_type: Cow<'_, RustType>,
+        node_name: &str,
+        field_name: &str
+    ) -> NodeInput {
+        let elem_type = match rust_type.array_elem_type_and_length() {
+            None => {
+                self.errors.push(GraphFormError::NotAnArray {
+                    type_name: rust_type.to_string(),
+                    referenced_from: NodeNameFieldName {
+                        node_name: node_name.to_string(),
+                        field_name: field_name.to_string()
+                    }
+                });
+                Cow::Owned(RustType::unknown())
+            }
+            Some((elem_type, length)) => {
+                if length != elements.len() {
+                    self.errors.push(GraphFormError::TupleLengthMismatch {
+                        actual_length: elements.len(),
+                        type_length: length,
+                        type_name: rust_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
+                Cow::Borrowed(elem_type)
+            }
+        };
+        NodeInput::Array(elements.into_iter().map(|element| {
+            self.resolve_value_via_head(element, elem_type.clone(), node_name, field_name)
+        }).collect())
+    }
 
     fn resolve_tuple_via_head(
         &mut self,
         tuple_elems: Vec<SerialValueHead>,
-        rust_type: &RustType,
+        rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> NodeInput {
+        let elem_types = rust_type.tuple_elem_types();
+        if elem_types.is_none() {
+            self.errors.push(GraphFormError::NotATuple {
+                type_name: rust_type.to_string(),
+                referenced_from: NodeNameFieldName {
+                    node_name: node_name.to_string(),
+                    field_name: field_name.to_string()
+                }
+            });
+        } else if elem_types.unwrap().len() != tuple_elems.len() {
+            self.errors.push(GraphFormError::TupleLengthMismatch {
+                actual_length: tuple_elems.len(),
+                type_length: elem_types.unwrap().len(),
+                type_name: rust_type.to_string(),
+                referenced_from: NodeNameFieldName {
+                    node_name: node_name.to_string(),
+                    field_name: field_name.to_string()
+                }
+            });
+        }
         NodeInput::Tuple(tuple_elems.into_iter().enumerate().map(|(index, elem)| {
-            self.resolve_tuple_child(index, (Some(elem), SerialBody::None), (rust_type, None), node_name, field_name)
+            let elem_type = elem_types.map(|elem_types| elem_types[index].clone());
+            self.resolve_value_child(
+                (Some(elem), SerialBody::None), 
+                (elem_type, None), 
+                node_name, 
+                field_name
+            )
         }).collect())
     }
 
-    fn resolve_value_via_children(&mut self, value: SerialBody, rust_type: &RustType, node_name: &str, field_name: &str) -> NodeInput {
+    fn resolve_value_via_children(&mut self, value: SerialBody, rust_type: Cow<'_, RustType>, node_name: &str, field_name: &str) -> NodeInput {
         match value {
             SerialBody::None => NodeInput::Hole,
             SerialBody::Tuple(tuple_items) => {
+                let tuple_item_types = rust_type
+                    .tuple_struct_tuple_item_types()
+                    .or(rust_type.tuple_elem_types());
+                if tuple_item_types.is_none() {
+                    self.errors.push(GraphFormError::NotATupleOrTupleStruct {
+                        type_name: rust_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                } else if tuple_item_types.unwrap().len() != tuple_items.len() {
+                    self.errors.push(GraphFormError::TupleOrTupleStructLengthMismatch {
+                        actual_length: tuple_items.len(),
+                        type_length: tuple_item_types.unwrap().len(),
+                        type_name: rust_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
                 NodeInput::Tuple(tuple_items.into_iter().enumerate().map(|(index, tuple_item)| {
-                    self.resolve_tuple_struct_child(index, (tuple_item.value, tuple_item.value_children), (rust_type, tuple_item.rust_type), node_name, field_name)
+                    let tuple_item_type = tuple_item_types.map(|tuple_item_types| tuple_item_types[index].clone());
+                    self.resolve_value_child(
+                         (tuple_item.value, tuple_item.value_children),
+                         (tuple_item_type, tuple_item.rust_type),
+                         node_name,
+                         field_name
+                    )
                 }).collect())
             }
             SerialBody::Fields(fields) => {
+                let field_types = rust_type.field_struct_field_types();
+                if field_types.is_none() {
+                    self.errors.push(GraphFormError::NotAFieldStruct {
+                        type_name: rust_type.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+                }
                 NodeInput::Tuple(fields.into_iter().map(|field| {
-                    self.resolve_field_struct_child(&field.name, (field.value, field.value_children), (rust_type, field.rust_type), node_name, field_name)
+                    let field_type = field_types.and_then(|field_types| {
+                        match field_types.iter().find(|field_type| &field_type.name == &field.name) {
+                            None => {
+                                self.errors.push(GraphFormError::RustFieldNotFound {
+                                    field_name: field.name.to_string(),
+                                    type_name: rust_type.to_string(),
+                                    referenced_from: NodeNameFieldName {
+                                        node_name: node_name.to_string(),
+                                        field_name: field_name.to_string()
+                                    }
+                                });
+                                None
+                            },
+                            Some(field_type) => Some(field_type.rust_type.clone())
+                        }
+                    });
+                    self.resolve_value_child(
+                        (field.value, field.value_children),
+                        (field_type, field.rust_type),
+                        node_name,
+                        field_name
+                    )
                 }).collect())
             }
         }
-    }
-
-    fn resolve_tuple_child(
-        &mut self,
-        elem_index: usize,
-        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
-        (rust_type, explicit_elem_type): (&RustType, Option<SerialRustType>),
-        node_name: &str,
-        field_name: &str
-    ) -> NodeInputWithLayout {
-        let inferred_elem_type = if let TypeStructure::Tuple { elements } = rust_type.structure() {
-            elements.get(elem_index).cloned()
-        } else {
-            None
-        };
-        self.resolve_value_child(
-            (elem, elem_children),
-            (inferred_elem_type, explicit_elem_type),
-            node_name,
-            field_name
-        )
-    }
-
-    fn resolve_tuple_struct_child(
-        &mut self,
-        elem_index: usize,
-        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
-        (rust_type, explicit_elem_type): (&RustType, Option<SerialRustType>),
-        node_name: &str,
-        field_name: &str
-    ) -> NodeInputWithLayout {
-        let inferred_elem_type = if let TypeStructure::CReprStruct {
-            body: TypeStructBody::Tuple(elements)
-        } = rust_type.structure() {
-            elements.get(elem_index).cloned()
-        } else {
-            None
-        };
-        self.resolve_value_child(
-            (elem, elem_children),
-            (inferred_elem_type, explicit_elem_type),
-            node_name,
-            field_name
-        )
-    }
-
-    fn resolve_field_struct_child(
-        &mut self,
-        elem_field_name: &str,
-        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
-        (rust_type, explicit_elem_type): (&RustType, Option<SerialRustType>),
-        node_name: &str,
-        field_name: &str
-    ) -> NodeInputWithLayout {
-        let inferred_elem_type = if let TypeStructure::CReprStruct {
-            body: TypeStructBody::Fields(fields)
-        } = rust_type.structure() {
-            fields.iter()
-                .find(|field| &field.name == elem_field_name)
-                .map(|field| field.rust_type.clone())
-        } else {
-            None
-        };
-        self.resolve_value_child(
-            (elem, elem_children),
-            (inferred_elem_type, explicit_elem_type),
-            node_name,
-            field_name
-        )
     }
 
     fn resolve_value_child(
@@ -1269,7 +1331,7 @@ impl<'a> GraphBuilder<'a> {
         }
         let size = inferred_size.unwrap_or(0);
         let align = inferred_align.unwrap_or(0);
-        let input = self.resolve_value((elem, elem_children), &elem_type, node_name, field_name);
+        let input = self.resolve_value((elem, elem_children), Cow::Owned(elem_type), node_name, field_name);
         NodeInputWithLayout { input, size, align }
     }
 
