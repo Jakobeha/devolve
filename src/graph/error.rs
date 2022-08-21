@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use derive_more::{Display, Error};
 use snailquote::UnescapeError;
 use crate::graph::mutable::NodeId;
-use crate::rust_type::RustType;
-use crate::rust_type::structure::TypeStructBodyForm;
+use crate::rust_type::{RustType, RustTypeName, TypeStructBodyForm};
 
 pub type ParseErrors = Vec<ParseError>;
 
@@ -94,41 +93,41 @@ pub enum GraphFormError {
         error: Box<dyn Error>,
         node_name: String
     },
-    #[display(fmt = "type not found: {} (referenced from node {})", type_name, referenced_from)]
+    #[display(fmt = "type not found: {} (referenced from node {})", "type_name.unqualified()", referenced_from)]
     RustTypeNotFound {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName,
     },
-    #[display(fmt = "type not found: {} (referenced from struct constructor, in node {})", type_name, referenced_from)]
+    #[display(fmt = "type not found: {} (referenced from struct constructor, in node {})", "type_name.unqualified()", referenced_from)]
     RustTypeNotFoundFromStructConstructor {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName,
     },
-    #[display(fmt = "type not found: {} (referenced from enum variant constructor, in node {})", type_name, referenced_from)]
+    #[display(fmt = "type not found: {} (referenced from enum variant constructor, in node {})", "type_name.unqualified()", referenced_from)]
     RustTypeNotFoundFromEnumVariantConstructor {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName,
     },
-    #[display(fmt = "type is not a struct but value is a struct constructor: type = {} (referenced in node {})", type_name, referenced_from)]
+    #[display(fmt = "type is not a struct but value is a struct constructor: type = {} (referenced in node {})", "type_name.unqualified()", referenced_from)]
     RustTypeNotStructFromConstructor {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName,
     },
-    #[display(fmt = "type constructor has bad form: got {} expected {} (type = {}, referenced in node {})", expected_form, actual_form, type_name, referenced_from)]
+    #[display(fmt = "type constructor has bad form: got {} expected {} (type = {}, referenced in node {})", expected_form, actual_form, "type_name.unqualified()", referenced_from)]
     RustTypeConstructorBadForm {
         expected_form: TypeStructBodyForm,
         actual_form: TypeStructBodyForm,
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "type is not an enum but value is an enum constructor: type = {} (referenced in node {})", type_name, referenced_from)]
+    #[display(fmt = "type is not an enum but value is an enum constructor: type = {} (referenced in node {})", "type_name.unqualified()", referenced_from)]
     RustTypeNotEnumFromConstructor {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName,
     },
-    #[display(fmt = "variant not in type {}: {} (referenced from constructor in node {})", type_name, variant_name, referenced_from)]
+    #[display(fmt = "variant not in type {}: {} (referenced from constructor in node {})", "type_name.unqualified()", variant_name, referenced_from)]
     EnumVariantNotFound {
-        type_name: String,
+        type_name: RustTypeName,
         variant_name: String,
         referenced_from: NodeNameFieldName,
     },
@@ -150,31 +149,31 @@ pub enum GraphFormError {
     },
     #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structura", name)]
     TypeConflictsWithBuiltinType { #[error(not(source))] name: String },
-    #[display(fmt = "type mismatch, lengths of arrays are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, type_name, referenced_from)]
+    #[display(fmt = "type mismatch, lengths of arrays are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, "type_name.unqualified()", referenced_from)]
     ArrayLengthMismatch {
         actual_length: usize,
         type_length: usize,
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "type mismatch, lengths of tuples are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, type_name, referenced_from)]
+    #[display(fmt = "type mismatch, lengths of tuples are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, "type_name.unqualified()", referenced_from)]
     TupleLengthMismatch {
         actual_length: usize,
         type_length: usize,
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "type mismatch, lengths of tuples or structs are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, type_name, referenced_from)]
+    #[display(fmt = "type mismatch, lengths of tuples or structs are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, "type_name.unqualified()", referenced_from)]
     TupleOrTupleStructLengthMismatch {
         actual_length: usize,
         type_length: usize,
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "field {} not in rust type {} (referenced in {})", field_name, type_name, referenced_from)]
+    #[display(fmt = "field {} not in rust type {} (referenced in {})", field_name, "type_name.unqualified()", referenced_from)]
     RustFieldNotFound {
         field_name: String,
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
     #[display(fmt = "multiple occurrences of field {} (referenced in {})", field_name, referenced_from)]
@@ -182,51 +181,59 @@ pub enum GraphFormError {
         field_name: String,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "not a tuple (type = {}, referenced in {})", type_name, referenced_from)]
+    #[display(fmt = "not a tuple (type = {}, referenced in {})", "type_name.unqualified()", referenced_from)]
     NotATuple {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "not a tuple or tuple struct (type = {}, referenced in {})", type_name, referenced_from)]
+    #[display(fmt = "not a tuple or tuple struct (type = {}, referenced in {})", "type_name.unqualified()", referenced_from)]
     NotATupleOrTupleStruct {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "not a field struct (type = {}, referenced in {})", type_name, referenced_from)]
+    #[display(fmt = "not a field struct (type = {}, referenced in {})", "type_name.unqualified()", referenced_from)]
     NotAFieldStruct {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "not an array (type = {}, referenced in {})", type_name, referenced_from)]
+    #[display(fmt = "not an array (type = {}, referenced in {})", "type_name.unqualified()", referenced_from)]
     NotAnArray {
-        type_name: String,
+        type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "type mismatch: value is {}, type is {}\nNote that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name)]
+    #[display(fmt = "type mismatch: value is {}, type is {}\nNote that if the type names are the same, the contents are still different", "inferred_type_name.unqualified()", "explicit_type_name.unqualified()")]
     ValueTypeMismatch {
-        inferred_type_name: String,
-        explicit_type_name: String
+        inferred_type_name: RustTypeName,
+        explicit_type_name: RustTypeName
     },
-    #[display(fmt = "type mismatch: value is {}, type is {} (referenced in {})\nNote that if the type names are the same, the contents are still different", inferred_type_name, explicit_type_name, referenced_from)]
+    #[display(fmt = "type mismatch: value is {}, type is {} (referenced in {})\nNote that if the type names are the same, the contents are still different", "inferred_type_name.unqualified()", "explicit_type_name.unqualified()", referenced_from)]
     NestedValueTypeMismatch {
-        inferred_type_name: String,
-        explicit_type_name: String,
+        inferred_type_name: RustTypeName,
+        explicit_type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "type mismatch: array elements are {} and {}. Note that if the type names are the same, the contents are still different", type_name_lhs, type_name_rhs)]
+    #[display(fmt = "type mismatch: array elements are {} and {}. Note that if the type names are the same, the contents are still different", "type_name_lhs.unqualified()", "type_name_rhs.unqualified()")]
     ArrayElemTypeMismatch {
-        type_name_lhs: String,
-        type_name_rhs: String
+        type_name_lhs: RustTypeName,
+        type_name_rhs: RustTypeName
     },
     #[display(fmt = "value has both inline and multiline definition: at {}", source)]
     InlineValueHasChildren {
         #[error(not(source))]
         source: NodeNameFieldName
     },
-    #[display(fmt = "layout not resolved, we need to know the size and alignment of each item (inferred type = {}, referenced from {}", inferred_type, referenced_from)]
-    ElemLayoutNotResolved {
-        inferred_type: String,
-        referenced_from: NodeNameFieldName
+    #[display(fmt = "pointer to unregistered type: {}", "refd_type_name.unqualified()")]
+    PointerToUnregisteredType {
+        #[error(not(source))]
+        refd_type_name: RustTypeName
+    },
+    #[display(fmt = "type layout not resolved, we need to know the size and alignment of each item: {}", "type_name.unqualified()")]
+    TypeLayoutNotResolved {
+        type_name: RustTypeName
+    },
+    #[display(fmt = "type def layout not resolved, we need to know the size and alignment of each item: {}", name)]
+    TypeDefLayoutNotResolved {
+        name: String
     },
 }
 

@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::iter::{empty, once};
 use join_lazy_fmt::Join;
 
 use snailquote::escape;
 use crate::graph::parse::topological_sort::SortByDeps;
-use crate::misc::fmt_with_ctx::{DisplayWithCtx, Indent};
-use crate::rust_type::{TypeStructBodyForm, RustTypeName};
+use crate::misc::fmt_with_ctx::{DisplayWithCtx, DisplayWithCtx2, Indent};
+use crate::rust_type::{RustTypeName, TypeStructBodyForm, SimpleNamesInScope};
 
 pub struct SerialGraph {
-    pub rust_types: HashMap<RustTypeName, SerialType>,
+    pub rust_types: HashMap<String, SerialTypeDef>,
     pub nodes: HashMap<String, SerialNode>
 }
 
@@ -43,7 +44,7 @@ pub struct SerialTupleItem {
     pub value_children: SerialBody
 }
 
-pub enum SerialType {
+pub enum SerialTypeDef {
     Struct(SerialStructType),
     Enum(SerialEnumType)
 }
@@ -74,20 +75,7 @@ pub struct SerialFieldType {
     pub default_value_children: SerialBody
 }
 
-#[derive(Clone)]
-pub enum SerialRustType {
-    Ident {
-        name: String,
-        generic_args: Vec<SerialRustType>
-    },
-    Reference(Box<SerialRustType>),
-    Tuple(Vec<SerialRustType>),
-    Array {
-        elem: Box<SerialRustType>,
-        length: usize
-    },
-    Slice(Box<SerialRustType>),
-}
+pub type SerialRustType = RustTypeName;
 
 pub enum SerialValueHead {
     Integer(i64),
@@ -100,11 +88,11 @@ pub enum SerialValueHead {
     Array(Vec<SerialValueHead>),
     Tuple(Vec<SerialValueHead>),
     Struct {
-        type_name: String,
+        type_name: SerialRustType,
         inline_params: Option<Vec<SerialValueHead>>,
     },
     Enum {
-        type_name: String,
+        type_name: SerialRustType,
         variant_name: String,
         inline_params: Option<Vec<SerialValueHead>>,
     },
@@ -139,24 +127,6 @@ impl SerialBody {
     }
 }
 
-impl SerialRustType {
-    pub fn unknown() -> Self {
-        SerialRustType::Ident {
-            name: "{unknown}".to_string(),
-            generic_args: Vec::new()
-        }
-    }
-
-    pub fn is_unknown(&self) -> bool {
-        match self {
-            SerialRustType::Ident { name, generic_args: _ } => {
-                name.starts_with('{') && name.ends_with('}')
-            }
-            _ => false
-        }
-    }
-}
-
 impl Default for SerialBody {
     fn default() -> Self {
         SerialBody::None
@@ -172,38 +142,43 @@ impl Default for SerialTypeBody {
 // region Display impls
 impl Display for SerialGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let snis = self.iter_rust_types()
+            .flat_map(|rust_type| rust_type.iter_snis())
+            .map(String::from).collect::<HashSet<_>>();
+
         let mut rust_types = self.rust_types.iter().collect::<Vec<_>>();
         rust_types.sort_by_deps();
         let mut nodes = self.nodes.iter().collect::<Vec<_>>();
         nodes.sort_by_deps();
 
         for (type_name, rust_type) in rust_types {
-            writeln!(f, "{}", rust_type.with_ctx(type_name))?;
+            writeln!(f, "{}", rust_type.with_ctx((&snis, type_name)))?;
         }
 
         for (node_name, node) in nodes {
-            writeln!(f, "{}", node.with_ctx(node_name))?;
+            writeln!(f, "{}", node.with_ctx((&snis, node_name)))?;
         }
 
         Ok(())
     }
 }
 
-impl DisplayWithCtx for SerialType {
-    type Ctx = String;
+impl DisplayWithCtx2 for SerialTypeDef {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = String;
 
-    fn fmt(&self, f: &mut Formatter<'_>, type_name: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, type_name): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
-            SerialType::Struct(struct_type) => {
+            SerialTypeDef::Struct(struct_type) => {
                 writeln!(f, "struct {} {{", type_name)?;
-                writeln!(f, "{}", struct_type.body.with_ctx(&Indent(1)))?;
+                writeln!(f, "{}", struct_type.body.with_ctx((snis, &Indent(1))))?;
                 writeln!(f, "}}")
             }
-            SerialType::Enum(enum_type) => {
+            SerialTypeDef::Enum(enum_type) => {
                 writeln!(f, "pub enum {} {{", type_name)?;
                 for variant in &enum_type.variants {
                     writeln!(f, "  {}", variant.name)?;
-                    writeln!(f, "{}", variant.body.with_ctx(&Indent(2)))?;
+                    writeln!(f, "{}", variant.body.with_ctx((snis, &Indent(2))))?;
                 }
                 writeln!(f, "}}")
             }
@@ -211,29 +186,21 @@ impl DisplayWithCtx for SerialType {
     }
 }
 
-impl Display for Indent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for _ in 0..self.0 {
-            write!(f, "  ")?;
-        }
-        Ok(())
-    }
-}
+impl DisplayWithCtx2 for SerialTypeBody {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = Indent;
 
-impl DisplayWithCtx for SerialTypeBody {
-    type Ctx = Indent;
-
-    fn fmt(&self, f: &mut Formatter<'_>, indent: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
             SerialTypeBody::None => {},
             SerialTypeBody::Tuple(tuple_items) => {
                 for tuple_item in tuple_items {
-                    writeln!(f, "{}{}", indent, tuple_item)?;
+                    writeln!(f, "{}{}", indent, tuple_item.display(snis))?;
                 }
             }
             SerialTypeBody::Fields(fields) => {
                 for field in fields {
-                    writeln!(f, "{}{}", indent, field)?;
+                    writeln!(f, "{}{}", indent, field.with_ctx(snis))?;
                 }
             }
         }
@@ -241,20 +208,23 @@ impl DisplayWithCtx for SerialTypeBody {
     }
 }
 
-impl Display for SerialFieldType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl DisplayWithCtx for SerialFieldType {
+    type Ctx = SimpleNamesInScope;
+
+    fn fmt(&self, f: &mut Formatter<'_>, snis: &Self::Ctx) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
         if let Some(rust_type) = self.rust_type.as_ref() {
-            write!(f, ": {}", rust_type)?;
+            write!(f, ": {}", rust_type.display(snis))?;
         }
         Ok(())
     }
 }
 
-impl DisplayWithCtx for SerialNode {
-    type Ctx = String;
+impl DisplayWithCtx2 for SerialNode {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = String;
 
-    fn fmt(&self, f: &mut Formatter<'_>, node_name: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, node_name): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         write!(f, "{}", node_name)?;
         if let Some(node_type) = self.node_type.as_ref() {
             write!(f, ": {}", node_type)?;
@@ -262,59 +232,62 @@ impl DisplayWithCtx for SerialNode {
         writeln!(f, "")?;
 
         for input_field in &self.input_fields {
-            writeln!(f, "  {}", input_field.with_ctx(&Indent(1)))?;
+            writeln!(f, "  {}", input_field.with_ctx((snis, &Indent(1))))?;
         }
         writeln!(f, "  ===")?;
         for output_field in &self.output_fields {
-            writeln!(f, "  {}", output_field.with_ctx(&Indent(1)))?;
+            writeln!(f, "  {}", output_field.with_ctx((snis, &Indent(1))))?;
         }
         Ok(())
     }
 }
 
-impl DisplayWithCtx for SerialFieldElem {
-    type Ctx = Indent;
+impl DisplayWithCtx2 for SerialFieldElem {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = Indent;
 
-    fn fmt(&self, f: &mut Formatter<'_>, indent: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
             SerialFieldElem::Header { header } => write!(f, "-- {}", header),
-            SerialFieldElem::Field(field) => write!(f, "{}", field.with_ctx(indent))
+            SerialFieldElem::Field(field) => write!(f, "{}", field.with_ctx((snis, indent)))
         }
     }
 }
 
-impl DisplayWithCtx for SerialField {
-    type Ctx = Indent;
+impl DisplayWithCtx2 for SerialField {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = Indent;
 
-    fn fmt(&self, f: &mut Formatter<'_>, indent: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
         if let Some(rust_type) = self.rust_type.as_ref() {
-            write!(f, ": {}", rust_type)?;
+            write!(f, ": {}", rust_type.display(snis))?;
         }
         if let Some(value) = self.value.as_ref() {
-            write!(f, " = {}", value)?;
+            write!(f, " = {}", value.with_ctx(snis))?;
         }
         if !matches!(self.value_children, SerialBody::None) {
             writeln!(f, "")?;
         }
-        write!(f, "{}", self.value_children.with_ctx(&indent.next()))
+        write!(f, "{}", self.value_children.with_ctx((snis, &indent.next())))
     }
 }
 
-impl DisplayWithCtx for SerialBody {
-    type Ctx = Indent;
+impl DisplayWithCtx2 for SerialBody {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = Indent;
 
-    fn fmt(&self, f: &mut Formatter<'_>, indent: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
             SerialBody::None => {},
             SerialBody::Tuple(tuple_items) => {
                 for tuple_item in tuple_items {
-                    writeln!(f, "{}{}", indent, tuple_item.with_ctx(&indent.next()))?;
+                    writeln!(f, "{}{}", indent, tuple_item.with_ctx((snis, &indent.next())))?;
                 }
             }
             SerialBody::Fields(fields) => {
                 for field in fields {
-                    writeln!(f, "{}{}", indent, field.with_ctx(&indent.next()))?;
+                    writeln!(f, "{}{}", indent, field.with_ctx((snis, &indent.next())))?;
                 }
             }
         }
@@ -322,66 +295,175 @@ impl DisplayWithCtx for SerialBody {
     }
 }
 
-impl DisplayWithCtx for SerialTupleItem {
-    type Ctx = Indent;
+impl DisplayWithCtx2 for SerialTupleItem {
+    type Ctx1 = SimpleNamesInScope;
+    type Ctx2 = Indent;
 
-    fn fmt(&self, f: &mut Formatter<'_>, indent: &Self::Ctx) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self.value.as_ref() {
             None => write!(f, "_")?,
-            Some(value) => write!(f, "{}", value)?
+            Some(value) => write!(f, "{}", value.with_ctx(snis))?
         }
         if let Some(rust_type) = self.rust_type.as_ref() {
-            write!(f, ": {}", rust_type)?;
+            write!(f, ": {}", rust_type.display(snis))?;
         }
         if !matches!(self.value_children, SerialBody::None) {
             writeln!(f, "")?;
         }
-        write!(f, "{}", self.value_children.with_ctx(&indent.next()))
+        write!(f, "{}", self.value_children.with_ctx((snis, &indent.next())))
     }
 }
 
-impl Display for SerialValueHead {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl DisplayWithCtx for SerialValueHead {
+    type Ctx = SimpleNamesInScope;
+
+    //noinspection DuplicatedCode
+    fn fmt(&self, f: &mut Formatter<'_>, snis: &Self::Ctx) -> std::fmt::Result {
         match self {
             SerialValueHead::Integer(value) => write!(f, "{}", value),
             SerialValueHead::Float(value) => write!(f, "{}", value),
             SerialValueHead::String(value) => write!(f, "{}", escape(value)),
             SerialValueHead::Ref { node_name: node_ident, field_name: field_ident } => write!(f, "{}.{}", node_ident, field_ident),
-            SerialValueHead::Tuple(items) => write!(f, "({})", ", ".join(items)),
-            SerialValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems)),
-            SerialValueHead::Struct { type_name, inline_params } => {
-                write!(f, "{}", type_name)?;
+            SerialValueHead::Tuple(items) => write!(f, "({})", ", ".join(items.iter().map(|x| x.with_ctx(snis)))),
+            SerialValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems.iter().map(|x| x.with_ctx(snis)))),
+            SerialValueHead::Struct { type_name: rust_type, inline_params } => {
+                write!(f, "{}", rust_type.display(snis))?;
                 if let Some(inline_params) = inline_params.as_ref() {
-                    write!(f, "({})", ", ".join(inline_params))?;
+                    write!(f, "({})", ", ".join(inline_params.iter().map(|x| x.with_ctx(snis))))?;
                 }
                 Ok(())
             },
-            SerialValueHead::Enum { type_name, variant_name, inline_params } => {
-                write!(f, "{}.{}", type_name, variant_name)?;
+            SerialValueHead::Enum { type_name: rust_type, variant_name, inline_params } => {
+                write!(f, "{}::{}", rust_type.display(snis), variant_name)?;
                 if let Some(inline_params) = inline_params.as_ref() {
-                    write!(f, "({})", ", ".join(inline_params))?;
+                    write!(f, "({})", ", ".join(inline_params.iter().map(|x| x.with_ctx(snis))))?;
                 }
                 Ok(())
             },
         }
     }
 }
+// endregion
 
-impl Display for SerialRustType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+// region iter rust types
+impl SerialGraph {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.rust_types.values().flat_map(|t| t.iter_rust_types())
+            .chain(self.nodes.values().flat_map(|n| n.iter_rust_types()))
+    }
+}
+
+impl SerialTypeDef {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
         match self {
-            SerialRustType::Ident { name, generic_args } => {
-                write!(f, "{}", name)?;
-                if !generic_args.is_empty() {
-                    write!(f, "<{}>", ", ".join(generic_args))?;
-                }
-                Ok(())
-            }
-            SerialRustType::Reference(refd) => write!(f, "&{}", refd),
-            SerialRustType::Tuple(items) => write!(f, "({})", ", ".join(items)),
-            SerialRustType::Array { elem, length } => write!(f, "[{}; {}]", elem, length),
-            SerialRustType::Slice(elem) => write!(f, "[{}]", elem)
+            SerialTypeDef::Struct(s) => Box::new(s.iter_rust_types()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialTypeDef::Enum(e) => Box::new(e.iter_rust_types()) as Box<dyn Iterator<Item=&SerialRustType>>
         }
+    }
+}
+
+impl SerialStructType {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.body.iter_rust_types()
+    }
+}
+
+impl SerialEnumType {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.variants.iter().flat_map(|v| v.body.iter_rust_types())
+    }
+}
+
+impl SerialTypeBody {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        match self {
+            SerialTypeBody::None => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialTypeBody::Tuple(tuple_items) => Box::new(
+                tuple_items.iter()
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialTypeBody::Fields(fields) => Box::new(
+                fields.iter().flat_map(|f| f.iter_rust_types())
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+        }
+    }
+}
+
+impl SerialFieldType {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.rust_type.iter()
+            .chain(self.default_value.iter().flat_map(|value| value.iter_rust_types()))
+            .chain(self.default_value_children.iter_rust_types())
+    }
+}
+
+impl SerialNode {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.input_fields.iter().flat_map(|f| f.iter_rust_types())
+            .chain(self.output_fields.iter().flat_map(|f| f.iter_rust_types()))
+    }
+}
+
+impl SerialFieldElem {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        match self {
+            SerialFieldElem::Field(field) => Box::new(field.iter_rust_types()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialFieldElem::Header { .. } => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+        }
+    }
+}
+
+impl SerialValueHead {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        match self {
+            SerialValueHead::Integer(_) => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::Float(_) => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::String(_) => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::Ref { .. } => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::Tuple(items) => Box::new(
+                items.iter().flat_map(|item| item.iter_rust_types())
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::Array(elems) => Box::new(
+                elems.iter().flat_map(|elem| elem.iter_rust_types())
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::Struct { type_name: rust_type, inline_params } => Box::new(
+                once(rust_type).chain(inline_params.iter().flat_map(|p| p.iter_rust_types()))
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialValueHead::Enum { type_name: rust_type, variant_name: _, inline_params } => Box::new(
+                once(rust_type).chain(inline_params.iter().flat_map(|p| p.iter_rust_types()))
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+        }
+    }
+}
+
+impl SerialBody {
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        match self {
+            SerialBody::None => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialBody::Tuple(tuple_items) => Box::new(
+                tuple_items.iter().flat_map(|f| f.iter_rust_types())
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialBody::Fields(fields) => Box::new(
+                fields.iter().flat_map(|f| f.iter_rust_types())
+            ) as Box<dyn Iterator<Item=&SerialRustType>>,
+        }
+    }
+}
+
+impl SerialTupleItem {
+    //noinspection DuplicatedCode
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.rust_type.iter()
+            .chain(self.value.iter().flat_map(|value| value.iter_rust_types()))
+            .chain(self.value_children.iter_rust_types())
+    }
+}
+
+impl SerialField {
+    //noinspection DuplicatedCode
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
+        self.rust_type.iter()
+            .chain(self.value.iter().flat_map(|value| value.iter_rust_types()))
+            .chain(self.value_children.iter_rust_types())
     }
 }
 // endregion

@@ -11,7 +11,7 @@ pub enum TypeStructure {
     /// Thus in order to use them in Rust, you must either assume C-style repr or coerce to a C-repr struct.
     CTuple { elements: Vec<RustType> },
     Array { elem: Box<RustType>, length: usize },
-    Pointer { referenced: IntrinsicRustType },
+    Pointer { refd: IntrinsicRustType },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -72,46 +72,41 @@ impl TypeStructBody {
 
 // Note: technically tuples don't have a defined repr according to Rust
 
-pub fn infer_c_tuple_size<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
+pub fn infer_c_tuple_size<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> usize {
     let mut cumulative_size = 0;
     for elem in elems {
-        let size = elem.infer_size()?;
-        let align = elem.infer_align()?;
+        let size = elem.size;
+        let align = elem.align;
         if cumulative_size % align != 0 {
             cumulative_size += align - (cumulative_size % align);
         }
         cumulative_size += size;
     }
-    Some(cumulative_size)
+    cumulative_size
 }
 
-pub fn infer_c_tuple_align<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> Option<usize> {
+pub fn infer_c_tuple_align<'a>(elems: impl IntoIterator<Item=&'a RustType>) -> usize {
     let mut max_align = 0;
     for elem in elems {
-        let align = elem.infer_align()?;
+        let align = elem.align;
         if max_align < align {
             max_align = align;
         }
     }
-    Some(max_align)
+    max_align
 }
 
-pub fn infer_array_size(elem: &RustType, length: usize) -> Option<usize> {
-    let mut aligned_size = elem.infer_size()?;
-    let align = elem.infer_align()?;
+pub fn infer_array_size(elem: &RustType, length: usize) -> usize {
+    let mut aligned_size = elem.size;
+    let align = elem.align;
     if aligned_size % align != 0 {
         aligned_size += align - aligned_size % align;
     }
-    Some(aligned_size * length)
+    aligned_size * length
 }
 
-pub fn infer_array_align(elem: &RustType, length: usize) -> Option<usize> {
-    let mut aligned_size = elem.infer_size()?;
-    let align = elem.infer_align()?;
-    if aligned_size % align != 0 {
-        aligned_size += align - (aligned_size % align);
-    }
-    Some(aligned_size * length)
+pub fn infer_array_align(elem: &RustType) -> usize {
+    elem.align
 }
 
 fn discriminant_size(_num_discriminants: usize) -> usize {

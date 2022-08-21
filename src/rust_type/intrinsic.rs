@@ -1,6 +1,9 @@
 use std::any::{type_name, TypeId};
 use std::mem::{size_of, align_of};
 
+// This can't be exposed, otherwise users could call IntrinsicRustType::of on it
+pub(super) enum UnknownIntrinsicType {}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntrinsicRustType {
     pub type_id: TypeId,
@@ -17,6 +20,16 @@ impl IntrinsicRustType {
             type_name: type_name::<T>(),
             size: size_of::<T>(),
             align: align_of::<T>(),
+            _private_ctor: ()
+        }
+    }
+
+    pub fn unknown() -> Self {
+        IntrinsicRustType {
+            type_id: TypeId::of::<UnknownIntrinsicType>(),
+            type_name: "{unknown}",
+            size: usize::MAX,
+            align: usize::MAX,
             _private_ctor: ()
         }
     }

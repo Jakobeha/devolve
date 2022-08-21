@@ -1,5 +1,9 @@
+use std::any::TypeId;
 use std::fmt::{Display, Formatter};
 use std::mem::{align_of, size_of};
+use crate::rust_type::RustType;
+use crate::rust_type::structure::TypeStructure;
+use crate::rust_type::type_name::RustTypeName;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrimitiveType {
@@ -20,6 +24,58 @@ pub enum PrimitiveType {
 }
 
 impl PrimitiveType {
+    pub fn rust_type(&self) -> RustType {
+        RustType {
+            type_id: Some(self.type_id()),
+            type_name: self.rust_type_name(),
+            size: self.size(),
+            align: self.align(),
+            structure: TypeStructure::Primitive(*self)
+        }
+    }
+
+    pub fn rust_type_name(&self) -> RustTypeName {
+        RustTypeName::primitive(self.name())
+    }
+
+    pub fn type_id(&self) -> TypeId {
+        match self {
+            PrimitiveType::I8 => TypeId::of::<i8>(),
+            PrimitiveType::I16 => TypeId::of::<i16>(),
+            PrimitiveType::I32 => TypeId::of::<i32>(),
+            PrimitiveType::I64 => TypeId::of::<i64>(),
+            PrimitiveType::Isize => TypeId::of::<isize>(),
+            PrimitiveType::U8 => TypeId::of::<u8>(),
+            PrimitiveType::U16 => TypeId::of::<u16>(),
+            PrimitiveType::U32 => TypeId::of::<u32>(),
+            PrimitiveType::U64 => TypeId::of::<u64>(),
+            PrimitiveType::Usize => TypeId::of::<usize>(),
+            PrimitiveType::F32 => TypeId::of::<f32>(),
+            PrimitiveType::F64 => TypeId::of::<f64>(),
+            PrimitiveType::Bool => TypeId::of::<bool>(),
+            PrimitiveType::Char => TypeId::of::<char>(),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PrimitiveType::I8 => "i8",
+            PrimitiveType::I16 => "i16",
+            PrimitiveType::I32 => "i32",
+            PrimitiveType::I64 => "i64",
+            PrimitiveType::Isize => "isize",
+            PrimitiveType::U8 => "u8",
+            PrimitiveType::U16 => "u16",
+            PrimitiveType::U32 => "u32",
+            PrimitiveType::U64 => "u64",
+            PrimitiveType::Usize => "usize",
+            PrimitiveType::F32 => "f32",
+            PrimitiveType::F64 => "f64",
+            PrimitiveType::Bool => "bool",
+            PrimitiveType::Char => "char",
+        }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             PrimitiveType::I8 => size_of::<i8>(),
@@ -61,21 +117,6 @@ impl PrimitiveType {
 
 impl Display for PrimitiveType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PrimitiveType::I8 => write!(f, "i8"),
-            PrimitiveType::I16 => write!(f, "i16"),
-            PrimitiveType::I32 => write!(f, "i32"),
-            PrimitiveType::I64 => write!(f, "i64"),
-            PrimitiveType::Isize => write!(f, "isize"),
-            PrimitiveType::U8 => write!(f, "u8"),
-            PrimitiveType::U16 => write!(f, "u16"),
-            PrimitiveType::U32 => write!(f, "u32"),
-            PrimitiveType::U64 => write!(f, "u64"),
-            PrimitiveType::Usize => write!(f, "usize"),
-            PrimitiveType::F32 => write!(f, "f32"),
-            PrimitiveType::F64 => write!(f, "f64"),
-            PrimitiveType::Bool => write!(f, "bool"),
-            PrimitiveType::Char => write!(f, "char"),
-        }
+        write!(f, "{}", self.name())
     }
 }

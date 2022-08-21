@@ -8,7 +8,7 @@ use snailquote::unescape;
 
 use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::parse::lexer_ext::LexerExt;
-use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialType, SerialTypeBody, SerialValueHead};
+use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialTypeDef, SerialTypeBody, SerialValueHead};
 use crate::misc::extract::extract;
 
 #[derive(Logos)]
@@ -26,6 +26,7 @@ enum GraphToken {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     #[regex("`[^`]*`")]
     Ident,
+
     #[regex("-?[0-9]+", priority = 2, callback = |lex| lex.slice().parse::<i64>())]
     Integer(Result<i64, ParseIntError>),
     #[regex("-?[0-9]+\\.[0-9]*", |lex| lex.slice().parse::<f64>())]
@@ -330,7 +331,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         body: ParseErrorBody::DuplicateType { name }
                     });
                 } else {
-                    p.graph.rust_types.insert(name, SerialType::Struct(struct_type));
+                    p.graph.rust_types.insert(name, SerialTypeDef::Struct(struct_type));
                 }
             }
             BlockParser::EnumType { p, name, enum_type } => {
@@ -342,7 +343,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         body: ParseErrorBody::DuplicateType { name }
                     });
                 } else {
-                    p.graph.rust_types.insert(name, SerialType::Enum(enum_type));
+                    p.graph.rust_types.insert(name, SerialTypeDef::Enum(enum_type));
                 }
             }
             BlockParser::Node { p, name, node,  } => {

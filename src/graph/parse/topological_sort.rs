@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use crate::graph::mutable::NodeTypeName;
 
 //noinspection RsUnusedImport (intelliJ fails to detect SerialFieldElem use)
-use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialFieldElem, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
+use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialFieldElem, SerialNode, SerialRustType, SerialStructType, SerialTypeDef, SerialTypeBody, SerialValueHead};
 use crate::misc::extract::extract;
 
 pub struct SerialNodeDep<'a> {
@@ -107,7 +107,7 @@ impl HasDeps for SerialNode {
     }
 }
 
-impl HasDeps for SerialType {
+impl HasDeps for SerialTypeDef {
     fn deps_set(&self) -> HashSet<String> {
         type_def_deps(self).map(String::from).collect::<HashSet<_>>()
     }
@@ -117,10 +117,10 @@ impl HasDeps for SerialType {
     }
 }
 
-pub fn type_def_deps(type_def: &SerialType) -> impl Iterator<Item=&str> {
+pub fn type_def_deps(type_def: &SerialTypeDef) -> impl Iterator<Item=&str> {
     match type_def {
-        SerialType::Struct(struct_type) => Box::new(struct_type_def_deps(struct_type)) as Box<dyn Iterator<Item=&str>>,
-        SerialType::Enum(enum_type) => Box::new(enum_type_def_deps(enum_type)) as Box<dyn Iterator<Item=&str>>
+        SerialTypeDef::Struct(struct_type) => Box::new(struct_type_def_deps(struct_type)) as Box<dyn Iterator<Item=&str>>,
+        SerialTypeDef::Enum(enum_type) => Box::new(enum_type_def_deps(enum_type)) as Box<dyn Iterator<Item=&str>>
     }
 }
 

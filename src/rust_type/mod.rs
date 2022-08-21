@@ -58,7 +58,17 @@ impl RustType {
         }
     }
 
-    pub fn display(&self, simple_names_in_scope: &HashSet<String>) -> RustTypeNameUnambiguous<'_> {
-        self.type_name.display(simple_names_in_scope)
+    pub fn from_intrinsic(type_name: RustTypeName, data: IntrinsicRustType) -> Self {
+        RustType {
+            type_id: Some(data.type_id),
+            type_name,
+            size: data.size,
+            align: data.align,
+            structure: TypeStructure::Opaque
+        }
+    }
+
+    pub fn display(&self, snis: &SimpleNamesInScope) -> RustTypeNameDisplay<'_, '_> {
+        self.type_name.display(snis)
     }
 }
