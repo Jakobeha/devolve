@@ -5,10 +5,10 @@ use join_lazy_fmt::Join;
 use snailquote::escape;
 use crate::graph::parse::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, Indent};
-use crate::rust_type::TypeStructBodyForm;
+use crate::rust_type::{TypeStructBodyForm, RustTypeName};
 
 pub struct SerialGraph {
-    pub rust_types: HashMap<String, SerialType>,
+    pub rust_types: HashMap<RustTypeName, SerialType>,
     pub nodes: HashMap<String, SerialNode>
 }
 

@@ -6,7 +6,7 @@ use log::error;
 use crate::misc::catch_and_log::catch_and_log;
 use crate::graph::mutable::{NodeInput, NodeTypeData};
 use crate::graph::raw::RawComputeFn;
-use crate::rust_type::StructuralRustType;
+use crate::rust_type::RustType;
 
 #[derive(Clone)]
 pub struct BuiltinNodeType {
@@ -16,7 +16,7 @@ pub struct BuiltinNodeType {
 }
 
 pub struct BuiltinNodeTypeFnCtx<'a> {
-    pub resolved_rust_types: &'a HashMap<String, StructuralRustType>
+    pub resolved_rust_types: &'a HashMap<String, RustType>
 }
 
 /// The function takes one argument, which may have commas. You can split on the commas and that

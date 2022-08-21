@@ -15,7 +15,7 @@ use crate::graph::parse::topological_sort::SortByDeps;
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialType, SerialTypeBody, SerialValueHead};
 use crate::graph::raw::RawComputeFn;
 use crate::misc::map_box::map_box;
-use crate::rust_type::{infer_tuple_align, infer_tuple_size, IsSubtypeOf, KnownRustType, RustType, StructuralRustType, TypeEnumVariant, TypeStructBody, TypeStructBodyForm, TypeStructField, TypeStructure};
+use crate::rust_type::{infer_c_tuple_align, infer_c_tuple_size, KnownRustType, RustType, StructuralRustType, TypeStructBodyForm};
 
 mod size_and_align;
 
@@ -180,7 +180,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_variant_type(&mut self, variant_type: SerialEnumVariantType) -> TypeEnumVariant {
         TypeEnumVariant {
-            name: variant_type.name,
+            variant_name: variant_type.name,
             body: self.resolve_type_body(variant_type.body)
         }
     }
@@ -466,7 +466,7 @@ impl<'a> GraphBuilder<'a> {
                     base_type,
                 ))
             },
-            SerialRustType::Tuple(elements) => TypeStructure::Tuple {
+            SerialRustType::Tuple(elements) => TypeStructure::CTuple {
                 elements: elements.into_iter().map(|elem| self.resolve_type2(elem)).collect()
             },
             SerialRustType::Array { elem, length } => TypeStructure::Array {
@@ -508,7 +508,7 @@ impl<'a> GraphBuilder<'a> {
                 let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &SerialBody::None))).collect::<Vec<_>>();
                 let size = calculate_size(&elements);
                 let align = calculate_align(&elements);
-                let structure = TypeStructure::Tuple {
+                let structure = TypeStructure::CTuple {
                     elements: elements.into_iter().map(RustType::Structural).collect()
                 };
                 StructuralRustType {
@@ -553,7 +553,7 @@ impl<'a> GraphBuilder<'a> {
                     structure: TypeStructure::CReprEnum {
                         // We can only infer this one variant
                         variants: vec![TypeEnumVariant {
-                            name: variant_name.to_string(),
+                            variant_name: variant_name.to_string(),
                             body
                         }]
                     }
@@ -603,8 +603,8 @@ impl<'a> GraphBuilder<'a> {
                     // why do we have to clone rust_type here? are we doing something redundant?
                     self.resolve_type(tuple_item.rust_type.clone(), (tuple_item.value.as_ref(), &tuple_item.value_children))
                 }).collect::<Vec<_>>();
-                let size = infer_tuple_size(&item_types);
-                let align = infer_tuple_align(&item_types);
+                let size = infer_c_tuple_size(&item_types);
+                let align = infer_c_tuple_align(&item_types);
                 let body = TypeStructBody::Tuple(item_types);
                 (size, align, body)
             },
@@ -613,8 +613,8 @@ impl<'a> GraphBuilder<'a> {
                     // why do we have to clone rust_type here? (see above)
                     self.resolve_type(field.rust_type.clone(), (field.value.as_ref(), &field.value_children))
                 }).collect::<Vec<_>>();
-                let size = infer_tuple_size(&item_types);
-                let align = infer_tuple_align(&item_types);
+                let size = infer_c_tuple_size(&item_types);
+                let align = infer_c_tuple_align(&item_types);
                 let body = TypeStructBody::Fields(
                     zip(
                         fields.iter().map(|field| &field.name).cloned(),
@@ -641,7 +641,7 @@ impl<'a> GraphBuilder<'a> {
                         inferred_type_name: inferred_type.type_name.to_string()
                     });
                 }
-                resolved_type.refine_from(inferred_type);
+                resolved_type.unify(inferred_type);
                 resolved_type
             }
         }
@@ -662,7 +662,7 @@ impl<'a> GraphBuilder<'a> {
                     type_name_rhs: next_type.type_name.to_string()
                 });
             }
-            final_type.refine_from(next_type);
+            final_type.unify(next_type);
         }
         final_type
     }
@@ -782,7 +782,7 @@ impl<'a> GraphBuilder<'a> {
                     });
                 }
                 let mut final_rust_type = explicit_rust_type.clone();
-                final_rust_type.structure.refine_from(rust_type.into_owned().into_structure());
+                final_rust_type.structure.unify(rust_type.into_owned().into_structure());
                 self.resolve_struct_constructor_with_type(final_rust_type, body, node_name, field_name)
             }
         }
@@ -826,7 +826,7 @@ impl<'a> GraphBuilder<'a> {
                     });
                 }
                 let mut final_rust_type = explicit_rust_type.clone();
-                final_rust_type.structure.refine_from(rust_type.into_owned().into_structure());
+                final_rust_type.structure.unify(rust_type.into_owned().into_structure());
                 self.resolve_enum_constructor_with_type(final_rust_type, variant_name, body, node_name, field_name)
             }
         }
@@ -928,7 +928,7 @@ impl<'a> GraphBuilder<'a> {
         let type_name = rust_type.type_name;
         match rust_type.structure {
             TypeStructure::CReprEnum { variants } => {
-                match variants.into_iter().find(|variant| &variant.name == &variant_name) {
+                match variants.into_iter().find(|variant| &variant.variant_name == &variant_name) {
                     None => {
                         self.errors.push(GraphFormError::EnumVariantNotFound {
                             type_name,
@@ -1295,7 +1295,7 @@ impl<'a> GraphBuilder<'a> {
         let inferred_elem_type = match inferred_elem_type {
             None => rough_inferred_elem_type,
             Some(mut provided_elem_type) => {
-                provided_elem_type.refine_from(rough_inferred_elem_type);
+                provided_elem_type.unify(rough_inferred_elem_type);
                 provided_elem_type
             }
         };
@@ -1313,7 +1313,7 @@ impl<'a> GraphBuilder<'a> {
                         }
                     });
                 }
-                explicit_elem_type.refine_from(inferred_elem_type);
+                explicit_elem_type.unify(inferred_elem_type);
                 explicit_elem_type
             }
         };

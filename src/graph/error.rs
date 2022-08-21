@@ -4,11 +4,9 @@ use std::path::PathBuf;
 
 use derive_more::{Display, Error};
 use snailquote::UnescapeError;
-//noinspection RsUnusedImport (intelliJ fails to detect use)
-use join_lazy_fmt::Join;
-
 use crate::graph::mutable::NodeId;
-use crate::rust_type::{RustType, TypeStructBodyForm};
+use crate::rust_type::RustType;
+use crate::rust_type::structure::TypeStructBodyForm;
 
 pub type ParseErrors = Vec<ParseError>;
 

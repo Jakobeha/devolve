@@ -11,7 +11,7 @@ use crate::graph::mutable::build::GraphBuilder;
 use crate::graph::mutable::serialize::GraphSerializer;
 use crate::graph::parse::types::SerialGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
-use crate::rust_type::StructuralRustType;
+use crate::rust_type::RustType;
 
 mod node;
 mod build;
@@ -125,7 +125,7 @@ impl Into<SerialGraph> for MutableGraph {
     }
 }
 
-impl<'a> Into<SerialGraph> for (MutableGraph, &'a [StructuralRustType]) {
+impl<'a> Into<SerialGraph> for (MutableGraph, &'a [RustType]) {
     fn into(self) -> SerialGraph {
         GraphSerializer::serialize(self.0, self.1.into_iter())
     }
