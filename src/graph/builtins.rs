@@ -49,14 +49,14 @@ impl BuiltinNodeType {
         }
     }
 
-    pub fn get(name: &str) -> Option<BuiltinNodeType> {
+    pub fn lookup(name: &str) -> Option<BuiltinNodeType> {
         match catch_and_log!(BUILTINS.read(), "builtin node types poisoned") {
             None => None,
             Some(builtins) => builtins.get(name).cloned()
         }
     }
 
-    pub fn get_and_call_fn(fn_name: &str, fn_arg: &str, fn_ctx: BuiltinNodeTypeFnCtx<'_>) -> Option<Result<BuiltinNodeType, Box<dyn Error>>> {
+    pub fn lookup_and_call_fn(fn_name: &str, fn_arg: &str, fn_ctx: BuiltinNodeTypeFnCtx<'_>) -> Option<Result<BuiltinNodeType, Box<dyn Error>>> {
         match catch_and_log!(BUILTIN_FNS.read(), "builtin node type functions poisoned") {
             None => None,
             Some(builtin_fns) => builtin_fns.get(fn_name).map(|builtin_fn| builtin_fn(fn_arg, fn_ctx))

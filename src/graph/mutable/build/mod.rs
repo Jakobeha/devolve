@@ -295,7 +295,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_node_type_const(&mut self, type_name: &str, node_name: &str) -> Option<BuiltinNodeType> {
         match self.resolved_rust_types.get(type_name) {
-            None => match BuiltinNodeType::get(type_name) {
+            None => match BuiltinNodeType::lookup(type_name) {
                 None => {
                     self.errors.push(GraphFormError::NodeTypeNotFound {
                         type_name: type_name.to_string(),
@@ -316,7 +316,7 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn resolve_node_type_fn(&mut self, fn_name: &str, fn_arg: &str, node_name: &str) -> Option<BuiltinNodeType> {
-        match BuiltinNodeType::get_and_call_fn(fn_name, fn_arg, self.builtin_node_type_fn_ctx()) {
+        match BuiltinNodeType::lookup_and_call_fn(fn_name, fn_arg, self.builtin_node_type_fn_ctx()) {
             None => {
                 self.errors.push(GraphFormError::NodeTypeFunctionNotFound {
                     type_fn_name: fn_name.to_string(),
