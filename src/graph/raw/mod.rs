@@ -1,14 +1,17 @@
 use std::mem::MaybeUninit;
 use crate::CompoundViewCtx;
-use crate::graph::region::UsedRegion;
 use crate::rust_type::RustType;
+pub use region::*;
+
+mod region;
 
 pub struct RawComputeFn(Box<dyn RawComputeFnTrait>);
 
-// TODO: Ensure once we put in data it's consumed so we don't cause multiple drops
+// TODO: Ensure we can only put in copyable data and references somehow,
+//   as data in the graph is freely copied and destroyed
+
 pub struct RawInputs<'a>(&'a RawData);
 
-// TODO: Ensure we can only take out data once so we don't cause multiple drops
 pub struct RawOutputs<'a>(&'a mut RawData);
 
 pub struct RawData {

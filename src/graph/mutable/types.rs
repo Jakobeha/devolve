@@ -1,7 +1,23 @@
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use derive_more::Display;
+use slab::Slab;
 use crate::rust_type::RustType;
 use crate::graph::raw::RawComputeFn;
+
+/// Compound view graph.
+///
+/// A compound view is a graph of nodes which may be subviews, input/output, or computations.
+/// It is loaded from a .dui file.
+///
+/// This graph is well-formed but not validated.
+pub struct MutableGraph {
+    pub(in crate::graph) input_types: Vec<NodeIOType>,
+    pub(in crate::graph) output_types: Vec<NodeIOType>,
+    pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
+    pub(in crate::graph) nodes: Slab<Node>,
+    pub(in crate::graph) outputs: Vec<NodeInput>
+}
 
 #[derive(Clone)]
 pub struct NodeTypeData {
@@ -72,52 +88,6 @@ pub struct NodeTypeName(String);
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct NodeId(pub usize);
-
-
-impl Node {
-    pub fn depends_on(&self, other_id: NodeId) -> bool {
-        self.iter_dep_nodes().any(|dep| dep == other_id)
-    }
-
-    pub fn iter_deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
-        self.inputs.iter().flat_map(|input| input.deps())
-    }
-
-    pub fn iter_dep_nodes(&self) -> impl Iterator<Item=NodeId> + '_ {
-        self.inputs.iter().flat_map(|input| input.dep_nodes())
-    }
-
-    pub fn sort_by_deps(nodes: &mut [(NodeId, Self)]) {
-        nodes.sort_by(|(a_id, a), (b_id, b)| {
-            match (a.depends_on(*b_id), b.depends_on(*a_id)) {
-                (true, true) => unreachable!("should've been detected in cycle"),
-                (true, false) => Ordering::Greater,
-                (false, true) => Ordering::Less,
-                (false, false) => Ordering::Equal
-            }
-        })
-    }
-}
-
-impl NodeInput {
-    pub const ZST: NodeInput = NodeInput::Tuple(Vec::new());
-
-    pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
-        match &self {
-            NodeInput::Hole | NodeInput::Const(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeInputDep>>,
-            NodeInput::Dep(dep) => Box::new(std::iter::once(*dep)) as Box<dyn Iterator<Item=NodeInputDep>>,
-            NodeInput::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>,
-            NodeInput::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>
-        }
-    }
-
-    pub fn dep_nodes(&self) -> impl Iterator<Item=NodeId> + '_ {
-        self.deps().filter_map(|dep| match dep {
-            NodeInputDep::GraphInput { idx: _ } => None,
-            NodeInputDep::OtherNodeOutput { id, idx: _ } => Some(id)
-        })
-    }
-}
 
 impl Default for NodeInput {
     fn default() -> Self {

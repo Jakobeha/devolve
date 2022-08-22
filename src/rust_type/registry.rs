@@ -65,6 +65,9 @@ impl RustType {
         Self::register_manually(RustType::of::<T>(), Some(IntrinsicRustType::of::<T>()));
     }
 
+    /// Index into the type registry.
+    ///
+    /// The type registry is a global singleton as there should never be any conflicts.
     pub fn lookup(type_name: &RustTypeName) -> Option<RustType> {
         match catch_and_log!(KNOWN_TYPES.read(), "known rust types poisoned") {
             None => None,

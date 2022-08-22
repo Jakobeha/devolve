@@ -125,6 +125,34 @@ impl RustTypeName {
         }
     }
 
+    /// Remove qualifiers if they are the same as the given qualifiers, recursively
+    pub fn remove_qualifiers(&mut self, qualifiers: &[String]) {
+        match self {
+            RustTypeName::Ident { qualifiers, simple_name: _, generic_args } => {
+                if &qualifiers == &self.ctx.qualifiers {
+                    qualifiers.clear();
+                }
+                for generic_arg in generic_args {
+                    generic_arg.remove_qualifiers(qualifiers);
+                }
+            }
+            RustTypeName::Anonymous { .. } => {}
+            RustTypeName::ConstExpr { .. } => {}
+            RustTypeName::Pointer { .. } => {}
+            RustTypeName::Tuple { elems } => {
+                for elem in elems {
+                    elem.remove_qualifiers(qualifiers);
+                }
+            }
+            RustTypeName::Array { elem, length: _ } => {
+                elem.remove_qualifiers(qualifiers);
+            }
+            RustTypeName::Slice { elem} => {
+                elem.remove_qualifiers(qualifiers);
+            }
+        }
+    }
+
     pub fn iter_snis(&self) -> impl Iterator<Item=&str> {
         match self {
             RustTypeName::Ident {

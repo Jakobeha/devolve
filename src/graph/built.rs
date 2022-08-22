@@ -5,8 +5,7 @@ use std::ptr::copy_nonoverlapping;
 use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
-use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs};
-use crate::graph::region::UsedRegion;
+use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, UsedRegion};
 use crate::rust_type::{IsSubtypeOf, RustType};
 
 /// Compound view graph.

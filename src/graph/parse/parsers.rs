@@ -8,7 +8,7 @@ use snailquote::unescape;
 
 use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::parse::lexer_ext::LexerExt;
-use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialTypeDef, SerialTypeBody, SerialValueHead};
+use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::misc::extract::extract;
 use crate::rust_type::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
 
@@ -58,12 +58,12 @@ enum BlockParser<'a, 'b: 'a> {
     StructType {
         p: &'a mut GraphParser<'b>,
         name: String,
-        struct_type: SerialStructType,
+        struct_type: SerialStructTypeDef,
     },
     EnumType {
         p: &'a mut GraphParser<'b>,
         name: String,
-        enum_type: SerialEnumType,
+        enum_type: SerialEnumTypeDef,
     },
     Node {
         p: &'a mut GraphParser<'b>,
@@ -104,18 +104,18 @@ enum BodyParserItem {
 }
 
 struct EnumVariantTypeParser<'a, 'b: 'a> {
-    p: AbstractTreeParser<'a, 'b, SerialEnumVariantType>,
-    variants: &'a mut Vec<SerialEnumVariantType>
+    p: AbstractTreeParser<'a, 'b, SerialEnumVariantTypeDef>,
+    variants: &'a mut Vec<SerialEnumVariantTypeDef>
 }
 
 struct TypeBodyParser<'a, 'b: 'a> {
     p: AbstractTreeParser<'a, 'b, TypeBodyParserItem>,
-    body: &'a mut SerialTypeBody
+    body: &'a mut SerialTypeDefBody
 }
 
 enum TypeBodyParserItem {
     TupleItem(SerialRustType),
-    Field(SerialFieldType)
+    Field(SerialFieldTypeDef)
 }
 
 enum FieldSide {
@@ -245,8 +245,8 @@ impl<'a> GraphParser<'a> {
                 BlockParser::StructType {
                     p: self,
                     name,
-                    struct_type: SerialStructType {
-                        body: SerialTypeBody::None
+                    struct_type: SerialStructTypeDef {
+                        body: SerialTypeDefBody::None
                     }
                 }
             },
@@ -258,7 +258,7 @@ impl<'a> GraphParser<'a> {
                 BlockParser::EnumType {
                     p: self,
                     name,
-                    enum_type: SerialEnumType {
+                    enum_type: SerialEnumTypeDef {
                         variants: Vec::new()
                     }
                 }
@@ -591,7 +591,7 @@ impl<'a, 'b> EnumVariantTypeParser<'a, 'b> {
     fn parse(
         p: &'a mut GraphParser<'b>,
         lines: &[(usize, String)],
-        variants: &mut Vec<SerialEnumVariantType>
+        variants: &mut Vec<SerialEnumVariantTypeDef>
     ) {
         let mut parser = EnumVariantTypeParser::new(p, variants);
         parser._parse(lines);
@@ -600,7 +600,7 @@ impl<'a, 'b> EnumVariantTypeParser<'a, 'b> {
 
     fn new(
         p: &'a mut GraphParser<'b>,
-        variants: &'a mut Vec<SerialEnumVariantType>
+        variants: &'a mut Vec<SerialEnumVariantTypeDef>
     ) -> Self {
         EnumVariantTypeParser {
             p: AbstractTreeParser::new(p),
@@ -630,7 +630,7 @@ impl<'a, 'b> TypeBodyParser<'a, 'b> {
     fn parse(
         p: &'a mut GraphParser<'b>,
         lines: &[(usize, String)],
-        body: &'a mut SerialTypeBody
+        body: &'a mut SerialTypeDefBody
     ) {
         let mut parser = TypeBodyParser::new(p, body);
         parser._parse(lines);
@@ -639,7 +639,7 @@ impl<'a, 'b> TypeBodyParser<'a, 'b> {
 
     fn new(
         p: &'a mut GraphParser<'b>,
-        body: &'a mut SerialTypeBody
+        body: &'a mut SerialTypeDefBody
     ) -> Self {
         TypeBodyParser {
             p: AbstractTreeParser::new(p),
@@ -664,14 +664,14 @@ impl<'a, 'b> TypeBodyParser<'a, 'b> {
 
     fn finish(self) {
         let (p, items) = self.p.finish();
-        debug_assert!(matches!(self.body, SerialTypeBody::None), "finish with existing SerialTypeBody unsupported");
+        debug_assert!(matches!(self.body, SerialTypeDefBody::None), "finish with existing SerialTypeBody unsupported");
         if !items.is_empty() {
             if items.iter().all(|(_, item)| matches!(item, TypeBodyParserItem::Field(_))) {
                 let items = items.into_iter().map(|(_, item)| extract!(item, TypeBodyParserItem::Field(field)).unwrap()).collect::<Vec<_>>();
-                *self.body = SerialTypeBody::Fields(items);
+                *self.body = SerialTypeDefBody::Fields(items);
             } else if items.iter().all(|(_, item)| matches!(item, TypeBodyParserItem::TupleItem(_))) {
                 let items = items.into_iter().map(|(_, item)| extract!(item, TypeBodyParserItem::TupleItem(tuple_item)).unwrap()).collect::<Vec<_>>();
-                *self.body = SerialTypeBody::Tuple(items);
+                *self.body = SerialTypeDefBody::Tuple(items);
             } else {
                 p.errors.push(ParseError {
                     path: p.path.to_path_buf(),
@@ -723,8 +723,8 @@ fn parse_field(line: &str) -> Result<SerialField, (usize, ParseErrorBody)> {
     })
 }
 
-fn parse_field_type(line: &str) -> Result<SerialFieldType, (usize, ParseErrorBody)> {
-    parse_abstract_field(line, |name, rust_type, value| SerialFieldType {
+fn parse_field_type(line: &str) -> Result<SerialFieldTypeDef, (usize, ParseErrorBody)> {
+    parse_abstract_field(line, |name, rust_type, value| SerialFieldTypeDef {
         name,
         rust_type,
         default_value: value,
@@ -789,10 +789,10 @@ fn parse_rust_type(line: &str) -> Result<SerialRustType, (usize, ParseErrorBody)
     Ok(rust_type)
 }
 
-fn parse_enum_variant_type(line: &str) -> Result<SerialEnumVariantType, (usize, ParseErrorBody)> {
+fn parse_enum_variant_type(line: &str) -> Result<SerialEnumVariantTypeDef, (usize, ParseErrorBody)> {
     let mut lexer = Lexer::<GraphToken>::new(line);
     lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
-    Ok(SerialEnumVariantType { name: lexer.slice().to_string(), body: SerialTypeBody::None })
+    Ok(SerialEnumVariantTypeDef { name: lexer.slice().to_string(), body: SerialTypeDefBody::None })
 }
 
 fn munch_value_or_underscore(lexer: &mut Lexer<GraphToken>) -> Result<Option<SerialValueHead>, (usize, ParseErrorBody)> {

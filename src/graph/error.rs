@@ -99,6 +99,36 @@ pub enum GraphFormError {
         error: Box<dyn Error>,
         node_name: String
     },
+    #[display(fmt = "node not found: {} (referenced from node {})", node_name, referenced_from)]
+    NodeNotFound {
+        node_name: String,
+        referenced_from: NodeNameFieldName,
+    },
+    #[display(fmt = "field {} not in node {} (referenced from {})", field_name, node_name, referenced_from)]
+    NodeFieldNotFound {
+        field_name: String,
+        node_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
+    NodeIsDataType {
+        type_name: String,
+        node_name: String
+    },
+    #[display(fmt = "default values in types aren't supported, default values are in only in nodes (field {} in type {})", field_name, type_def_name)]
+    FieldDefaultValueNotSupported {
+        type_def_name: String,
+        field_name: String
+    },
+    #[display(fmt = "type def layout not resolved, we need to know the size and alignment of each item: {}", name)]
+    TypeDefLayoutNotResolved {
+        type_def_name: String
+    },
+    #[display(fmt = "type has same name as a registered native-Rust type, but an incompatible structure: {}", "type_name.qualified()")]
+    TypeConflictsWithRegisteredType {
+        #[error(not(source))]
+        type_name: RustTypeName
+    },
     #[display(fmt = "type not found: {} (referenced from node {})", "type_name.unqualified()", referenced_from)]
     RustTypeNotFound {
         type_name: RustTypeName,
@@ -137,24 +167,6 @@ pub enum GraphFormError {
         variant_name: String,
         referenced_from: NodeNameFieldName,
     },
-    #[display(fmt = "node not found: {} (referenced from node {})", node_name, referenced_from)]
-    NodeNotFound {
-        node_name: String,
-        referenced_from: NodeNameFieldName,
-    },
-    #[display(fmt = "field {} not in node {} (referenced from {})", field_name, node_name, referenced_from)]
-    NodeFieldNotFound {
-        field_name: String,
-        node_name: String,
-        referenced_from: NodeNameFieldName
-    },
-    #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
-    NodeIsDataType {
-        type_name: String,
-        node_name: String
-    },
-    #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structure", "type_name.unqualified()")]
-    TypeConflictsWithBuiltinType { #[error(not(source))] type_name: RustTypeName },
     #[display(fmt = "type mismatch, lengths of arrays are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, "type_name.unqualified()", referenced_from)]
     ArrayLengthMismatch {
         actual_length: usize,
@@ -236,10 +248,6 @@ pub enum GraphFormError {
     #[display(fmt = "type layout not resolved, we need to know the size and alignment of each item: {}", "type_name.unqualified()")]
     TypeLayoutNotResolved {
         type_name: RustTypeName
-    },
-    #[display(fmt = "type def layout not resolved, we need to know the size and alignment of each item: {}", name)]
-    TypeDefLayoutNotResolved {
-        name: String
     },
 }
 

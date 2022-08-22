@@ -1,16 +1,22 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::iter::{empty, once};
-// TODO: Move NodeTypeName?
+// Generally backwards dependencies like this (parse <- mutable) is bad.
+// In this case we need NodeTypeName because we use mutable's dependency ordering
 use crate::graph::mutable::NodeTypeName;
 
 //noinspection RsUnusedImport (intelliJ fails to detect SerialFieldElem use)
-use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialFieldElem, SerialNode, SerialRustType, SerialStructType, SerialTypeDef, SerialTypeBody, SerialValueHead};
+use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialFieldElem, SerialNode, SerialRustType, SerialStructTypeDef, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::misc::extract::extract;
 
 pub struct SerialNodeDep<'a> {
     pub node_ident: &'a str,
     pub field_ident: &'a str
+}
+
+pub struct SerialTypeDep<'a> {
+    pub qualifiers: &'a Vec<String>,
+    pub simple_name: &'a str
 }
 
 pub trait SortByDeps {
@@ -110,7 +116,7 @@ impl HasDeps for SerialNode {
 
 impl HasDeps for SerialTypeDef {
     fn deps_set(&self) -> HashSet<String> {
-        type_def_deps(self).map(String::from).collect::<HashSet<_>>()
+        type_def_local_deps(self).map(String::from).collect::<HashSet<_>>()
     }
 
     fn cmp_special_case(_lhs_name: &str, _rhs_name: &str) -> Ordering {
@@ -118,64 +124,67 @@ impl HasDeps for SerialTypeDef {
     }
 }
 
-pub fn type_def_deps(type_def: &SerialTypeDef) -> impl Iterator<Item=&str> {
+pub fn type_def_local_deps(type_def: &SerialTypeDef) -> impl Iterator<Item=&str> {
+    type_def_deps(type_def)
+        .filter(|dep| dep.qualifiers.is_empty())
+        .map(|dep| dep.simple_name)
+}
+
+pub fn type_def_deps(type_def: &SerialTypeDef) -> impl Iterator<Item=SerialTypeDep<'_>> {
     match type_def {
-        SerialTypeDef::Struct(struct_type) => Box::new(struct_type_def_deps(struct_type)) as Box<dyn Iterator<Item=&str>>,
-        SerialTypeDef::Enum(enum_type) => Box::new(enum_type_def_deps(enum_type)) as Box<dyn Iterator<Item=&str>>
+        SerialTypeDef::Struct(struct_type) => Box::new(struct_type_def_deps(struct_type)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>,
+        SerialTypeDef::Enum(enum_type) => Box::new(enum_type_def_deps(enum_type)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
     }
 }
 
-fn struct_type_def_deps(struct_type: &SerialStructType) -> impl Iterator<Item=&str> {
+fn struct_type_def_deps(struct_type: &SerialStructTypeDef) -> impl Iterator<Item=SerialTypeDep<'_>> {
     type_def_body_deps(&struct_type.body)
 }
 
-fn enum_type_def_deps(enum_type: &SerialEnumType) -> impl Iterator<Item=&str> {
+fn enum_type_def_deps(enum_type: &SerialEnumTypeDef) -> impl Iterator<Item=SerialTypeDep<'_>> {
     enum_type.variants.iter()
         .flat_map(|variant| type_def_body_deps(&variant.body))
 }
 
-fn type_def_body_deps(type_body: &SerialTypeBody) -> impl Iterator<Item=&str> {
+fn type_def_body_deps(type_body: &SerialTypeDefBody) -> impl Iterator<Item=SerialTypeDep<'_>> {
     match type_body {
-        SerialTypeBody::None => Box::new(empty()),
-        SerialTypeBody::Tuple(tuple_items) => {
-            Box::new(tuple_items.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=&str>>
+        SerialTypeDefBody::None => Box::new(empty()),
+        SerialTypeDefBody::Tuple(tuple_items) => {
+            Box::new(tuple_items.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
-        SerialTypeBody::Fields(fields) => {
-            Box::new(fields.iter().filter_map(|item| item.rust_type.as_ref()).flat_map(rust_type_deps)) as Box<dyn Iterator<Item=&str>>
+        SerialTypeDefBody::Fields(fields) => {
+            Box::new(fields.iter().filter_map(|item| item.rust_type.as_ref()).flat_map(rust_type_deps)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
     }
 }
 
-fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=&str> {
+fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=SerialTypeDep<'_>> {
     match rust_type {
         SerialRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
-            // We only care about types defined in this module
-            // TODO: Replace qualifiers.is_empty() with the module's qualifiers
-            if qualifiers.is_empty() {
-                // Generics add indirection, which we don't count as a dependency
-                Box::new(once(simple_name.as_str())) as Box<dyn Iterator<Item=&str>>
-            } else {
-                Box::new(empty()) as Box<dyn Iterator<Item=&str>>
-            }
+            // Generic args may add indirection, in which case we shouldn't count them.
+            // Currently we assume all generic args are indirect, but in the future we may change this.
+            // Either way generic args are only supported in registered builtin types.
+            let dep = SerialTypeDef { qualifiers, simple_name };
+            Box::new(once(dep)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::ConstExpr { .. } => {
-            Box::new(empty()) as Box<dyn Iterator<Item=&str>>
+            Box::new(empty()) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::Anonymous { .. } => {
-            Box::new(empty()) as Box<dyn Iterator<Item=&str>>
+            Box::new(empty()) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::Pointer { .. } => {
             // Reference adds indirection, which we don't count as a dependency
-            Box::new(empty()) as Box<dyn Iterator<Item=&str>>
+            Box::new(empty()) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::Tuple { elems } => {
-            Box::new(elems.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=&str>>
+            Box::new(elems.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::Array { elem, length: _ } => {
-            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=&str>>
+            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::Slice { elem } => {
-            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=&str>>
+            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
     }
 }

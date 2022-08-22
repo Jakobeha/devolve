@@ -4,7 +4,8 @@ use std::ops::{Index, IndexMut};
 
 use slab::Slab;
 
-pub use node::*;
+pub use types::*;
+pub use ctx::*;
 
 use crate::graph::error::{GraphFormErrors, GraphValidationError, GraphValidationErrors, NodeCycle};
 use crate::graph::mutable::build::GraphBuilder;
@@ -13,104 +14,19 @@ use crate::graph::parse::types::SerialGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
 use crate::rust_type::TypeStructure;
 
-mod node;
+mod query_mutate;
+mod types;
+mod ctx;
 mod build;
 mod serialize;
 
-/// Compound view graph.
-///
-/// A compound view is a graph of nodes which may be subviews, input/output, or computations.
-/// It is loaded from a .dui file.
-///
-/// This graph is well-formed but not validated.
-pub struct MutableGraph {
-    pub(in crate::graph) input_types: Vec<NodeIOType>,
-    pub(in crate::graph) output_types: Vec<NodeIOType>,
-    pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
-    pub(in crate::graph) nodes: Slab<Node>,
-    pub(in crate::graph) outputs: Vec<NodeInput>
-}
-
-impl MutableGraph {
-    pub fn insert_node(&mut self, node: Node) -> NodeId {
-        NodeId(self.nodes.insert(node))
-    }
-
-    pub fn delete_node(&mut self, id: NodeId) {
-        self.nodes.remove(id.0);
-    }
-
-    pub fn validate(&self) -> GraphValidationErrors {
-        let mut errors = Vec::new();
-
-        if let Err(cycle) = self.check_cycle() {
-            errors.push(GraphValidationError::Cycle(cycle))
-        }
-
-        todo!("check that input and output types match");
-        todo!("check that there are no partially-filled inputs in required regions or output");
-
-        errors
-    }
-
-    pub fn iter_node_ids(&self) -> impl Iterator<Item=NodeId> + '_ {
-        self.nodes.iter().map(|(id, _)| NodeId(id))
-    }
-
-    pub fn iter_nodes(&self) -> impl Iterator<Item=(NodeId, &Node)> {
-        self.nodes.iter().map(|(id, node)| (NodeId(id), node))
-    }
-
-    pub fn iter_mut_nodes(&mut self) -> impl Iterator<Item=(NodeId, &mut Node)> {
-        self.nodes.iter_mut().map(|(id, node)| (NodeId(id), node))
-    }
-
-    fn check_cycle(&self) -> Result<(), NodeCycle> {
-        let mut not_in_cycle = HashSet::<NodeId>::new();
-        for node_id in self.iter_node_ids() {
-            // Depth-first search
-            let mut visited = HashSet::<NodeId>::new();
-            for elem in &not_in_cycle {
-                visited.insert(*elem);
-            }
-
-            let mut current_chain = Vec::new();
-            let mut recurse_stack = Vec::new();
-            current_chain.push(node_id);
-            recurse_stack.push(0);
-            while let Some(next_id) = current_chain.pop() {
-                let next_node = &self[next_id];
-                let recurse_idx = recurse_stack.pop().unwrap();
-
-                let mut remaining_deps = next_node.iter_dep_nodes().skip(recurse_idx);
-                if let Some(next_dep) = remaining_deps.next() {
-                    if next_dep == node_id {
-                        current_chain.push(node_id);
-                        return Err(NodeCycle(current_chain));
-                    } else if !visited.contains(&next_dep) {
-                        current_chain.push(next_id);
-                        recurse_stack.push(recurse_idx + 1);
-                    }
-                } else {
-                    visited.insert(next_id);
-                }
-            }
-
-            not_in_cycle.insert(node_id);
-        }
-
-        Ok(())
-    }
-}
-
 // region serialization / deserialization
-impl TryFrom<SerialGraph> for MutableGraph {
+impl<'a> TryFrom<(SerialGraph, &'a ComptimeCtx)> for MutableGraph {
     type Error = GraphFormErrors;
 
-    fn try_from(value: SerialGraph) -> Result<Self, Self::Error> {
+    fn try_from((graph, ctx): (SerialGraph, &'a ComptimeCtx)) -> Result<Self, Self::Error> {
         let mut errors = Vec::new();
-        // TODO: Module qualifiers?
-        let graph = GraphBuilder::build(value, Vec::new(), &mut errors);
+        let graph = GraphBuilder::build(graph, ctx, &mut errors);
 
         if errors.is_empty() {
             Ok(graph)
@@ -120,15 +36,15 @@ impl TryFrom<SerialGraph> for MutableGraph {
     }
 }
 
-impl Into<SerialGraph> for MutableGraph {
+impl<'a> Into<SerialGraph> for (MutableGraph, &'a ComptimeCtx) {
     fn into(self) -> SerialGraph {
-        GraphSerializer::serialize(self, empty())
+        GraphSerializer::serialize(self.0, self.1, empty())
     }
 }
 
-impl<'a> Into<SerialGraph> for (MutableGraph, &'a [(String, TypeStructure)]) {
+impl<'a> Into<SerialGraph> for (MutableGraph, &'a ComptimeCtx, &'a [(String, TypeStructure)]) {
     fn into(self) -> SerialGraph {
-        GraphSerializer::serialize(self.0, self.1.into_iter())
+        GraphSerializer::serialize(self.0, self.1, self.2.into_iter())
     }
 }
 // endregion
