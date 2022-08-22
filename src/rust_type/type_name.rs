@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::iter::{empty, once};
 use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
@@ -87,6 +87,14 @@ impl<'a> Extend<&'a str> for DuplicateNamesInScope {
     }
 }
 
+impl<'a> FromIterator<&'a str> for DuplicateNamesInScope {
+    fn from_iter<T>(iter: T) -> Self where T: IntoIterator<Item = &'a str> {
+        let mut scope = DuplicateNamesInScope::new();
+        scope.extend(iter);
+        scope
+    }
+}
+
 impl RustTypeName {
     pub fn scoped_simple(qualifiers: Vec<String>, simple_name: String) -> RustTypeName {
         RustTypeName::Ident {
@@ -149,14 +157,14 @@ impl RustTypeName {
     }
 
     /// Remove qualifiers if they are the same as the given qualifiers, recursively
-    pub fn remove_qualifiers(&mut self, qualifiers: &[String]) {
+    pub fn remove_qualifiers(&mut self, qualifiers_to_remove: &[String]) {
         match self {
             RustTypeName::Ident { qualifiers, simple_name: _, generic_args } => {
-                if &qualifiers == &self.ctx.qualifiers {
+                if qualifiers.as_slice() == qualifiers_to_remove {
                     qualifiers.clear();
                 }
                 for generic_arg in generic_args {
-                    generic_arg.remove_qualifiers(qualifiers);
+                    generic_arg.remove_qualifiers(qualifiers_to_remove);
                 }
             }
             RustTypeName::Anonymous { .. } => {}
@@ -164,14 +172,14 @@ impl RustTypeName {
             RustTypeName::Pointer { .. } => {}
             RustTypeName::Tuple { elems } => {
                 for elem in elems {
-                    elem.remove_qualifiers(qualifiers);
+                    elem.remove_qualifiers(qualifiers_to_remove);
                 }
             }
             RustTypeName::Array { elem, length: _ } => {
-                elem.remove_qualifiers(qualifiers);
+                elem.remove_qualifiers(qualifiers_to_remove);
             }
             RustTypeName::Slice { elem} => {
-                elem.remove_qualifiers(qualifiers);
+                elem.remove_qualifiers(qualifiers_to_remove);
             }
         }
     }

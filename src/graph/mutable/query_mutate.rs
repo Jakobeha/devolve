@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
+
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle};
 use crate::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep};
-use crate::rust_type::{RustType, RustTypeName};
+use crate::rust_type::RustType;
 
 impl MutableGraph {
     pub fn insert_node(&mut self, node: Node) -> NodeId {
@@ -20,10 +21,12 @@ impl MutableGraph {
             errors.push(GraphValidationError::Cycle(cycle))
         }
 
-        todo!("check that input and output types match");
-        todo!("check that there are no partially-filled inputs in required regions or output");
+        todo!("\
+        Check that input and output types match\
+        Also check that there are no partially-filled inputs in required regions or output\
+        ")
 
-        errors
+        // errors
     }
 
     pub fn iter_node_ids(&self) -> impl Iterator<Item=NodeId> + '_ {
@@ -42,7 +45,7 @@ impl MutableGraph {
     /// rust types or structures, because any type names are only in the surface types
     pub fn iter_rust_types(&self) -> impl Iterator<Item=&RustType> {
         (self.input_types.iter().chain(self.output_types.iter()))
-            .map(|io_type| io_type.rust_type)
+            .map(|io_type| &io_type.rust_type)
     }
 
     fn check_cycle(&self) -> Result<(), NodeCycle> {

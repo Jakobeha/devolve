@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::num::{ParseIntError, ParseFloatError};
 use std::path::{PathBuf, Path};
 
-use logos::{Lexer, Logos, Span};
+use logos::{Lexer, Logos};
 use snailquote::unescape;
 
 use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
@@ -47,7 +47,6 @@ struct GraphParser<'a> {
     graph: &'a mut SerialGraph,
     errors: &'a mut Vec<ParseError>,
     path: PathBuf,
-    token_buffer: &'a mut Vec<(GraphToken, Span)>,
 }
 
 enum BlockParser<'a, 'b: 'a> {
@@ -69,8 +68,7 @@ enum BlockParser<'a, 'b: 'a> {
         p: &'a mut GraphParser<'b>,
         name: String,
         node: SerialNode
-    },
-    Null
+    }
 }
 
 struct AbstractTreeParser<'a, 'b: 'a, Item> {
@@ -127,14 +125,12 @@ impl SerialGraph {
     pub fn parse_from(path: &Path) -> Result<Self, ParseErrors> {
         let mut graph = SerialGraph::new();
         let mut errors = Vec::new();
-        let mut token_buffer = Vec::new();
 
         {
             GraphParser {
                 graph: &mut graph,
                 errors: &mut errors,
                 path: path.to_path_buf(),
-                token_buffer: &mut token_buffer
             }.parse();
         }
 
@@ -313,7 +309,6 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
             BlockParser::Node { p, name: _, node } => {
                 FieldElemParser::parse(p, lines, &mut node.input_fields, &mut node.output_fields);
             }
-            BlockParser::Null => {}
         }
     }
 
@@ -359,7 +354,6 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                     p.graph.nodes.insert(name, node);
                 }
             }
-            BlockParser::Null => {}
         }
     }
 }

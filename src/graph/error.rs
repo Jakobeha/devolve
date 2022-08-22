@@ -4,9 +4,11 @@ use std::path::PathBuf;
 
 use derive_more::{Display, Error};
 use snailquote::UnescapeError;
+//noinspection RsUnusedImport (IntelliJ fails to detect)
+use join_lazy_fmt::Join;
+
 use crate::graph::mutable::NodeId;
 use crate::rust_type::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructBodyForm};
-use join_lazy_fmt::Join;
 
 pub type ParseErrors = Vec<ParseError>;
 
@@ -120,7 +122,7 @@ pub enum GraphFormError {
         type_def_name: String,
         field_name: String
     },
-    #[display(fmt = "type def layout not resolved, we need to know the size and alignment of each item: {}", name)]
+    #[display(fmt = "type def layout not resolved, we need to know the size and alignment of each item: {}", type_def_name)]
     TypeDefLayoutNotResolved {
         type_def_name: String
     },

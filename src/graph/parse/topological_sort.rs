@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::iter::{empty, once};
+
 // Generally backwards dependencies like this (parse <- mutable) is bad.
 // In this case we need NodeTypeName because we use mutable's dependency ordering
 use crate::graph::mutable::NodeTypeName;
-
-//noinspection RsUnusedImport (intelliJ fails to detect SerialFieldElem use)
-use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialFieldElem, SerialNode, SerialRustType, SerialStructTypeDef, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
+use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialNode, SerialRustType, SerialStructTypeDef, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
+//noinspection RsUnusedImport (IntelliJ fails to detect use)
+use crate::graph::parse::types::SerialFieldElem;
 use crate::misc::extract::extract;
 
 pub struct SerialNodeDep<'a> {
@@ -164,7 +165,7 @@ fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=SerialTypeDe
             // Generic args may add indirection, in which case we shouldn't count them.
             // Currently we assume all generic args are indirect, but in the future we may change this.
             // Either way generic args are only supported in registered builtin types.
-            let dep = SerialTypeDef { qualifiers, simple_name };
+            let dep = SerialTypeDep { qualifiers, simple_name };
             Box::new(once(dep)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
         }
         SerialRustType::ConstExpr { .. } => {

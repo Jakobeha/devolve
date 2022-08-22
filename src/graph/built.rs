@@ -55,11 +55,6 @@ enum NodeInputDep {
     }
 }
 
-struct Edge {
-    num_outputs: usize,
-    input_backwards_offsets: Vec<usize>,
-}
-
 impl BuiltGraph {
     pub unsafe fn try_from_but_assume_sorted_if_there_are_no_cycles(graph: MutableGraph) -> Result<Self, GraphValidationErrors> {
         let errors = graph.validate();

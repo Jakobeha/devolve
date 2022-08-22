@@ -1,12 +1,13 @@
-use std::collections::HashSet;
 use std::iter::{repeat_with, zip};
 use std::mem::size_of;
-use log::{error, warn};
+
 use join_lazy_fmt::Join;
+use log::{error, warn};
+
 use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData, NodeTypeName};
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::mutable::ComptimeCtx;
-use crate::rust_type::{PrimitiveType, RustType, TypeEnumVariant, TypeStructure, TypeStructBody, TypeStructField, RustTypeName, DuplicateNamesInScope};
+use crate::rust_type::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
 pub struct GraphSerializer<'a> {
     /// Only actually needs some of the ctx, GraphBuilder needs more, but we use the same struct
@@ -48,7 +49,7 @@ impl<'a> GraphSerializer<'a> {
     fn _serialize(&mut self, graph: MutableGraph) {
         // Setup data
         // Don't need to iterate nested rust types or structures, because any type names are only in the surface types
-        self.rust_type_names.extend(graph.iter_rust_types().filter_map(|rust_type| rust_type.type_name.iter_snis()));
+        self.rust_type_names.extend(graph.iter_rust_types().flat_map(|rust_type| rust_type.type_name.iter_snis()));
         self.input_names.extend(graph.input_types.iter().map(|input_type| input_type.name.clone()));
 
         self.node_names_and_output_names.reserve(graph.nodes.capacity());
@@ -535,7 +536,7 @@ impl<'a> GraphSerializer<'a> {
         SerialBody::Tuple(elements)
     }
 
-    fn serialize_constant_compound<'a, U, V, It: Iterator<Item=(&'a RustType, U)>>(
+    fn serialize_constant_compound<'b, U, V, It: Iterator<Item=(&'b RustType, U)>>(
         &mut self,
         constant_data: &[u8],
         elem_types: It,

@@ -61,9 +61,22 @@ pub trait DisplayWithCtx2 {
     }
 }
 
+// I don't really care that this is not actually used.
+// Should probably move this code into a crate eventually
+#[allow(dead_code)]
 impl<Ctx> dyn DisplayWithCtx<Ctx=Ctx> {
     fn with_ctx<'a, 'b>(&'a self, ctx: &'b Ctx) -> ValueAndCtx<'a, 'b, dyn DisplayWithCtx<Ctx=Ctx>> {
         ValueAndCtx {
+            value: self,
+            ctx
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl<Ctx1, Ctx2> dyn DisplayWithCtx2<Ctx1=Ctx1, Ctx2=Ctx2> {
+    fn with_ctx<'a, 'b, 'c>(&'a self, ctx: (&'b Ctx1, &'c Ctx2)) -> ValueAndCtx2<'a, 'b, 'c, dyn DisplayWithCtx2<Ctx1=Ctx1, Ctx2=Ctx2>> {
+        ValueAndCtx2 {
             value: self,
             ctx
         }

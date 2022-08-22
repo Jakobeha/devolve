@@ -143,7 +143,7 @@ impl Display for SerialGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let snis = self.iter_rust_types()
             .flat_map(|rust_type| rust_type.iter_snis())
-            .map(String::from).collect::<DuplicateNamesInScope>();
+            .collect::<DuplicateNamesInScope>();
 
         let mut rust_types = self.rust_types.iter().collect::<Vec<_>>();
         rust_types.sort_by_deps();
