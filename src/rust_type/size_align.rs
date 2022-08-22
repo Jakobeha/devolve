@@ -7,9 +7,7 @@ impl TypeStructure {
         match self {
             TypeStructure::Opaque => None,
             TypeStructure::Primitive(primitive) => Some(primitive.size()),
-            TypeStructure::CReprEnum { variants } => if variants.iter().any(|variant| variant.infer_size().is_none()) {
-                None
-            } else {
+            TypeStructure::CReprEnum { variants } => {
                 let discriminant_size = discriminant_size(variants.len());
                 let data_size = variants.iter().map(|variant| variant.infer_size()).max().unwrap_or(0);
                 Some(discriminant_size + data_size)
@@ -25,9 +23,7 @@ impl TypeStructure {
         match self {
             TypeStructure::Opaque => None,
             TypeStructure::Primitive(primitive) => Some(primitive.align()),
-            TypeStructure::CReprEnum { variants } => if variants.iter().any(|variant| variant.infer_align().is_none()) {
-                None
-            } else {
+            TypeStructure::CReprEnum { variants } => {
                 let discriminant_align = discriminant_align(variants.len());
                 let data_align = variants.iter().map(|variant| variant.infer_align()).max().unwrap_or(0);
                 Some(usize::max(discriminant_align, data_align))
@@ -35,7 +31,7 @@ impl TypeStructure {
             TypeStructure::CReprStruct { body } => Some(body.infer_align()),
             TypeStructure::Pointer { refd: _ } => Some(align_of::<*const ()>()),
             TypeStructure::CTuple { elements } => Some(infer_c_tuple_align(elements)),
-            TypeStructure::Array { elem, length } => Some(infer_array_align(elem)),
+            TypeStructure::Array { elem, length: _ } => Some(infer_array_align(elem)),
         }
     }
 }

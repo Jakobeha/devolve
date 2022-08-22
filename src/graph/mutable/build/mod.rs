@@ -153,15 +153,17 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn resolve_struct_type(&mut self, name: &str, struct_type: SerialStructType) -> RustType {
-        self.finish_resolving_type_def(name, TypeStructure::CReprStruct {
+        let structure = TypeStructure::CReprStruct {
             body: self.resolve_type_body(struct_type.body)
-        })
+        };
+        self.finish_resolving_type_def(name, structure)
     }
 
     fn resolve_enum_type(&mut self, name: &str, enum_type: SerialEnumType) -> RustType {
-        self.finish_resolving_type_def(name, TypeStructure::CReprEnum {
+        let structure = TypeStructure::CReprEnum {
             variants: enum_type.variants.into_iter().map(|variant| self.resolve_variant_type(variant)).collect()
-        })
+        };
+        self.finish_resolving_type_def(name, structure)
     }
 
     fn finish_resolving_type_def(&mut self, name: &str, structure: TypeStructure) -> RustType {
@@ -420,7 +422,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_type_structurally2(&mut self, serial_type: SerialRustType) -> RustType {
         let (known_size, known_align) = match &serial_type {
-            SerialRustType::Ident { qualifiers, simple_name, generic_args } => {
+            SerialRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
                 let (previously_defined_size, previously_defined_align) = if qualifiers == &self.qualifiers {
                     match self.resolved_rust_types.get(simple_name.as_str()) {
                         None => (None, None),
@@ -429,7 +431,7 @@ impl<'a> GraphBuilder<'a> {
                         }
                     }
                 } else {
-                    None
+                    (None, None)
                 };
                 let (intrinsic_size, intrinsic_align) = {
                     match RustType::lookup(&serial_type) {
@@ -765,9 +767,9 @@ impl<'a> GraphBuilder<'a> {
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
-        let resolved_type = match type_name {
+        let resolved_type = match &type_name {
             RustTypeName::Ident { qualifiers, simple_name, generic_args }
-            if &qualifiers == &self.qualifiers && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
+            if qualifiers == &self.qualifiers && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
             _ => None
         };
         match resolved_type {
@@ -814,9 +816,9 @@ impl<'a> GraphBuilder<'a> {
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
-        let resolved_type = match type_name {
+        let resolved_type = match &type_name {
             RustTypeName::Ident { qualifiers, simple_name, generic_args }
-            if &qualifiers == &self.qualifiers && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
+            if qualifiers == &self.qualifiers && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
             _ => None
         };
         match resolved_type {

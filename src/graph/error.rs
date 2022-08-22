@@ -272,25 +272,25 @@ pub enum GraphIOCheckError {
         actual: usize,
         expected: usize
     },
-    #[display(fmt = "input type mismatch: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
+    #[display(fmt = "input type mismatch: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     InputTypeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "input type can't be verified: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
+    #[display(fmt = "input type can't be verified: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     InputTypeMaybeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "output type mismatch: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
+    #[display(fmt = "output type mismatch: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     OutputTypeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "output type can't be verified: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
+    #[display(fmt = "output type can't be verified: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     OutputTypeMaybeMismatch {
         field_name: String,
         expected: RustType,

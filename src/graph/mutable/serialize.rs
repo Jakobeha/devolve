@@ -418,7 +418,7 @@ impl GraphSerializer {
     fn serialize_constant(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<SerialValueHead>, SerialBody) {
         let size = rust_type.size;
         if size != constant_data.len() {
-            error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.type_name.unqualified(), size.unwrap());
+            error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.type_name.unqualified(), size);
             return (None, SerialBody::None)
         }
 

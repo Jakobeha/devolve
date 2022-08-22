@@ -461,13 +461,13 @@ impl RustTypeName {
                     mut qualifiers,
                     simple_name
                 } => match token {
-                    Some(RustTypeNameToken::DoubleColon) => {
+                    RustTypeNameToken::DoubleColon => {
                         qualifiers.push(simple_name);
                         RustTypeNameParseState::ExpectsIdent {
                             qualifiers
                         }
                     }
-                    Some(RustTypeNameToken::Punct('<')) => {
+                    RustTypeNameToken::Punct('<') => {
                         let mut elems = Vec::new();
                         while !lexer.remainder().trim_start().starts_with('>') {
                             elems.push(RustTypeName::parse_from(lexer, false)?);
@@ -486,8 +486,7 @@ impl RustTypeName {
                             }
                         }
                     }
-                    Some(_) => return Err(unexpected(lexer)),
-                    None => return Err(unexpected_end(lexer))
+                    _ => return Err(unexpected(lexer))
                 }
                 RustTypeNameParseState::ExpectsIdent {
                     qualifiers
@@ -502,9 +501,11 @@ impl RustTypeName {
             };
             if !parse_eof {
                 let peek_char = lexer.remainder().trim_start().chars().next();
-                match peek_char {
-                    ',' | ':' | ')' | ']' | '>' | '}' => break,
-                    _ => {}
+                if let Some(peek_char) = peek_char {
+                    match peek_char {
+                        ',' | ':' | ')' | ']' | '>' | '}' => break,
+                        _ => {}
+                    }
                 }
             }
         }

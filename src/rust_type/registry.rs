@@ -53,7 +53,7 @@ impl RustType {
         let type_name = &rust_type.type_name;
         if let Some(mut known_types) = catch_and_log!(KNOWN_TYPES.write(), "known rust types poisoned") {
             if let Some(existing_type) = known_types.get(type_name) {
-                if !existing_type.same(&rust_type) {
+                if existing_type != &rust_type || &existing_type.type_id != &rust_type.type_id {
                     error!("rust type with name {} already registered with a different structure", type_name.qualified());
                 }
             }
@@ -120,7 +120,7 @@ impl IntrinsicRustType {
         if let Some(mut known_intrinsics) = catch_and_log!(KNOWN_INTRINSICS.write(), "known intrinsic types poisoned") {
             if let Some(existing_intrinsic) = known_intrinsics.get(&intrinsic_type.type_id) {
                 if existing_intrinsic != &intrinsic_type {
-                    error!("intrinsic type with id {:?} already registered with a different name: old={} new={}", intrinsic_type.type_id, existing_intrinsic.type_name.qualified(), intrinsic_type.type_name.qualified());
+                    error!("intrinsic type with id {:?} already registered with a different name: old={} new={}", intrinsic_type.type_id, existing_intrinsic.type_name, intrinsic_type.type_name);
                 }
             }
             known_intrinsics.insert(intrinsic_type.type_id, intrinsic_type);

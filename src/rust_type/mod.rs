@@ -63,7 +63,7 @@ impl RustType {
         }
     }
 
-    pub fn display(&self, snis: &SimpleNamesInScope) -> RustTypeNameDisplay<'_, '_> {
+    pub fn display<'a, 'b>(&'a self, snis: &'b SimpleNamesInScope) -> RustTypeNameDisplay<'a, 'b> {
         self.type_name.display(snis)
     }
 }

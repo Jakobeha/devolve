@@ -158,6 +158,9 @@ fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=&str> {
                 Box::new(empty()) as Box<dyn Iterator<Item=&str>>
             }
         }
+        SerialRustType::ConstExpr { .. } => {
+            Box::new(empty()) as Box<dyn Iterator<Item=&str>>
+        }
         SerialRustType::Anonymous { .. } => {
             Box::new(empty()) as Box<dyn Iterator<Item=&str>>
         }
