@@ -34,9 +34,9 @@ impl TypeStructure {
                 Some(usize::max(discriminant_align, data_align))
             }
             TypeStructure::CReprStruct { body } => body.infer_align(),
-            TypeStructure::Pointer { referenced: _ } => Some(align_of::<*const ()>()),
-            TypeStructure::CTuple { elements } => infer_tuple_align(elements),
-            TypeStructure::Array { elem, length } => infer_array_align(elem, *length),
+            TypeStructure::Pointer { .. } => Some(align_of::<*const ()>()),
+            TypeStructure::CTuple { elements } => infer_c_tuple_align(elements),
+            TypeStructure::Array { elem, length } => infer_array_align(elem),
             TypeStructure::Slice { elem: _ } => None
         }
     }

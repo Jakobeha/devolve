@@ -149,7 +149,7 @@ impl TypeStructBody {
                     other_fields.iter().map(|other_field| {
                         match fields.iter().find(|field| field.name == other_field.name) {
                             None => IsSubtypeOf::No,
-                            Some(other_field) => field.rust_type.is_rough_subtype_of(&other_field.rust_type)
+                            Some(field) => field.rust_type.is_rough_subtype_of(&other_field.rust_type)
                         }
                     }).min().unwrap_or(IsSubtypeOf::Yes)
                 }

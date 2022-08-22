@@ -120,7 +120,7 @@ impl GraphSerializer {
             Some(rust_type.type_name.clone())
         } else if rust_type.type_name.is_anonymous() {
             // Anonymous
-            self.serialize_rust_type_by_structure(&structural.structure)
+            self.serialize_rust_type_by_structure(&rust_type.structure)
         } else {
             // Named, may be user defined
             self.add_if_type_def(rust_type);
@@ -419,10 +419,10 @@ impl GraphSerializer {
     fn serialize_constant(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<SerialValueHead>, SerialBody) {
         let size = rust_type.infer_size();
         if size.is_none() {
-            error!("deserialized constant data is of type with unknown size: actual size of data = {}, type = {}", constant_data.len(), rust_type.);
+            error!("deserialized constant data is of type with unknown size: actual size of data = {}, type = {}", constant_data.len(), rust_type.unqualified());
             return (None, SerialBody::None)
         } else if size.unwrap() != constant_data.len() {
-            error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type., size.unwrap());
+            error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.unqualified(), size.unwrap());
             return (None, SerialBody::None)
         }
 

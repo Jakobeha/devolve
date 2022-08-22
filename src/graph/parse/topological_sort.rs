@@ -147,11 +147,14 @@ fn type_def_body_deps(type_body: &SerialTypeBody) -> impl Iterator<Item=&str> {
 
 fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=&str> {
     match rust_type {
-        SerialRustType::Ident { name, generic_args: _ } => {
+        SerialRustType::Ident { qualifiers, simple_name, generic_args: _ }
+        // We only care about types defined in this module
+        // TODO: Replace qualifiers.is_empty() with the module's qualifiers
+        if qualifiers.is_empty() => {
             // Generics add indirection, which we don't count as a dependency
-            Box::new(std::iter::once(name.as_str())) as Box<dyn Iterator<Item=&str>>
+            Box::new(std::iter::once(simple_name.as_str())) as Box<dyn Iterator<Item=&str>>
         }
-        SerialRustType::Reference(_) => {
+        SerialRustType::Pointer { .. } => {
             // Reference adds indirection, which we don't count as a dependency
             Box::new(std::iter::empty()) as Box<dyn Iterator<Item=&str>>
         }

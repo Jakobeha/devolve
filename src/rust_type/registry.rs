@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::sync::RwLock;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use bimap::BiHashMap;
 use std::mem::{size_of, align_of};
@@ -24,7 +25,7 @@ lazy_static! {
         known_types
     });
     static ref KNOWN_NAMES: RwLock<BiHashMap<TypeId, RustTypeName>> = RwLock::new(BiHashMap::new());
-    static ref KNOWN_INTRINSICS: RwLock<HashMap<TypeId, IntrinsicType>> = RwLock::new(HashMap::new());
+    static ref KNOWN_INTRINSICS: RwLock<HashMap<TypeId, IntrinsicRustType>> = RwLock::new(HashMap::new());
 }
 
 impl RustType {

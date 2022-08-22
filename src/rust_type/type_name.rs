@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::{empty, once};
 use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
 use join_lazy_fmt::Join;
+use derive_more::{Display, Error};
 use logos::{Lexer, Logos};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -21,7 +22,7 @@ pub enum RustTypeName {
     },
     Pointer {
         refd: Box<RustTypeName>,
-        ptr_kind: RefType
+        ptr_kind: RustPointerKind
     },
     Tuple {
         elems: Vec<RustTypeName>
@@ -221,7 +222,7 @@ impl Display for RustPointerKind {
     }
 }
 
-impl RustTypeNameDisplayQualify {
+impl<'a> RustTypeNameDisplayQualify<'a> {
     fn do_qualify(&self, simple_name: &str) -> bool {
         match self {
             RustTypeNameDisplayQualify::Never => false,
@@ -299,7 +300,7 @@ impl<'a> TryFrom<&'a str> for RustTypeName {
     }
 }
 
-enum RustTypeNameParseState<'a> {
+enum RustTypeNameParseState {
     Init,
     AfterIdent {
         qualifiers: Vec<String>,

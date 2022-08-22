@@ -144,7 +144,7 @@ impl Display for SerialGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let snis = self.iter_rust_types()
             .flat_map(|rust_type| rust_type.iter_snis())
-            .map(String::from).collect::<HashSet<_>>();
+            .map(String::from).collect::<SimpleNamesInScope>();
 
         let mut rust_types = self.rust_types.iter().collect::<Vec<_>>();
         rust_types.sort_by_deps();
@@ -426,10 +426,10 @@ impl SerialValueHead {
                 elems.iter().flat_map(|elem| elem.iter_rust_types())
             ) as Box<dyn Iterator<Item=&SerialRustType>>,
             SerialValueHead::Struct { type_name: rust_type, inline_params } => Box::new(
-                once(rust_type).chain(inline_params.iter().flat_map(|p| p.iter_rust_types()))
+                once(rust_type).chain(inline_params.iter().flat_map(|p| p.iter().flat_map(|p| p.iter_rust_types())))
             ) as Box<dyn Iterator<Item=&SerialRustType>>,
             SerialValueHead::Enum { type_name: rust_type, variant_name: _, inline_params } => Box::new(
-                once(rust_type).chain(inline_params.iter().flat_map(|p| p.iter_rust_types()))
+                once(rust_type).chain(inline_params.iter().flat_map(|p| p.iter().flat_map(|p| p.iter_rust_types())))
             ) as Box<dyn Iterator<Item=&SerialRustType>>,
         }
     }

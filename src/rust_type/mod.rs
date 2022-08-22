@@ -1,9 +1,4 @@
 use std::any::TypeId;
-use std::collections::HashSet;
-use std::fmt::Display;
-use join_lazy_fmt::Join;
-use structure::TypeStructure;
-use type_name::RustTypeName;
 
 mod type_name;
 mod structure;
