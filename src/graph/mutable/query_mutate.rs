@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle};
 use crate::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep};
-use crate::rust_type::RustTypeName;
+use crate::rust_type::{RustType, RustTypeName};
 
 impl MutableGraph {
     pub fn insert_node(&mut self, node: Node) -> NodeId {
@@ -38,11 +38,11 @@ impl MutableGraph {
         self.nodes.iter_mut().map(|(id, node)| (NodeId(id), node))
     }
 
-    pub fn iter_rust_types(&self) -> impl Iterator<Item=&RustTypeName> {
-        // Don't need to iter nested type names in rust types because they will be returned previously,
-        // and we aren't mutably iterating so we don't need to worry about them being stale
+    /// Doesn't iterate nested types. If you want to get type names you don't need to iterate nested
+    /// rust types or structures, because any type names are only in the surface types
+    pub fn iter_rust_types(&self) -> impl Iterator<Item=&RustType> {
         (self.input_types.iter().chain(self.output_types.iter()))
-            .map(|io_type| io_type.rust_type.type_name)
+            .map(|io_type| io_type.rust_type)
     }
 
     fn check_cycle(&self) -> Result<(), NodeCycle> {

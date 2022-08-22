@@ -6,7 +6,7 @@ use join_lazy_fmt::Join;
 use snailquote::escape;
 use crate::graph::parse::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, DisplayWithCtx2, Indent};
-use crate::rust_type::{RustTypeName, TypeStructBodyForm, SimpleNamesInScope};
+use crate::rust_type::{RustTypeName, TypeStructBodyForm, DuplicateNamesInScope};
 
 pub struct SerialGraph {
     pub rust_types: HashMap<String, SerialTypeDef>,
@@ -143,7 +143,7 @@ impl Display for SerialGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let snis = self.iter_rust_types()
             .flat_map(|rust_type| rust_type.iter_snis())
-            .map(String::from).collect::<SimpleNamesInScope>();
+            .map(String::from).collect::<DuplicateNamesInScope>();
 
         let mut rust_types = self.rust_types.iter().collect::<Vec<_>>();
         rust_types.sort_by_deps();
@@ -163,7 +163,7 @@ impl Display for SerialGraph {
 }
 
 impl DisplayWithCtx2 for SerialTypeDef {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = String;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, type_name): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -186,7 +186,7 @@ impl DisplayWithCtx2 for SerialTypeDef {
 }
 
 impl DisplayWithCtx2 for SerialTypeDefBody {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -208,7 +208,7 @@ impl DisplayWithCtx2 for SerialTypeDefBody {
 }
 
 impl DisplayWithCtx for SerialFieldTypeDef {
-    type Ctx = SimpleNamesInScope;
+    type Ctx = DuplicateNamesInScope;
 
     fn fmt(&self, f: &mut Formatter<'_>, snis: &Self::Ctx) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
@@ -220,7 +220,7 @@ impl DisplayWithCtx for SerialFieldTypeDef {
 }
 
 impl DisplayWithCtx2 for SerialNode {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = String;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, node_name): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -242,7 +242,7 @@ impl DisplayWithCtx2 for SerialNode {
 }
 
 impl DisplayWithCtx2 for SerialFieldElem {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -254,7 +254,7 @@ impl DisplayWithCtx2 for SerialFieldElem {
 }
 
 impl DisplayWithCtx2 for SerialField {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -273,7 +273,7 @@ impl DisplayWithCtx2 for SerialField {
 }
 
 impl DisplayWithCtx2 for SerialBody {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -295,7 +295,7 @@ impl DisplayWithCtx2 for SerialBody {
 }
 
 impl DisplayWithCtx2 for SerialTupleItem {
-    type Ctx1 = SimpleNamesInScope;
+    type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
@@ -314,7 +314,7 @@ impl DisplayWithCtx2 for SerialTupleItem {
 }
 
 impl DisplayWithCtx for SerialValueHead {
-    type Ctx = SimpleNamesInScope;
+    type Ctx = DuplicateNamesInScope;
 
     //noinspection DuplicatedCode
     fn fmt(&self, f: &mut Formatter<'_>, snis: &Self::Ctx) -> std::fmt::Result {

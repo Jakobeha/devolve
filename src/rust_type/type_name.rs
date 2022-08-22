@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::iter::{empty, once};
 use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
@@ -57,12 +57,35 @@ pub struct RustTypeNameDisplay<'a, 'b> {
 pub enum RustTypeNameDisplayQualify<'b> {
     Never,
     Always,
-    Unambiguous {
-        simple_names_in_scope: &'b SimpleNamesInScope
+    OnlyAmbiguous {
+        snis: &'b DuplicateNamesInScope
     }
 }
 
-pub type SimpleNamesInScope = HashSet<String>;
+pub struct DuplicateNamesInScope {
+    counts: HashMap<String, usize>
+}
+
+impl DuplicateNamesInScope {
+    pub fn new() -> Self {
+        DuplicateNamesInScope {
+            counts: HashMap::new()
+        }
+    }
+
+    pub fn is_ambiguous(&self, name: &str) -> bool {
+        self.counts.get(name).map_or(false, |count| *count > 1)
+    }
+}
+
+impl<'a> Extend<&'a str> for DuplicateNamesInScope {
+    fn extend<T>(&mut self, iter: T) where T: IntoIterator<Item = &'a str> {
+        for name in iter {
+            let count = self.counts.entry(name.to_string()).or_insert(0);
+            *count += 1;
+        }
+    }
+}
 
 impl RustTypeName {
     pub fn scoped_simple(qualifiers: Vec<String>, simple_name: String) -> RustTypeName {
@@ -190,12 +213,10 @@ impl RustTypeName {
     }
 
     /// Qualifies the type name if its simple name is in the set
-    pub fn display<'a, 'b>(&'a self, snis: &'b SimpleNamesInScope) -> RustTypeNameDisplay<'a, 'b> {
+    pub fn display<'a, 'b>(&'a self, snis: &'b DuplicateNamesInScope) -> RustTypeNameDisplay<'a, 'b> {
         RustTypeNameDisplay {
             type_name: self,
-            qualify: RustTypeNameDisplayQualify::Unambiguous {
-                simple_names_in_scope: snis
-            }
+            qualify: RustTypeNameDisplayQualify::OnlyAmbiguous { snis }
         }
     }
 }
@@ -255,8 +276,8 @@ impl<'a> RustTypeNameDisplayQualify<'a> {
         match self {
             RustTypeNameDisplayQualify::Never => false,
             RustTypeNameDisplayQualify::Always => true,
-            RustTypeNameDisplayQualify::Unambiguous { simple_names_in_scope } => {
-                simple_names_in_scope.contains(simple_name)
+            RustTypeNameDisplayQualify::OnlyAmbiguous { snis } => {
+                snis.is_ambiguous(simple_name)
             }
         }
     }
