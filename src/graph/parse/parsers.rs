@@ -10,6 +10,7 @@ use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::parse::lexer_ext::LexerExt;
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialTypeDef, SerialTypeBody, SerialValueHead};
 use crate::misc::extract::extract;
+use crate::rust_type::{RustTypeName, RustTypeNameToken};
 
 #[derive(Logos)]
 enum GraphToken {
@@ -874,6 +875,9 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<SerialValueHead, (usize,
 }
 
 fn munch_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, ParseErrorBody)> {
+    let morph_lexer = std::mem::replace(lexer, Lexer::<GraphToken>::new(""))
+        .morph::<RustTypeNameToken>();
+    RustTypeName::parse_from(morph_lexer).map_err(|Error| (error.)
     match lexer.next() {
         None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("type"))),
         Some(GraphToken::Ident) => {

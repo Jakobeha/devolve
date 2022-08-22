@@ -315,7 +315,7 @@ enum RustTypeNameParseState {
 }
 
 impl RustTypeName {
-    pub(crate) fn parse_from(lexer: &mut Lexer<'_, RustTypeNameToken>) -> Result<Self, RustTypeNameParseError> {
+    pub(crate) fn parse_from(lexer: &mut Lexer<'_, RustTypeNameToken>, expect_end: bool) -> Result<Self, RustTypeNameParseError> {
         let mut state = RustTypeNameParseState::Init;
         let mut ptr_stack = Vec::new();
         fn unexpected(lexer: &Lexer<'_, RustTypeNameToken>) -> RustTypeNameParseError {
@@ -481,6 +481,8 @@ impl RustTypeName {
                             }
                         }
                     }
+                    // Maybe be parsing nested type
+                    RustTypeNameToken::Punct(',') => break,
                     _ => return Err(unexpected(lexer))
                 }
                 RustTypeNameParseState::ExpectsIdent {

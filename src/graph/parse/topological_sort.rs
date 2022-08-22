@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::iter::{empty, once};
 // TODO: Move NodeTypeName?
 use crate::graph::mutable::NodeTypeName;
 
@@ -135,7 +136,7 @@ fn enum_type_def_deps(enum_type: &SerialEnumType) -> impl Iterator<Item=&str> {
 
 fn type_def_body_deps(type_body: &SerialTypeBody) -> impl Iterator<Item=&str> {
     match type_body {
-        SerialTypeBody::None => Box::new(std::iter::empty()),
+        SerialTypeBody::None => Box::new(empty()),
         SerialTypeBody::Tuple(tuple_items) => {
             Box::new(tuple_items.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=&str>>
         }
@@ -147,19 +148,25 @@ fn type_def_body_deps(type_body: &SerialTypeBody) -> impl Iterator<Item=&str> {
 
 fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=&str> {
     match rust_type {
-        SerialRustType::Ident { qualifiers, simple_name, generic_args: _ }
-        // We only care about types defined in this module
-        // TODO: Replace qualifiers.is_empty() with the module's qualifiers
-        if qualifiers.is_empty() => {
-            // Generics add indirection, which we don't count as a dependency
-            Box::new(std::iter::once(simple_name.as_str())) as Box<dyn Iterator<Item=&str>>
+        SerialRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
+            // We only care about types defined in this module
+            // TODO: Replace qualifiers.is_empty() with the module's qualifiers
+            if qualifiers.is_empty() {
+                // Generics add indirection, which we don't count as a dependency
+                Box::new(once(simple_name.as_str())) as Box<dyn Iterator<Item=&str>>
+            } else {
+                Box::new(empty()) as Box<dyn Iterator<Item=&str>>
+            }
+        }
+        SerialRustType::Anonymous { .. } => {
+            Box::new(empty()) as Box<dyn Iterator<Item=&str>>
         }
         SerialRustType::Pointer { .. } => {
             // Reference adds indirection, which we don't count as a dependency
-            Box::new(std::iter::empty()) as Box<dyn Iterator<Item=&str>>
+            Box::new(empty()) as Box<dyn Iterator<Item=&str>>
         }
-        SerialRustType::Tuple(tuple_items) => {
-            Box::new(tuple_items.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=&str>>
+        SerialRustType::Tuple { elems } => {
+            Box::new(elems.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=&str>>
         }
         SerialRustType::Array { elem, length: _ } => {
             Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=&str>>
@@ -187,10 +194,10 @@ fn value_deps<'a>(value: Option<&'a SerialValueHead>, value_children: &'a Serial
 fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=SerialNodeDep> {
     match value_head {
         None | Some(SerialValueHead::Integer(_)) | Some(SerialValueHead::Float(_)) | Some(SerialValueHead::String(_)) => {
-            Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
+            Box::new(empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         Some(SerialValueHead::Ref { node_name: node_ident, field_name: field_ident }) => {
-            Box::new(std::iter::once(SerialNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=SerialNodeDep>>
+            Box::new(once(SerialNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         Some(SerialValueHead::Array(elems)) => {
             Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=SerialNodeDep>>
@@ -200,7 +207,7 @@ fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=S
         },
         Some(SerialValueHead::Struct { type_name: _, inline_params }) |
         Some(SerialValueHead::Enum { type_name: _, variant_name: _, inline_params }) => match inline_params {
-            None => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>,
+            None => Box::new(empty()) as Box<dyn Iterator<Item=SerialNodeDep>>,
             Some(inline_params) => {
                 Box::new(inline_params.iter().flat_map(|inline_param| value_head_deps(Some(inline_param)))) as Box<dyn Iterator<Item=SerialNodeDep>>
             }
@@ -211,7 +218,7 @@ fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=S
 fn value_children_deps(value_children: &SerialBody) -> impl Iterator<Item=SerialNodeDep> {
     match value_children {
         SerialBody::None => {
-            Box::new(std::iter::empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
+            Box::new(empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
         },
         SerialBody::Tuple(elems) => {
             Box::new(elems.iter().flat_map(|elem| value_deps(elem.value.as_ref(), &elem.value_children))) as Box<dyn Iterator<Item=SerialNodeDep>>
