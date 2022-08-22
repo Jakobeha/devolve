@@ -48,7 +48,7 @@ impl MutableGraph {
         }
 
         todo!("check that input and output types match");
-        todo!("check that there are no partially-filled inputs connected to the main graph");
+        todo!("check that there are no partially-filled inputs in required regions or output");
 
         errors
     }

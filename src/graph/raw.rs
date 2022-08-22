@@ -1,5 +1,6 @@
 use std::mem::MaybeUninit;
 use crate::CompoundViewCtx;
+use crate::graph::region::UsedRegion;
 use crate::rust_type::RustType;
 
 pub struct RawComputeFn(Box<dyn RawComputeFnTrait>);
@@ -12,6 +13,8 @@ pub struct RawOutputs<'a>(&'a mut RawData);
 
 pub struct RawData {
     pub types: Vec<RustType>,
+    /// Non-null in input, required to be set in output
+    pub used_regions: Vec<UsedRegion>,
     pub data: Vec<Box<[MaybeUninit<u8>]>>
 }
 
@@ -29,6 +32,10 @@ impl<'a> RawInputs<'a> {
         &self.0.types
     }
 
+    pub fn nonnull_regions(&self) -> &[UsedRegion] {
+        &self.0.used_regions
+    }
+
     pub fn data(&self) -> &[Box<[MaybeUninit<u8>]>] {
         &self.0.data
     }
@@ -42,6 +49,10 @@ impl<'a> RawInputs<'a> {
 impl<'a> RawOutputs<'a> {
     pub fn types(&self) -> &[RustType] {
         &self.0.types
+    }
+
+    pub fn nonnull_regions(&self) -> &[UsedRegion] {
+        &self.0.used_regions
     }
 
     pub fn data(&mut self) -> &mut [Box<[MaybeUninit<u8>]>] {

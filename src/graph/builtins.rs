@@ -6,13 +6,15 @@ use log::error;
 use crate::misc::catch_and_log::catch_and_log;
 use crate::graph::mutable::{NodeInput, NodeTypeData};
 use crate::graph::raw::RawComputeFn;
+use crate::graph::region::UsedRegion;
 use crate::rust_type::RustType;
 
 #[derive(Clone)]
 pub struct BuiltinNodeType {
     pub compute: RawComputeFn,
     pub type_data: NodeTypeData,
-    pub default_inputs: Vec<NodeInput>
+    pub default_inputs: Vec<NodeInput>,
+    pub required_inputs: Vec<UsedRegion>
 }
 
 pub struct BuiltinNodeTypeFnCtx<'a> {
