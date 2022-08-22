@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use derive_more::{Display, Error};
 use snailquote::UnescapeError;
 use crate::graph::mutable::NodeId;
-use crate::rust_type::{RustType, RustTypeName, TypeStructBodyForm};
+use crate::rust_type::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructBodyForm};
+use join_lazy_fmt::Join;
 
 pub type ParseErrors = Vec<ParseError>;
 
@@ -31,6 +32,11 @@ pub enum ParseErrorBody {
     ExpectedLess,
     #[display(fmt = "expected {}", _0)]
     Expected(#[error(not(source))] &'static str),
+    #[display(fmt = "parsing type, {}", cause)]
+    ParsingType {
+        #[error(not(source))]
+        cause: RustTypeNameParseErrorCause
+    },
     #[display(fmt = "duplicate type: {}", name)]
     DuplicateType { #[error(not(source))] name: String },
     #[display(fmt = "duplicate node: {}" name)]
@@ -147,8 +153,8 @@ pub enum GraphFormError {
         type_name: String,
         node_name: String
     },
-    #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structura", name)]
-    TypeConflictsWithBuiltinType { #[error(not(source))] name: String },
+    #[display(fmt = "type has same name as builtin type: {}, but it has an incompatible structure", "type_name.unqualified()")]
+    TypeConflictsWithBuiltinType { #[error(not(source))] type_name: RustTypeName },
     #[display(fmt = "type mismatch, lengths of arrays are different: got {} expected {} (for type {}, referenced in {})", actual_length, type_length, "type_name.unqualified()", referenced_from)]
     ArrayLengthMismatch {
         actual_length: usize,
@@ -266,25 +272,25 @@ pub enum GraphIOCheckError {
         actual: usize,
         expected: usize
     },
-    #[display(fmt = "input type mismatch: in {}, got {} expected {}", field_name, actual, expected)]
+    #[display(fmt = "input type mismatch: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
     InputTypeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "input type can't be verified: in {}, got {} expected {}", field_name, actual, expected)]
+    #[display(fmt = "input type can't be verified: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
     InputTypeMaybeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "output type mismatch: in {}, got {} expected {}", field_name, actual, expected)]
+    #[display(fmt = "output type mismatch: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
     OutputTypeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "output type can't be verified: in {}, got {} expected {}", field_name, actual, expected)]
+    #[display(fmt = "output type can't be verified: in {}, got {} expected {}", field_name, "actual.unqualified()", "expected.unqualified()")]
     OutputTypeMaybeMismatch {
         field_name: String,
         expected: RustType,

@@ -171,7 +171,7 @@ fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=&str> {
         SerialRustType::Array { elem, length: _ } => {
             Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=&str>>
         }
-        SerialRustType::Slice(elem) => {
+        SerialRustType::Slice { elem } => {
             Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=&str>>
         }
     }

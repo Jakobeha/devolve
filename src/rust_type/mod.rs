@@ -49,7 +49,7 @@ impl RustType {
             type_name: RustTypeName::bottom(),
             size: 0,
             align: 0,
-            structure: TypeStructure::Bottom
+            structure: TypeStructure::Opaque
         }
     }
 
@@ -67,3 +67,16 @@ impl RustType {
         self.type_name.display(snis)
     }
 }
+
+/// Considered equal if both types have the same type id or name
+impl PartialEq for RustType {
+    fn eq(&self, other: &RustType) -> bool {
+        if self.type_id.is_some() && other.type_id.is_some() {
+            self.type_id == other.type_id
+        } else {
+            self.type_name == other.type_name
+        }
+    }
+}
+
+impl Eq for RustType {}

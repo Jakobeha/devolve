@@ -1,4 +1,3 @@
-use std::any::{Any, TypeId};
 use std::collections::HashSet;
 use std::iter::{repeat_with, zip};
 use std::mem::size_of;
@@ -318,11 +317,11 @@ impl GraphSerializer {
                         errors.push(String::from("array lengths do not match"));
                     }
                 }
-                (SerialRustType::Slice(old_slice), SerialRustType::Slice(new_slice)) => {
-                    self.merge_rust_types(old_slice, *new_slice, errors);
+                (SerialRustType::Slice { elem: old_elem }, SerialRustType::Slice { elem: new_elem }) => {
+                    self.merge_rust_types(old_elem, *new_elem, errors);
                 }
-                (SerialRustType::Tuple(old_tuple), SerialRustType::Tuple(new_tuple)) => {
-                    self.merge_rust_type_slices(old_tuple, new_tuple, errors);
+                (SerialRustType::Tuple { elems: old_elems }, SerialRustType::Tuple { elems: new_elems }) => {
+                    self.merge_rust_type_slices(old_elems, new_elems, errors);
                 }
                 (SerialRustType::Ident { qualifiers, simple_name, generic_args }, SerialRustType::Ident { qualifiers: new_qualifiers, simple_name: new_simple_name, generic_args: new_generic_args }) => {
                     if qualifiers != &new_qualifiers {
@@ -359,7 +358,7 @@ impl GraphSerializer {
                 self.serialize_constant(constant_data, rust_type)
             }
             NodeInput::Array(elems) => {
-                let array_elem_type = rust_type.array_elem_type_and_length().map(|(array_elem_type, length)| {
+                let array_elem_type = rust_type.structure.array_elem_type_and_length().map(|(array_elem_type, length)| {
                     if length != elems.len() {
                         error!("array length mismatch: {} != {}", length, elems.len());
                     }
@@ -417,82 +416,54 @@ impl GraphSerializer {
     }
 
     fn serialize_constant(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<SerialValueHead>, SerialBody) {
-        let size = rust_type.infer_size();
-        if size.is_none() {
-            error!("deserialized constant data is of type with unknown size: actual size of data = {}, type = {}", constant_data.len(), rust_type.unqualified());
-            return (None, SerialBody::None)
-        } else if size.unwrap() != constant_data.len() {
-            error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.unqualified(), size.unwrap());
+        let size = rust_type.size;
+        if size != constant_data.len() {
+            error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.type_name.unqualified(), size.unwrap());
             return (None, SerialBody::None)
         }
 
-        match rust_type {
-            RustType::Known(known) => {
-                if known.intrinsic.type_id() == TypeId::of::<i64>() {
+        match &rust_type.structure {
+            TypeStructure::Primitive(primitive) => match primitive {
+                PrimitiveType::I64 => {
                     let mut constant_data_bytes = [0; size_of::<i64>()];
                     constant_data_bytes.copy_from_slice(constant_data);
                     let value = i64::from_ne_bytes(constant_data_bytes);
                     (Some(SerialValueHead::Integer(value)), SerialBody::None)
-                } else if known.intrinsic.type_id() == TypeId::of::<f64>() {
+                }
+                PrimitiveType::F64 => {
                     let mut constant_data_bytes = [0; size_of::<f64>()];
                     constant_data_bytes.copy_from_slice(constant_data);
                     let value = f64::from_ne_bytes(constant_data_bytes);
                     (Some(SerialValueHead::Float(value)), SerialBody::None)
-                } else if known.intrinsic.type_id() == TypeId::of::<String>() {
-                    // Should be guaranteed utf-8 but just for safety
-                    let value = String::from_utf8_lossy(constant_data).into_owned();
-                    (Some(SerialValueHead::String(value)), SerialBody::None)
-                } else {
-                    error!("deserialized constant data is of unknown intrinsic type: {}", rust_type.am);
-                    (None, SerialBody::None)
                 }
+                _ => todo!("primitives which aren't i64 and f64 not yet implemented")
             }
-            RustType::Structural(structural) => match &structural.structure {
-                TypeStructure::Primitive(primitive) => match primitive {
-                    PrimitiveType::I64 => {
-                        let mut constant_data_bytes = [0; size_of::<i64>()];
-                        constant_data_bytes.copy_from_slice(constant_data);
-                        let value = i64::from_ne_bytes(constant_data_bytes);
-                        (Some(SerialValueHead::Integer(value)), SerialBody::None)
-                    }
-                    PrimitiveType::F64 => {
-                        let mut constant_data_bytes = [0; size_of::<f64>()];
-                        constant_data_bytes.copy_from_slice(constant_data);
-                        let value = f64::from_ne_bytes(constant_data_bytes);
-                        (Some(SerialValueHead::Float(value)), SerialBody::None)
-                    }
-                    _ => todo!("primitives which aren't i64 and f64 not yet implemented")
+            TypeStructure::CReprStruct { body } => (None, match body {
+                TypeStructBody::None => SerialBody::None,
+                TypeStructBody::Tuple(tuple_item_types) => {
+                    self.serialize_constant_tuple(constant_data, tuple_item_types)
                 }
-                TypeStructure::CReprStruct { body } => (None, match body {
-                    TypeStructBody::None => SerialBody::None,
-                    TypeStructBody::Tuple(tuple_item_types) => {
-                        self.serialize_constant_tuple(constant_data, tuple_item_types)
-                    }
-                    TypeStructBody::Fields(field_types) => {
-                        self.serialize_constant_fields(constant_data, field_types)
-                    }
-                }),
-                TypeStructure::Opaque => {
-                    error!("deserialized constant data is of opaque type, don't know how to interpret it");
-                    (None, SerialBody::None)
+                TypeStructBody::Fields(field_types) => {
+                    self.serialize_constant_fields(constant_data, field_types)
                 }
-                TypeStructure::CReprEnum { .. } => {
-                    error!("deserialized constant data is of enum type, which can't be represented in serial data");
-                    (None, SerialBody::None)
-                }
-                TypeStructure::Pointer { .. } => {
-                    error!("deserialized constant data is of pointer type, which can't be represented in serial data");
-                    (None, SerialBody::None)
-                }
-                TypeStructure::CTuple { elements} => {
-                    (None, self.serialize_constant_tuple(constant_data, elements))
-                }
-                TypeStructure::Array { elem, length } => {
-                    (None, self.serialize_constant_array(constant_data, &elem, *length))
-                }
-                TypeStructure::Slice { elem } => {
-                    (None, self.serialize_constant_slice(constant_data, &elem))
-                }
+            }),
+            TypeStructure::Opaque => {
+                error!("deserialized constant data is of opaque type, don't know how to interpret it");
+                (None, SerialBody::None)
+            }
+            TypeStructure::CReprEnum { .. } => {
+                error!("deserialized constant data is of enum type, which can't be represented in serial data");
+                (None, SerialBody::None)
+            }
+            TypeStructure::Pointer { .. } => {
+                error!("deserialized constant data is of pointer type, which can't be represented in serial data");
+                (None, SerialBody::None)
+            }
+            TypeStructure::CTuple { elements} => {
+                (None, self.serialize_constant_tuple(constant_data, elements))
+            }
+            TypeStructure::Array { elem, length } => {
+                (None, self.serialize_constant_array(constant_data, &elem, *length))
             }
         }
     }
@@ -550,22 +521,6 @@ impl GraphSerializer {
             Some(elements) => elements
         };
         SerialBody::Tuple(elements)
-    }
-
-    fn serialize_constant_slice(&mut self, constant_data: &[u8], element_type: &RustType) -> SerialBody {
-        let (inferred_size, inferred_align) = match (element_type.infer_size(), element_type.infer_align()) {
-            (Some(size), Some(align)) => (size, align),
-            _ => {
-                error!("deserialized constant data is of slice type with unknown size and alignment, can't interpret it");
-                return SerialBody::None
-            }
-        };
-        let mut aligned_size = inferred_size;
-        if aligned_size % inferred_align != 0 {
-            aligned_size += inferred_align - aligned_size % inferred_align;
-        }
-        let inferred_len = constant_data.len() / aligned_size;
-        self.serialize_constant_array(constant_data, element_type, inferred_len)
     }
 
     fn serialize_constant_compound<'a, U, V, It: Iterator<Item=(&'a RustType, U)>>(

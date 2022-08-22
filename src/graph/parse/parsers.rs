@@ -10,7 +10,7 @@ use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::parse::lexer_ext::LexerExt;
 use crate::graph::parse::types::{SerialBody, SerialEnumType, SerialEnumVariantType, SerialField, SerialFieldElem, SerialFieldType, SerialGraph, SerialNode, SerialRustType, SerialStructType, SerialTupleItem, SerialTypeDef, SerialTypeBody, SerialValueHead};
 use crate::misc::extract::extract;
-use crate::rust_type::{RustTypeName, RustTypeNameToken};
+use crate::rust_type::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
 
 #[derive(Logos)]
 enum GraphToken {
@@ -739,7 +739,7 @@ fn parse_abstract_field<Field>(line: &str, mk_field: fn(String, Option<SerialRus
     let (rust_type, value) = match lexer.next() {
         None => (None, None),
         Some(GraphToken::Punct(':')) => {
-            let rust_type = munch_type(&mut lexer)?;
+            let rust_type = munch_rust_type(&mut lexer)?;
             match lexer.next() {
                 None => (Some(rust_type), None),
                 Some(GraphToken::Punct('=')) => {
@@ -768,7 +768,7 @@ fn parse_tuple_item(line: &str) -> Result<SerialTupleItem, (usize, ParseErrorBod
     let rust_type = match lexer.next() {
         None => None,
         Some(GraphToken::Punct(':')) => {
-            let rust_type = munch_type(&mut lexer)?;
+            let rust_type = munch_rust_type(&mut lexer)?;
             lexer.munch_end()?;
             Some(rust_type)
         },
@@ -784,7 +784,7 @@ fn parse_tuple_item(line: &str) -> Result<SerialTupleItem, (usize, ParseErrorBod
 
 fn parse_rust_type(line: &str) -> Result<SerialRustType, (usize, ParseErrorBody)> {
     let mut lexer = Lexer::<GraphToken>::new(line);
-    let rust_type = munch_type(&mut lexer)?;
+    let rust_type = munch_rust_type(&mut lexer)?;
     lexer.munch_end()?;
     Ok(rust_type)
 }
@@ -874,82 +874,18 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<SerialValueHead, (usize,
     }
 }
 
-fn munch_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, ParseErrorBody)> {
-    let morph_lexer = std::mem::replace(lexer, Lexer::<GraphToken>::new(""))
+fn munch_rust_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usize, ParseErrorBody)> {
+    // Switch to rust-name lexer, replaces with a dummy value
+    let mut morph_lexer = std::mem::replace(lexer, Lexer::<GraphToken>::new(""))
         .morph::<RustTypeNameToken>();
-    RustTypeName::parse_from(morph_lexer).map_err(|Error| (error.)
-    match lexer.next() {
-        None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("type"))),
-        Some(GraphToken::Ident) => {
-            let name = lexer.slice().to_string();
-            let mut generic_args = Vec::new();
-            // lexer doesn't support peek but there are easy workarounds, here is one
-            if lexer.remainder().trim_start().chars().next() == Some('<') {
-                lexer.munch("'<'", |token| extract!(token, GraphToken::Punct('<'))).expect("peek failed");
-                loop {
-                    match munch_type(lexer) {
-                        Err((column, error)) => match error {
-                            ParseErrorBody::Unopened('>') => break,
-                            ParseErrorBody::ExpectedMore(_) => return Err((column, ParseErrorBody::Unclosed('<'))),
-                            _ => return Err((column, error))
-                        }
-                        Ok(generic_arg) => {
-                            generic_args.push(generic_arg);
-                            lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
-                        }
-                    }
-                }
-            }
-
-            Ok(SerialRustType::Ident {
-                name,
-                generic_args
-            })
-        }
-        Some(GraphToken::Punct('&')) => {
-            let refd = Box::new(munch_type(lexer)?);
-            Ok(SerialRustType::Reference(refd))
-        }
-        Some(GraphToken::Punct('[')) => {
-            let elem = Box::new(munch_type(lexer)?);
-            match lexer.next() {
-                None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("';' or ']'"))),
-                Some(GraphToken::Punct(';')) => {
-                    let length = lexer.munch("integer", |token| extract!(token, GraphToken::Integer(int)))?
-                        .map_err(|error| (lexer.span().start, ParseErrorBody::BadInteger(error)))?
-                        .try_into().map_err(|error| (lexer.span().start, ParseErrorBody::BadArrayLength(error)))?;
-                    lexer.munch("']'", |token| extract!(token, GraphToken::Punct(']')))?;
-                    Ok(SerialRustType::Array {
-                        elem,
-                        length
-                    })
-                }
-                Some(GraphToken::Punct(']')) => Ok(SerialRustType::Slice(elem)),
-                Some(_) => Err((lexer.span().start, ParseErrorBody::Expected("';' or ']'")))
-            }
-        }
-        Some(GraphToken::Punct('(')) => {
-            let mut types = Vec::new();
-            loop {
-                match munch_type(lexer) {
-                    Err((column, error)) => match error {
-                        ParseErrorBody::Unopened(')') => break,
-                        ParseErrorBody::ExpectedMore(_) => return Err((column, ParseErrorBody::Unclosed('('))),
-                        _ => return Err((column, error))
-                    }
-                    Ok(value) => {
-                        types.push(value);
-                        lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
-                    }
-                }
-            }
-            Ok(SerialRustType::Tuple(types))
-        }
-        // Special error message because we catch this one when we do actually have an opened bracket
-        Some(GraphToken::Punct(']')) => Err((lexer.span().start, ParseErrorBody::Unopened(']'))),
-        Some(GraphToken::Punct(')')) => Err((lexer.span().start, ParseErrorBody::Unopened(')'))),
-        Some(_) => Err((lexer.span().start, ParseErrorBody::Expected("value")))
-    }
+    // Parse
+    let rust_type = RustTypeName::parse_from(&mut morph_lexer, false).map_err(|RustTypeNameParseError { index, cause }| {
+        (index, ParseErrorBody::ParsingType { cause })
+    })?;
+    // Switch back to graph lexer
+    let _ = std::mem::replace(lexer, morph_lexer.morph::<GraphToken>());
+    // Return
+    Ok(rust_type)
 }
 
 fn expect_no_lines(p: &mut GraphParser, lines: &[(usize, String)]) {

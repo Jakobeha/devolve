@@ -4,7 +4,7 @@ use std::mem::{size_of, align_of};
 // This can't be exposed, otherwise users could call IntrinsicRustType::of on it
 pub(super) enum UnknownIntrinsicType {}
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct IntrinsicRustType {
     pub type_id: TypeId,
     pub type_name: &'static str,
@@ -12,6 +12,14 @@ pub struct IntrinsicRustType {
     pub align: usize,
     _private_ctor: ()
 }
+
+impl PartialEq for IntrinsicRustType {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id == other.type_id
+    }
+}
+
+impl Eq for IntrinsicRustType {}
 
 impl IntrinsicRustType {
     pub fn of<T: 'static>() -> Self {

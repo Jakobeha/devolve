@@ -3,15 +3,6 @@ use crate::rust_type::{RustType, TypeStructBody};
 use crate::rust_type::structure::{IsSubtypeOf, TypeStructure};
 
 impl RustType {
-    /// Returns true if both types have the same type id or name
-    pub fn same(&self, other: &RustType) -> bool {
-        if self.type_id.is_some() && other.type_id.is_some() {
-            self.type_id == other.type_id
-        } else {
-            self.type_name == other.type_name
-        }
-    }
-
     /// Returns true if a value of this type can be casted to the other type,
     /// where the casting rules are as follows:
     ///
@@ -67,8 +58,8 @@ impl TypeStructure {
             (TypeStructure::CReprStruct { body }, TypeStructure::CReprStruct { body: other_body }) => {
                 body.is_structural_subtype_of(other_body)
             }
-            (TypeStructure::Pointer { referenced }, TypeStructure::Pointer { referenced: other_referenced }) => {
-                IsSubtypeOf::known(referenced == other_referenced)
+            (TypeStructure::Pointer { refd }, TypeStructure::Pointer { refd: other_refd }) => {
+                IsSubtypeOf::known(refd == other_refd)
             }
             (TypeStructure::CTuple { elements }, TypeStructure::CTuple { elements: other_elements }) => {
                 tuple_is_subtype_of(elements, other_elements)
@@ -79,9 +70,6 @@ impl TypeStructure {
                 } else {
                     elem.is_rough_subtype_of(other_elem)
                 }
-            }
-            (TypeStructure::Slice { elem }, TypeStructure::Slice { elem: other_elem }) => {
-                elem.is_rough_subtype_of(other_elem)
             }
             _ => IsSubtypeOf::No
         }
@@ -116,8 +104,8 @@ impl TypeStructure {
             (TypeStructure::CReprStruct { body }, TypeStructure::CReprStruct { body: other_body }) => {
                 body.unify(other_body);
             }
-            (TypeStructure::Pointer { referenced }, TypeStructure::Pointer { referenced: other_referenced }) => {
-                referenced.unify(*other_referenced);
+            (TypeStructure::Pointer { refd: _ }, TypeStructure::Pointer { refd: _ }) => {
+                // Nothing to do since IntrinsicRustType is already fully known
             }
             (TypeStructure::CTuple { elements }, TypeStructure::CTuple { elements: other_elements }) => {
                 for (element, other_element) in elements.iter_mut().zip(other_elements.into_iter()) {
@@ -125,9 +113,6 @@ impl TypeStructure {
                 }
             }
             (TypeStructure::Array { elem, length: _ }, TypeStructure::Array { elem: other_elem, length: _ }) => {
-                elem.unify(*other_elem);
-            }
-            (TypeStructure::Slice { elem }, TypeStructure::Slice { elem: other_elem }) => {
                 elem.unify(*other_elem);
             }
             _ => {}

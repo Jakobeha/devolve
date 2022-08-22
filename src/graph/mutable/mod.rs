@@ -11,7 +11,7 @@ use crate::graph::mutable::build::GraphBuilder;
 use crate::graph::mutable::serialize::GraphSerializer;
 use crate::graph::parse::types::SerialGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
-use crate::rust_type::RustType;
+use crate::rust_type::TypeStructure;
 
 mod node;
 mod build;
@@ -109,7 +109,8 @@ impl TryFrom<SerialGraph> for MutableGraph {
 
     fn try_from(value: SerialGraph) -> Result<Self, Self::Error> {
         let mut errors = Vec::new();
-        let graph = GraphBuilder::build(value, &mut errors);
+        // TODO: Module qualifiers?
+        let graph = GraphBuilder::build(value, Vec::new(), &mut errors);
 
         if errors.is_empty() {
             Ok(graph)
@@ -125,7 +126,7 @@ impl Into<SerialGraph> for MutableGraph {
     }
 }
 
-impl<'a> Into<SerialGraph> for (MutableGraph, &'a [RustType]) {
+impl<'a> Into<SerialGraph> for (MutableGraph, &'a [(String, TypeStructure)]) {
     fn into(self) -> SerialGraph {
         GraphSerializer::serialize(self.0, self.1.into_iter())
     }

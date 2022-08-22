@@ -11,14 +11,13 @@ impl TypeStructure {
                 None
             } else {
                 let discriminant_size = discriminant_size(variants.len());
-                let data_size = variants.iter().map(|variant| variant.infer_size().unwrap()).max().unwrap_or(0);
+                let data_size = variants.iter().map(|variant| variant.infer_size()).max().unwrap_or(0);
                 Some(discriminant_size + data_size)
             }
-            TypeStructure::CReprStruct { body } => body.infer_size(),
-            TypeStructure::Pointer { referenced: _ } => Some(size_of::<*const ()>()),
-            TypeStructure::CTuple { elements } => infer_c_tuple_size(elements),
-            TypeStructure::Array { elem, length } => infer_array_size(elem, *length),
-            TypeStructure::Slice { elem: _ } => None
+            TypeStructure::CReprStruct { body } => Some(body.infer_size()),
+            TypeStructure::Pointer { refd: _ } => Some(size_of::<*const ()>()),
+            TypeStructure::CTuple { elements } => Some(infer_c_tuple_size(elements)),
+            TypeStructure::Array { elem, length } => Some(infer_array_size(elem, *length)),
         }
     }
 
@@ -30,40 +29,39 @@ impl TypeStructure {
                 None
             } else {
                 let discriminant_align = discriminant_align(variants.len());
-                let data_align = variants.iter().map(|variant| variant.infer_align().unwrap()).max().unwrap_or(0);
+                let data_align = variants.iter().map(|variant| variant.infer_align()).max().unwrap_or(0);
                 Some(usize::max(discriminant_align, data_align))
             }
-            TypeStructure::CReprStruct { body } => body.infer_align(),
-            TypeStructure::Pointer { .. } => Some(align_of::<*const ()>()),
-            TypeStructure::CTuple { elements } => infer_c_tuple_align(elements),
-            TypeStructure::Array { elem, length } => infer_array_align(elem),
-            TypeStructure::Slice { elem: _ } => None
+            TypeStructure::CReprStruct { body } => Some(body.infer_align()),
+            TypeStructure::Pointer { refd: _ } => Some(align_of::<*const ()>()),
+            TypeStructure::CTuple { elements } => Some(infer_c_tuple_align(elements)),
+            TypeStructure::Array { elem, length } => Some(infer_array_align(elem)),
         }
     }
 }
 
 impl TypeEnumVariant {
-    fn infer_size(&self) -> Option<usize> {
+    fn infer_size(&self) -> usize {
         self.body.infer_size()
     }
 
-    fn infer_align(&self) -> Option<usize> {
+    fn infer_align(&self) -> usize {
         self.body.infer_align()
     }
 }
 
 impl TypeStructBody {
-    fn infer_size(&self) -> Option<usize> {
+    fn infer_size(&self) -> usize {
         match self {
-            TypeStructBody::None => Some(0),
+            TypeStructBody::None => 0,
             TypeStructBody::Tuple(elems) => infer_c_tuple_size(elems),
             TypeStructBody::Fields(fields) => infer_c_tuple_size(fields.iter().map(|field| &field.rust_type))
         }
     }
 
-    fn infer_align(&self) -> Option<usize> {
+    fn infer_align(&self) -> usize {
         match self {
-            TypeStructBody::None => Some(0),
+            TypeStructBody::None => 0,
             TypeStructBody::Tuple(elems) => infer_c_tuple_align(elems),
             TypeStructBody::Fields(fields) => infer_c_tuple_align(fields.iter().map(|field| &field.rust_type))
         }

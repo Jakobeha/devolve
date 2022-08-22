@@ -62,7 +62,7 @@ impl RustType {
     }
 
     pub fn register_auto<T: HasStructure>() {
-        Self::register_manually(RustType::of::<T>(), IntrinsicRustType::of::<T>());
+        Self::register_manually(RustType::of::<T>(), Some(IntrinsicRustType::of::<T>()));
     }
 
     pub fn lookup(type_name: &RustTypeName) -> Option<RustType> {
@@ -74,7 +74,11 @@ impl RustType {
 
     pub fn lookup_from_id(type_id: TypeId) -> Option<RustType> {
         match (catch_and_log!(KNOWN_NAMES.read(), "known rust type names poisoned"), catch_and_log!(KNOWN_TYPES.read(), "known rust types poisoned")) {
-            (Some(known_names), Some(known_types)) => known_names.get_by_left(&type_id).and_then(|type_name| known_types.get(&*type_name)),
+            (Some(known_names), Some(known_types)) => {
+                known_names.get_by_left(&type_id)
+                    .and_then(|type_name| known_types.get(&*type_name))
+                    .cloned()
+            },
             _ => None
         }
     }
@@ -83,7 +87,7 @@ impl RustType {
 impl RustTypeName {
     pub fn register(type_id: TypeId, type_name: RustTypeName) {
         if let Some(mut known_names) = catch_and_log!(KNOWN_NAMES.write(), "known rust type names poisoned") {
-            if let Some(existing_name) = known_names.get(type_id) {
+            if let Some(existing_name) = known_names.get_by_left(&type_id) {
                 if existing_name != &type_name {
                     error!("rust type with id {:?} already registered with a different name: old={} new={}", type_id, existing_name.qualified(), type_name.qualified());
                 }
@@ -116,7 +120,7 @@ impl IntrinsicRustType {
         if let Some(mut known_intrinsics) = catch_and_log!(KNOWN_INTRINSICS.write(), "known intrinsic types poisoned") {
             if let Some(existing_intrinsic) = known_intrinsics.get(&intrinsic_type.type_id) {
                 if existing_intrinsic != &intrinsic_type {
-                    error!("intrinsic type with id {:?} already registered with a different name: old={} new={}", intrinsic_type.type_id, existing_intrinsic.qualified(), intrinsic_type.qualified());
+                    error!("intrinsic type with id {:?} already registered with a different name: old={} new={}", intrinsic_type.type_id, existing_intrinsic.type_name.qualified(), intrinsic_type.type_name.qualified());
                 }
             }
             known_intrinsics.insert(intrinsic_type.type_id, intrinsic_type);

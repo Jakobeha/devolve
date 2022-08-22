@@ -239,8 +239,8 @@ impl<'a> RustTypeNameDisplayQualify<'a> {
 #[derive(Debug, Display, Error)]
 #[display(fmt = "parse error at {}: {}", index, cause)]
 pub struct RustTypeNameParseError {
-    index: usize,
-    cause: RustTypeNameParseErrorCause
+    pub index: usize,
+    pub cause: RustTypeNameParseErrorCause
 }
 
 #[derive(Debug, Display, Error)]
@@ -295,8 +295,8 @@ impl<'a> TryFrom<&'a str> for RustTypeName {
     type Error = RustTypeNameParseError;
 
     fn try_from(str: &'a str) -> Result<Self, Self::Error> {
-        let &mut lexer = Lexer::<RustTypeNameToken>::new(str);
-        RustTypeName::parse_from(&mut lexer)
+        let mut lexer = Lexer::<RustTypeNameToken>::new(str);
+        RustTypeName::parse_from(&mut lexer, true)
     }
 }
 
@@ -315,7 +315,7 @@ enum RustTypeNameParseState {
 }
 
 impl RustTypeName {
-    pub(crate) fn parse_from(lexer: &mut Lexer<'_, RustTypeNameToken>, expect_end: bool) -> Result<Self, RustTypeNameParseError> {
+    pub(crate) fn parse_from(lexer: &mut Lexer<'_, RustTypeNameToken>, parse_eof: bool) -> Result<Self, RustTypeNameParseError> {
         let mut state = RustTypeNameParseState::Init;
         let mut ptr_stack = Vec::new();
         fn unexpected(lexer: &Lexer<'_, RustTypeNameToken>) -> RustTypeNameParseError {
@@ -347,7 +347,7 @@ impl RustTypeName {
                 RustTypeNameParseState::Init => match token {
                     RustTypeNameToken::Ident => RustTypeNameParseState::AfterIdent {
                         qualifiers: Vec::new(),
-                        simple_name: token.slice().to_string()
+                        simple_name: lexer.slice().to_string()
                     },
                     RustTypeNameToken::ImmPtr => {
                         ptr_stack.push(RustPointerKind::ImmPtr);
@@ -368,11 +368,12 @@ impl RustTypeName {
                     RustTypeNameToken::Punct('(') => {
                         let mut elems = Vec::new();
                         while !lexer.remainder().trim_start().starts_with(')') {
-                            elems.push(RustTypeName::parse_from(lexer)?);
+                            elems.push(RustTypeName::parse_from(lexer, false)?);
                             match lexer.next() {
-                                RustTypeNameToken::Punct(')') => break,
-                                RustTypeNameToken::Punct(',') => {},
-                                _ => return Err(expected_comma_or_close(lexer))
+                                Some(RustTypeNameToken::Punct(')')) => break,
+                                Some(RustTypeNameToken::Punct(',')) => {},
+                                Some(_) => return Err(expected_comma_or_close(lexer)),
+                                None => return Err(unexpected_end(lexer))
                             }
                         }
                         RustTypeNameParseState::Done {
@@ -380,20 +381,20 @@ impl RustTypeName {
                         }
                     }
                     RustTypeNameToken::Punct('[') => {
-                        let elem = Box::new(RustTypeName::parse_from(lexer)?);
+                        let elem = Box::new(RustTypeName::parse_from(lexer, false)?);
                         match lexer.next() {
-                            RustTypeNameToken::Punct(']') => RustTypeNameParseState::Done {
+                            Some(RustTypeNameToken::Punct(']')) => RustTypeNameParseState::Done {
                                 result: RustTypeName::Slice { elem }
                             },
-                            RustTypeNameToken::Punct(';') => match lexer.next() {
-                                RustTypeNameToken::Integer(integer) => match integer {
+                            Some(RustTypeNameToken::Punct(';')) => match lexer.next() {
+                                Some(RustTypeNameToken::Integer(integer)) => match integer {
                                     Ok(integer) => match usize::try_from(integer) {
                                         Ok(length) => match lexer.next() {
                                             Some(RustTypeNameToken::Punct(']')) => RustTypeNameParseState::Done {
                                                 result: RustTypeName::Array { elem, length }
                                             },
-                                            None => return Err(unexpected_end(lexer)),
-                                            _ => return Err(unexpected(lexer))
+                                            Some(_) => return Err(unexpected(lexer)),
+                                            None => return Err(unexpected_end(lexer))
                                         },
                                         Err(error) => return Err(RustTypeNameParseError {
                                             index: lexer.span().start,
@@ -405,19 +406,22 @@ impl RustTypeName {
                                         cause: RustTypeNameParseErrorCause::IntegerParseError(err)
                                     })
                                 },
+                                Some(_) => return Err(unexpected(lexer)),
+                                None => return Err(unexpected_end(lexer))
                             },
-                            _ => return Err(expected_semicolon_or_close(lexer))
+                            Some(_) => return Err(expected_semicolon_or_close(lexer)),
+                            None => return Err(unexpected_end(lexer))
                         }
                     },
-                    RustTypeName::Punct('{') => match lexer.next() {
+                    RustTypeNameToken::Punct('{') => match lexer.next() {
                         Some(RustTypeNameToken::Ident) => {
                             let desc = lexer.slice().to_string();
                             match lexer.next() {
                                 Some(RustTypeNameToken::Punct('}')) => RustTypeNameParseState::Done {
                                     result: RustTypeName::Anonymous { desc: Cow::Owned(desc) }
                                 },
-                                None => return Err(unexpected_end(lexer)),
-                                _ => return Err(unexpected(lexer))
+                                Some(_) => return Err(unexpected(lexer)),
+                                None => return Err(unexpected_end(lexer))
                             }
                         },
                         _ => return Err(unexpected(lexer))
@@ -429,7 +433,7 @@ impl RustTypeName {
                             }
                         },
                         Err(error) => return Err(RustTypeNameParseError {
-                            index: lexer.index(),
+                            index: lexer.span().end,
                             cause: RustTypeNameParseErrorCause::IntegerParseError(error)
                         })
                     },
@@ -440,7 +444,7 @@ impl RustTypeName {
                             }
                         },
                         Err(error) => return Err(RustTypeNameParseError {
-                            index: lexer.index(),
+                            index: lexer.span().end,
                             cause: RustTypeNameParseErrorCause::FloatParseError(error)
                         })
                     },
@@ -457,20 +461,21 @@ impl RustTypeName {
                     mut qualifiers,
                     simple_name
                 } => match token {
-                    RustTypeNameToken::DoubleColon => {
+                    Some(RustTypeNameToken::DoubleColon) => {
                         qualifiers.push(simple_name);
                         RustTypeNameParseState::ExpectsIdent {
                             qualifiers
                         }
                     }
-                    RustTypeNameToken::Punct('<') => {
+                    Some(RustTypeNameToken::Punct('<')) => {
                         let mut elems = Vec::new();
                         while !lexer.remainder().trim_start().starts_with('>') {
-                            elems.push(RustTypeName::parse_from(lexer)?);
+                            elems.push(RustTypeName::parse_from(lexer, false)?);
                             match lexer.next() {
-                                RustTypeNameToken::Punct('>') => break,
-                                RustTypeNameToken::Punct(',') => {},
-                                _ => return Err(expected_comma_or_close(lexer))
+                                Some(RustTypeNameToken::Punct('>')) => break,
+                                Some(RustTypeNameToken::Punct(',')) => {},
+                                Some(_) => return Err(expected_comma_or_close(lexer)),
+                                None => return Err(unexpected_end(lexer))
                             }
                         }
                         RustTypeNameParseState::Done {
@@ -481,20 +486,26 @@ impl RustTypeName {
                             }
                         }
                     }
-                    // Maybe be parsing nested type
-                    RustTypeNameToken::Punct(',') => break,
-                    _ => return Err(unexpected(lexer))
+                    Some(_) => return Err(unexpected(lexer)),
+                    None => return Err(unexpected_end(lexer))
                 }
                 RustTypeNameParseState::ExpectsIdent {
                     qualifiers
                 } => match token {
                     RustTypeNameToken::Ident => RustTypeNameParseState::AfterIdent {
                         qualifiers,
-                        simple_name: token.slice().to_string()
+                        simple_name: lexer.slice().to_string()
                     },
                     _ => return Err(unexpected(lexer))
                 }
                 RustTypeNameParseState::Done { result: _ } => return Err(unexpected(lexer))
+            };
+            if !parse_eof {
+                let peek_char = lexer.remainder().trim_start().chars().next();
+                match peek_char {
+                    ',' | ':' | ')' | ']' | '>' | '}' => break,
+                    _ => {}
+                }
             }
         }
         let mut result = match state {
@@ -507,7 +518,7 @@ impl RustTypeName {
                 generic_args: Vec::new()
             },
             RustTypeNameParseState::Init |
-            RustTypeNameParseState::ExpectsIdent { .. } => Err(unexpected_end(lexer)),
+            RustTypeNameParseState::ExpectsIdent { .. } => return Err(unexpected_end(lexer)),
             RustTypeNameParseState::Done { result } => result
         };
         for ptr_kind in ptr_stack {

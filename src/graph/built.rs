@@ -107,7 +107,7 @@ impl BuiltGraph {
         unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>) -> (RawData, Vec<NodeInput>) {
             let mut cached_input_data = RawData {
                 types: input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
-                data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
+                data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices))
@@ -120,7 +120,7 @@ impl BuiltGraph {
             let compute = node.compute;
             let cached_output_data = RawData {
                 types: node_type.outputs.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
-                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(input.rust_type.infer_size().expect("unsized input type, should've been checked"))).collect::<Vec<_>>(),
+                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
             };
             let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices);
 
