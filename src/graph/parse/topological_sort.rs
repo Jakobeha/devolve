@@ -90,6 +90,22 @@ impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a T)] {
     }
 }
 
+impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a mut T)] {
+    type Elem = T;
+
+    fn deps_map(&self) -> HashMap<String, HashSet<String>> {
+        self.iter()
+            .map(|(name, elem)| (name.to_string(), elem.deps_set()))
+            .collect::<HashMap<_, _>>()
+    }
+
+    fn _sort_by(&mut self, mut compare: impl FnMut(&String, &String) -> Ordering) {
+        self.sort_by(|(lhs_name, _lhs), (rhs_name, _rhs)| {
+            compare(lhs_name, rhs_name)
+        });
+    }
+}
+
 #[doc(hidden)]
 pub trait HasDeps {
     fn deps_set(&self) -> HashSet<String>;

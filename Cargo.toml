@@ -5,7 +5,7 @@ authors = ["jakobeha <jakobeha@fastmail.com>"]
 description = "compound view graph for devolve-ui"
 repository = "https://github.com/jakobeha/dui-graph"
 license = "Apache-2.0"
-keywords = ["ui", "graphics"]
+keywords = ["devolve-ui", "ui"]
 categories = ["graphics", "rendering", "gui"]
 edition = "2021"
 
