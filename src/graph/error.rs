@@ -13,7 +13,7 @@ use crate::rust_type::{RustType, RustTypeName, RustTypeNameParseErrorCause, Type
 pub type ParseErrors = Vec<ParseError>;
 
 #[derive(Debug, Display, Error)]
-#[display(fmt = "at {}:{}, {}\n{}", line, column, "path.display()", body)]
+#[display(fmt = "at {}:{}, {}\n{}", "line + 1", "column + 1", "path.display()", body)]
 pub struct ParseError {
     pub path: PathBuf,
     pub line: usize,

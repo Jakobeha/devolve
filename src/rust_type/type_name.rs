@@ -557,10 +557,13 @@ impl RustTypeName {
                 RustTypeNameParseState::Done { result: _ } => return Err(unexpected(lexer))
             };
             if !parse_eof {
-                let peek_char = lexer.remainder().trim_start().chars().next();
+                let mut remaining_chars = lexer.remainder().trim_start().chars();
+                let peek_char = remaining_chars.next();
+                let next_peek_char = peek_char.as_ref().and_then(|_| remaining_chars.next());
                 if let Some(peek_char) = peek_char {
-                    match peek_char {
-                        ',' | ':' | ')' | ']' | '>' | '}' => break,
+                    match &peek_char {
+                        ',' | ')' | ']' | '>' | '}' => {},
+                        ':' if next_peek_char != Some(':') => {},
                         _ => {}
                     }
                 }

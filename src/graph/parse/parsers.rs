@@ -397,7 +397,7 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
                         let indent = line.chars().filter(|c| c.is_whitespace()).count();
                         indent != self.base_indent
                     }).count();
-                let inner_lines = &lines[line_index..=end_index];
+                let inner_lines = &lines[line_index..end_index];
 
                 let outer_indent = indent;
                 for (line_num, line) in inner_lines {
