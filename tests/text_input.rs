@@ -6,16 +6,30 @@ mod batch_file;
 
 use std::error::Error;
 use dui_graph::parse::types::SerialGraph;
-use crate::batch_file::RunTestsOnFiles;
-use crate::misc::ErrorNodes;
+use crate::batch_file::{RunTest, RunTestsOnFiles};
+use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_return};
 
 #[test]
 fn test_parse_serial() {
     ErrorNodes::log_errors_and_panic(|errors| {
         RunTestsOnFiles {
             dir_name: "duis",
-            try_parse: |_input, path| SerialGraph::parse_from(path).map_err(|err| Box::new(err) as Box<dyn Error + 'static>),
-            tests: &[]
+            try_parse: |input_string, path| SerialGraph::parse_from_input(&input_string, path).map_err(|err| Box::new(err) as Box<dyn Error + 'static>),
+            tests: &[
+                RunTest {
+                    test_name: "round-trip",
+                    associated_files: &[],
+                    run: |errors, input, input_path, _associated_files| {
+                        let input_string = input.to_string();
+                        let input2 = try_or_return!(
+                            SerialGraph::parse_from_input(&input_string, input_path),
+                            errors, "couldn't re-parse input:\n{}", input_string
+                        );
+                        let input2_string = input2.to_string();
+                        assert_eq_multiline!(input_string, input2_string, errors, "round trip failed");
+                    }
+                }
+            ]
         }.run(errors)
     })
 }

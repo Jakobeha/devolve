@@ -47,6 +47,7 @@ enum GraphToken {
 struct GraphParser<'a> {
     graph: &'a mut SerialGraph,
     errors: &'a mut Vec<ParseError>,
+    override_input: Option<&'a str>,
     path: PathBuf,
 }
 
@@ -124,6 +125,14 @@ enum FieldSide {
 
 impl SerialGraph {
     pub fn parse_from(path: &Path) -> Result<Self, ParseErrors> {
+        Self::_parse_from(None, path)
+    }
+
+    pub fn parse_from_input(override_input: &str, path: &Path) -> Result<Self, ParseErrors> {
+        Self::_parse_from(Some(override_input), path)
+    }
+
+    fn _parse_from(override_input: Option<&str>, path: &Path) -> Result<Self, ParseErrors> {
         let mut graph = SerialGraph::new();
         let mut errors = Vec::new();
 
@@ -131,6 +140,7 @@ impl SerialGraph {
             GraphParser {
                 graph: &mut graph,
                 errors: &mut errors,
+                override_input,
                 path: path.to_path_buf(),
             }.parse();
         }
@@ -145,20 +155,34 @@ impl SerialGraph {
 
 impl<'a> GraphParser<'a> {
     fn parse(&mut self) {
-        let input = match Self::get_file(&self.path) {
-            Ok(file) => file,
-            Err(error) => {
-                self.errors.push(ParseError {
-                    path: self.path.to_path_buf(),
-                    line: 0,
-                    column: 0,
-                    body: ParseErrorBody::IoError(error)
-                });
-                return;
-            }
-        };
+        match self.override_input {
+            None => {
+                let input = match Self::get_file(&self.path) {
+                    Ok(file) => file,
+                    Err(error) => {
+                        self.errors.push(ParseError {
+                            path: self.path.to_path_buf(),
+                            line: 0,
+                            column: 0,
+                            body: ParseErrorBody::IoError(error)
+                        });
+                        return;
+                    }
+                };
 
-        let lines = input.lines();
+                let lines = input.lines();
+                self.parse_lines(lines)
+            },
+            Some(override_input) => {
+                let lines = override_input.lines().map(|line| {
+                    Ok(String::from(line))
+                });
+                self.parse_lines(lines)
+            }
+        }
+    }
+
+    fn parse_lines(&mut self, lines: impl Iterator<Item=std::io::Result<String>>) {
         let mut block = Vec::new();
 
         fn finish_block(this: &mut GraphParser<'_>, block: &mut Vec<(usize, String)>) {
@@ -407,7 +431,7 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
                     end_index = end_index + 1;
                     next_line = lines_iter.next();
                 }
-                let inner_lines = &lines[line_index..end_index];
+                let inner_lines = &lines[line_index..=end_index];
 
                 let outer_indent = indent;
                 for (line_num, line) in inner_lines {
@@ -694,7 +718,7 @@ fn parse_divider_or_header_or_field(line: &str) -> Result<FieldElemParserItem, (
     if line == "===" {
         Ok(FieldElemParserItem::Divider)
     } else if line.starts_with("--") {
-        Ok(FieldElemParserItem::Header { header: line.to_string() })
+        Ok(FieldElemParserItem::Header { header: line["--".len()..].trim().to_string() })
     } else {
         Ok(FieldElemParserItem::Field(parse_field(line)?))
     }

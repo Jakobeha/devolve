@@ -109,10 +109,10 @@ pub struct RunTestsOnFiles<T: 'static> {
 }
 
 pub struct RunTest<T: 'static> {
-    test_name: &'static str,
+    pub test_name: &'static str,
     /// Associated name and extension
-    associated_files: &'static [(&'static str, &'static str)],
-    run: fn(&mut ErrorNodes, &T, Vec<AssociatedIOFile<String>>)
+    pub associated_files: &'static [(&'static str, &'static str)],
+    pub run: fn(&mut ErrorNodes, &T, &Path, Vec<AssociatedIOFile<String>>)
 }
 
 impl<T: 'static> RunTestsOnFiles<T> {
@@ -171,7 +171,7 @@ impl<T: 'static> RunTestsOnFiles<T> {
                         let associated_files = test.associated_files.iter().map(|(associated_name, extension)| {
                             self.load_associated(dir_path, base_name, associated_name, extension)
                         }).collect::<Vec<_>>();
-                        (test.run)(errors, &input, associated_files)
+                        (test.run)(errors, &input, input_path, associated_files)
                     });
                 }
             }

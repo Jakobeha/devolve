@@ -27,6 +27,39 @@ pub macro try_or_none($e:expr, $errors:expr, $msg:literal $(, $args:expr)*) {
     }
 }
 
+pub macro assert{
+    ($cond:expr, $errors:expr) => {
+        assert!($cond, "assertion failed");
+    },
+    ($cond:expr, $errors:expr, $msg:literal $(, $args:expr)*) => {
+        if !$cond {
+            error!($errors, concat!($msg, ": {} is false") $(, $args)*, stringify!($cond));
+        }
+    }
+}
+
+pub macro assert_eq {
+    ($lhs:expr, $rhs:expr, $errors:expr) => {
+        assert_eq!($lhs, $rhs, "assertion failed");
+    },
+    ($lhs:expr, $rhs:expr, $errors:expr, $msg:literal $(, $args:expr)*) => {
+        if $lhs != $rhs {
+            error!($errors, concat!($msg, ": {} is false ({} != {})") $(, $args)*, stringify!($lhs == $rhs), $lhs, $rhs);
+        }
+    }
+}
+
+pub macro assert_eq_multiline {
+    ($lhs:expr, $rhs:expr, $errors:expr) => {
+        assert_eq_multiline!($lhs, $rhs, "assertion failed");
+    },
+    ($lhs:expr, $rhs:expr, $errors:expr, $msg:literal $(, $args:expr)*) => {
+        if $lhs != $rhs {
+            error!($errors, concat!($msg, ": {} is false\nLEFT\n{}\nRIGHT\n{}\nEND") $(, $args)*, stringify!($lhs == $rhs), $lhs, $rhs);
+        }
+    }
+}
+
 pub struct ErrorNodes(Vec<ErrorNode>);
 
 #[doc(hidden)]
