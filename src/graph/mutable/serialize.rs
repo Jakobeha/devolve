@@ -4,8 +4,9 @@ use std::mem::size_of;
 use join_lazy_fmt::Join;
 use log::{error, warn};
 
-use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData, NodeTypeName};
+use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData};
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
+use crate::graph::StaticStrs;
 use crate::mutable::ComptimeCtx;
 use crate::rust_type::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
@@ -358,7 +359,7 @@ impl<'a> GraphSerializer<'a> {
             NodeInput::Dep(dep) => {
                 let (node_name, field_name) = match dep {
                     NodeInputDep::GraphInput { idx } => {
-                        (String::from(NodeTypeName::INPUT), self.input_names[*idx].clone())
+                        (String::from(StaticStrs::INPUT_NODE), self.input_names[*idx].clone())
                     }
                     NodeInputDep::OtherNodeOutput { id, idx } => {
                         let (node_name, output_names) = self.node_names_and_output_names[id.0].as_ref().unwrap();

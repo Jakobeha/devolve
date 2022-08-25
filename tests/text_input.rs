@@ -1,10 +1,26 @@
-use std::ops::Range;
-use futures::select;
-use devolve_ui_core::interface::iface;
-use devolve_ui_core::interface::elem::{In, InOut, out_channel, OutSend};
-use devolve_ui_core::misc::select_async::select_inline;
+#![feature(decl_macro)]
+#![feature(is_some_with)]
 
-#[prompt]
+mod misc;
+mod batch_file;
+
+use std::error::Error;
+use dui_graph::parse::types::SerialGraph;
+use crate::batch_file::RunTestsOnFiles;
+use crate::misc::ErrorNodes;
+
+#[test]
+fn test_parse_serial() {
+    ErrorNodes::log_errors_and_panic(|errors| {
+        RunTestsOnFiles {
+            dir_name: "duis",
+            try_parse: |_input, path| SerialGraph::parse_from(path).map_err(|err| Box::new(err) as Box<dyn Error + 'static>),
+            tests: &[]
+        }.run(errors)
+    })
+}
+
+/* #[prompt]
 async fn text_input(
     mut c: PromptContext<'_>,
     placeholder: In<str>,
@@ -48,4 +64,4 @@ async fn text_input(
             None
         },
     )).await
-}
+}*/

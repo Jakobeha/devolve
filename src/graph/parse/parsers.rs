@@ -11,6 +11,7 @@ use crate::graph::parse::lexer_ext::LexerExt;
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::misc::extract::extract;
 use crate::rust_type::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
+use crate::StaticStrs;
 
 #[derive(Logos)]
 enum GraphToken {
@@ -137,7 +138,7 @@ impl SerialGraph {
         if errors.is_empty() {
             Ok(graph)
         } else {
-            Err(errors)
+            Err(ParseErrors::from(errors))
         }
     }
 }
@@ -374,8 +375,12 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
         mut parse_item: impl FnMut(&str) -> Result<Item, (usize, ParseErrorBody)>,
         mut parse_item_children: impl FnMut(&mut GraphParser<'b>, &mut Item, &[(usize, String)])
     ) {
-        for (line_index, (line_num, line)) in lines.iter().enumerate() {
-            let indent = line.chars().filter(|c| c.is_whitespace()).count();
+        let mut lines_iter = lines.iter().enumerate();
+        let mut next_line = lines_iter.next();
+        while let Some((line_index, (line_num, line))) = next_line.take() {
+            next_line = lines_iter.next();
+
+            let indent = line.chars().take_while(|c| c.is_whitespace()).count();
             if self.base_indent == 0 {
                 self.base_indent = indent;
             }
@@ -391,17 +396,22 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
             }
 
             if indent > self.base_indent {
-                let end_index = line_index + lines.iter()
-                    .skip(line_index)
-                    .take_while(|(_, line)| {
-                        let indent = line.chars().filter(|c| c.is_whitespace()).count();
-                        indent != self.base_indent
-                    }).count();
+                // Skips inner lines as a side-effect
+                let mut end_index = line_index;
+                while let Some((_, (_, line))) = next_line.as_ref() {
+                    let indent = line.chars().take_while(|c| c.is_whitespace()).count();
+                    if indent <= self.base_indent {
+                        break
+                    }
+
+                    end_index = end_index + 1;
+                    next_line = lines_iter.next();
+                }
                 let inner_lines = &lines[line_index..end_index];
 
                 let outer_indent = indent;
                 for (line_num, line) in inner_lines {
-                    let indent = line.chars().filter(|c| c.is_whitespace()).count();
+                    let indent = line.chars().take_while(|c| c.is_whitespace()).count();
                     if indent < outer_indent {
                         self.p.errors.push(ParseError {
                             path: self.p.path.to_path_buf(),
@@ -421,6 +431,8 @@ impl<'a, 'b, Item> AbstractTreeParser<'a, 'b, Item> {
                 match parse_item(line.trim()) {
                     Ok(item) => self.current_item = Some((*line_num, item)),
                     Err((column, body)) => {
+                        // Add indent to column
+                        let column = column + (line.len() - line.trim_start().len());
                         self.p.errors.push(ParseError {
                             path: self.p.path.to_path_buf(),
                             line: *line_num,
@@ -791,7 +803,7 @@ fn parse_enum_variant_type(line: &str) -> Result<SerialEnumVariantTypeDef, (usiz
 
 fn munch_value_or_underscore(lexer: &mut Lexer<GraphToken>) -> Result<Option<SerialValueHead>, (usize, ParseErrorBody)> {
     // lexer doesn't support peek but there are workarounds, here is one
-    let remainder = lexer.remainder().trim();
+    let remainder = lexer.remainder().trim_start();
     // check that the next char is _ and the char after is not for an identifier.
     // We want to check for either '_' or '_: ...'
     if remainder == "_" || remainder.starts_with("_:") {
@@ -818,13 +830,23 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<SerialValueHead, (usize,
             Ok(string) => Ok(SerialValueHead::String(string))
         }
         Some(GraphToken::Ident) => {
-            let node_ident = lexer.slice().to_string();
-            lexer.munch("'.'", |token| extract!(token, GraphToken::Punct('.')))?;
-            lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
-            let field_ident = lexer.slice().to_string();
+            let node_name = lexer.slice().to_string();
+            let field_name = {
+                // lexer doesn't support peek but there are workarounds, here is one
+                let remainder = lexer.remainder().trim_start();
+                // check that the next char is _ and the char after is not for an identifier.
+                // We want to check for either '_' or '_: ...'
+                if remainder.starts_with(".") {
+                    lexer.munch("'.'", |token| extract!(token, GraphToken::Punct('.')))?;
+                    lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
+                    lexer.slice().to_string()
+                } else {
+                    String::from(StaticStrs::SELF_FIELD)
+                }
+            };
             Ok(SerialValueHead::Ref {
-                node_name: node_ident,
-                field_name: field_ident
+                node_name,
+                field_name
             })
         }
         Some(GraphToken::Punct('[')) => {

@@ -94,11 +94,6 @@ impl Default for NodeInput {
     }
 }
 
-impl NodeTypeName {
-    pub const INPUT: &'static str = "Input";
-    pub const OUTPUT: &'static str = "Output";
-}
-
 impl From<String> for NodeTypeName {
     fn from(s: String) -> Self {
         Self(s)

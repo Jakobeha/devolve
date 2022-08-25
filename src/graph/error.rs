@@ -2,7 +2,7 @@ use std::error::Error;
 use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
 use std::path::PathBuf;
 
-use derive_more::{Display, Error};
+use derive_more::{Display, Error, From, IntoIterator};
 use snailquote::UnescapeError;
 //noinspection RsUnusedImport (IntelliJ fails to detect)
 use join_lazy_fmt::Join;
@@ -10,10 +10,12 @@ use join_lazy_fmt::Join;
 use crate::graph::mutable::NodeId;
 use crate::rust_type::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructBodyForm};
 
-pub type ParseErrors = Vec<ParseError>;
+#[derive(Debug, Display, Error, From, IntoIterator)]
+#[display(fmt = "parse errors:\n{}", "\"\\n\".join(_0)")]
+pub struct ParseErrors(#[error(not(source))] Vec<ParseError>);
 
 #[derive(Debug, Display, Error)]
-#[display(fmt = "at {}:{}, {}\n{}", "line + 1", "column + 1", "path.display()", body)]
+#[display(fmt = "- {}:{}:{}\n    {}", "path.display()", "line + 1", "column + 1", body)]
 pub struct ParseError {
     pub path: PathBuf,
     pub line: usize,

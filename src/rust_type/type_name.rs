@@ -424,13 +424,18 @@ impl RustTypeName {
                     }
                     RustTypeNameToken::Punct('(') => {
                         let mut elems = Vec::new();
-                        while !lexer.remainder().trim_start().starts_with(')') {
-                            elems.push(RustTypeName::parse_from(lexer, false)?);
-                            match lexer.next() {
-                                Some(RustTypeNameToken::Punct(')')) => break,
-                                Some(RustTypeNameToken::Punct(',')) => {},
-                                Some(_) => return Err(expected_comma_or_close(lexer)),
-                                None => return Err(unexpected_end(lexer))
+                        if lexer.remainder().trim_start().starts_with(')') {
+                            let next = lexer.next();
+                            debug_assert!(matches!(next, Some(RustTypeNameToken::Punct(')'))));
+                        } else {
+                            loop {
+                                elems.push(RustTypeName::parse_from(lexer, false)?);
+                                match lexer.next() {
+                                    Some(RustTypeNameToken::Punct(')')) => break,
+                                    Some(RustTypeNameToken::Punct(',')) => {},
+                                    Some(_) => return Err(expected_comma_or_close(lexer)),
+                                    None => return Err(unexpected_end(lexer))
+                                }
                             }
                         }
                         RustTypeNameParseState::Done {
@@ -526,7 +531,7 @@ impl RustTypeName {
                     }
                     RustTypeNameToken::Punct('<') => {
                         let mut elems = Vec::new();
-                        while !lexer.remainder().trim_start().starts_with('>') {
+                        loop {
                             elems.push(RustTypeName::parse_from(lexer, false)?);
                             match lexer.next() {
                                 Some(RustTypeNameToken::Punct('>')) => break,
@@ -562,8 +567,8 @@ impl RustTypeName {
                 let next_peek_char = peek_char.as_ref().and_then(|_| remaining_chars.next());
                 if let Some(peek_char) = peek_char {
                     match &peek_char {
-                        ',' | ')' | ']' | '>' | '}' => {},
-                        ':' if next_peek_char != Some(':') => {},
+                        ',' | ')' | ']' | '>' | '}' => break,
+                        ':' if next_peek_char != Some(':') => break,
                         _ => {}
                     }
                 }

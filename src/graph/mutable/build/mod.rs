@@ -6,6 +6,7 @@ use crate::graph::error::{GraphFormError, GraphFormErrors};
 use crate::graph::mutable::{MutableGraph, Node, NodeId, NodeTypeData, NodeTypeName};
 use crate::graph::parse::topological_sort::SortByDeps;
 use crate::graph::parse::types::{SerialBody, SerialGraph, SerialValueHead};
+use crate::graph::StaticStrs;
 use crate::mutable::ComptimeCtx;
 use crate::rust_type::{RustType, TypeStructBodyForm};
 
@@ -74,7 +75,7 @@ impl<'a> GraphBuilder<'a> {
 
 
         // old
-        let input_types = match self.resolved_nodes.remove(NodeTypeName::INPUT) {
+        let input_types = match self.resolved_nodes.remove(StaticStrs::INPUT_NODE) {
             None => {
                 self.errors.push(GraphFormError::NoInput);
                 Vec::new()
@@ -84,7 +85,7 @@ impl<'a> GraphBuilder<'a> {
                 if !input_node.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
                     self.errors.push(GraphFormError::InputHasInputs);
                 }
-                if input_node.type_name.as_ref() != NodeTypeName::INPUT {
+                if input_node.type_name.as_ref() != StaticStrs::INPUT_NODE {
                     self.errors.push(GraphFormError::InputHasCompute);
                     // Best failure, we have to clone because this may be used somewhere else
                     let input_type_data = self.resolved_node_types.get(&input_node.type_name).unwrap();
@@ -97,14 +98,14 @@ impl<'a> GraphBuilder<'a> {
                 }
             }
         };
-        let (output_types, outputs) = match self.resolved_nodes.remove(NodeTypeName::OUTPUT) {
+        let (output_types, outputs) = match self.resolved_nodes.remove(StaticStrs::OUTPUT_NODE) {
             None => {
                 self.errors.push(GraphFormError::NoOutput);
                 (Vec::new(), Vec::new())
             },
             Some((output_id, output_node)) => {
                 debug_assert!(output_id == NodeId(self.resolved_nodes.len()), "output id is wrong, should be guaranteed to be last (resolved_nodes.len())");
-                let output_types = if output_node.type_name.as_ref() != NodeTypeName::OUTPUT {
+                let output_types = if output_node.type_name.as_ref() != StaticStrs::OUTPUT_NODE {
                     self.errors.push(GraphFormError::OutputHasCompute);
                     // Best failure, we have to clone because this may be used somewhere else
                     let output_type_data = self.resolved_node_types.get(&output_node.type_name).unwrap();

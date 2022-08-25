@@ -2,9 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::iter::{empty, once};
 
-// Generally backwards dependencies like this (parse <- mutable) is bad.
-// In this case we need NodeTypeName because we use mutable's dependency ordering
-use crate::graph::mutable::NodeTypeName;
+use crate::graph::StaticStrs;
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialNode, SerialRustType, SerialStructTypeDef, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 //noinspection RsUnusedImport (IntelliJ fails to detect use)
 use crate::graph::parse::types::SerialFieldElem;
@@ -119,8 +117,8 @@ impl HasDeps for SerialNode {
 
     fn cmp_special_case(lhs_name: &str, rhs_name: &str) -> Ordering {
         // Handle if one of the nodes is an input or output.
-        let input_case = (rhs_name == NodeTypeName::INPUT).cmp(&(lhs_name == NodeTypeName::INPUT));
-        let output_case = (lhs_name == NodeTypeName::OUTPUT).cmp(&(rhs_name == NodeTypeName::OUTPUT));
+        let input_case = (rhs_name == StaticStrs::INPUT_NODE).cmp(&(lhs_name == StaticStrs::INPUT_NODE));
+        let output_case = (lhs_name == StaticStrs::OUTPUT_NODE).cmp(&(rhs_name == StaticStrs::OUTPUT_NODE));
         if input_case != Ordering::Equal {
             input_case
         } else if output_case != Ordering::Equal {

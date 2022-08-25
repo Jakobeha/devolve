@@ -36,7 +36,7 @@ Output
   ===
   text: String
   -- events
-  text_modified: Option<(Range<usize>, String)>,
-  enter_key: Option<()>,
-  click_ok: Option<()>,
+  text_modified: Option<(Range<usize>, String)>
+  enter_key: Option<()>
+  click_ok: Option<()>
   click_cancel: Option<()>
