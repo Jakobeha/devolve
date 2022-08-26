@@ -25,7 +25,7 @@ pub trait SortByDeps {
     fn deps_map(&self) -> HashMap<String, HashSet<String>>;
 
     #[doc(hidden)]
-    fn _sort_by(&mut self, compare: impl FnMut(&String, &String) -> Ordering);
+    fn _sort_by(&mut self, compare: impl FnMut(&str, &str) -> Ordering);
 
     /// Note: When sorting nodes, the "Input" node is always first, the "Output" node is always last.
     /// This is true even if they have different dependency ordering
@@ -64,9 +64,9 @@ impl<T: HasDeps> SortByDeps for Vec<(String, T)> {
             .collect::<HashMap<_, _>>()
     }
 
-    fn _sort_by(&mut self, mut compare: impl FnMut(&String, &String) -> Ordering) {
+    fn _sort_by(&mut self, mut compare: impl FnMut(&str, &str) -> Ordering) {
         self.sort_by(|(lhs_name, _lhs), (rhs_name, _rhs)| {
-            compare(lhs_name, rhs_name)
+            compare(lhs_name.as_str(), rhs_name.as_str())
         });
     }
 }
@@ -81,14 +81,14 @@ impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a T)] {
             .collect::<HashMap<_, _>>()
     }
 
-    fn _sort_by(&mut self, mut compare: impl FnMut(&String, &String) -> Ordering) {
+    fn _sort_by(&mut self, mut compare: impl FnMut(&str, &str) -> Ordering) {
         self.sort_by(|(lhs_name, _lhs), (rhs_name, _rhs)| {
-            compare(lhs_name, rhs_name)
+            compare(lhs_name.as_str(), rhs_name.as_str())
         });
     }
 }
 
-impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a mut T)] {
+impl<'a, T: HasDeps> SortByDeps for [(&'a str, &'a mut T)] {
     type Elem = T;
 
     fn deps_map(&self) -> HashMap<String, HashSet<String>> {
@@ -97,7 +97,7 @@ impl<'a, T: HasDeps> SortByDeps for [(&'a String, &'a mut T)] {
             .collect::<HashMap<_, _>>()
     }
 
-    fn _sort_by(&mut self, mut compare: impl FnMut(&String, &String) -> Ordering) {
+    fn _sort_by(&mut self, mut compare: impl FnMut(&str, &str) -> Ordering) {
         self.sort_by(|(lhs_name, _lhs), (rhs_name, _rhs)| {
             compare(lhs_name, rhs_name)
         });

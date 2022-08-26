@@ -5,7 +5,7 @@ use snailquote::escape;
 
 use crate::graph::parse::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, DisplayWithCtx2, Indent};
-use crate::parse::types::{SerialBody, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
+use crate::parse::types::{SerialBody, SerialField, SerialFieldElem, SerialFieldHeader, SerialFieldTypeDef, SerialGraph, SerialNode, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::rust_type::DuplicateNamesInScope;
 use crate::StaticStrs;
 
@@ -120,7 +120,16 @@ impl DisplayWithCtx2 for SerialFieldElem {
     fn fmt(&self, f: &mut Formatter<'_>, (snis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
             SerialFieldElem::Header { header } => write!(f, "-- {}", header),
-            SerialFieldElem::Field(field) => write!(f, "{}", field.with_ctx((snis, indent)))
+            SerialFieldElem::Field { field } => write!(f, "{}", field.with_ctx((snis, indent)))
+        }
+    }
+}
+
+impl Display for SerialFieldHeader {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SerialFieldHeader::Message(message) => write!(f, "{}", message),
+            SerialFieldHeader::Pos(pos) => write!(f, "@pos {},{}", pos.x, pos.y)
         }
     }
 }

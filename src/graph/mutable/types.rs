@@ -3,6 +3,7 @@ use derive_more::Display;
 use slab::Slab;
 use crate::rust_type::RustType;
 use crate::graph::raw::RawComputeFn;
+use crate::parse::types::{SerialFieldHeader, SerialNodePos};
 
 /// Compound view graph.
 ///
@@ -68,6 +69,7 @@ pub struct Node {
 /// Display info which is not used in actual computations
 pub struct NodeMetadata {
     pub node_name: String,
+    pub pos: Option<SerialNodePos>,
     pub input_headers: Vec<FieldHeader>,
     pub output_headers: Vec<FieldHeader>,
 }
@@ -76,7 +78,7 @@ pub struct FieldHeader {
     /// Note that the index counts indices of previous headers,
     /// so unlike usual you *don't* want to add these in reverse.
     pub index: usize,
-    pub header: String
+    pub header: SerialFieldHeader
 }
 
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]

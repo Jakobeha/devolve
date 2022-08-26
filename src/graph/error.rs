@@ -55,6 +55,8 @@ pub enum ParseErrorBody {
     BadFloat(#[error(source)] ParseFloatError),
     #[display(fmt = "negative array length")]
     BadArrayLength(#[error(source)] TryFromIntError),
+    #[display(fmt = "integer is too large")]
+    BadInt32(#[error(source)] TryFromIntError),
     #[display(fmt = "bad escape in string: {}", _0)]
     BadEscape(#[error(source)] UnescapeError),
     #[display(fmt = "unopened '{}'", _0)]

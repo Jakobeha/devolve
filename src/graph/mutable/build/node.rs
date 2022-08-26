@@ -5,7 +5,7 @@ use crate::error::GraphFormError;
 use crate::mutable::build::GraphBuilder;
 use crate::mutable::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
-use crate::parse::types::{SerialField, SerialFieldElem, SerialNode};
+use crate::parse::types::{SerialField, SerialFieldElem, SerialFieldHeader, SerialNode, SerialNodePos};
 use crate::raw::RawComputeFn;
 
 impl<'a> GraphBuilder<'a> {
@@ -26,8 +26,9 @@ impl<'a> GraphBuilder<'a> {
         let inherited_type = node.node_type.as_ref()
             .and_then(|node_type| self.resolve_node_type(node_type, node_name));
 
-        let (defined_input_types, defined_inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name);
-        let (defined_output_types, defined_outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name);
+        let mut pos = None;
+        let (defined_input_types, defined_inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
+        let (defined_output_types, defined_outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
 
         let output_idxs_with_values = defined_outputs.iter().enumerate().filter(|(_, output_value)| !matches!(output_value, NodeInput::Hole)).map(|(idx, _)| idx).collect::<Vec<_>>();
         for output_idx in output_idxs_with_values {
@@ -80,6 +81,7 @@ impl<'a> GraphBuilder<'a> {
 
         let meta = NodeMetadata {
             node_name: node_name.to_string(),
+            pos,
             input_headers,
             output_headers
         };
@@ -154,16 +156,22 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_field_elems(&mut self, fields: Vec<SerialFieldElem>, node_name: &str) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
+    fn resolve_field_elems(&mut self, fields: Vec<SerialFieldElem>, node_name: &str, pos: &mut Option<SerialNodePos>) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
         let mut defined_types: Vec<NodeIOType> = Vec::new();
         let mut defined_values: Vec<NodeInput> = Vec::new();
         let mut headers: Vec<FieldHeader> = Vec::new();
         for (index, field) in fields.into_iter().enumerate() {
             match field {
                 SerialFieldElem::Header { header } => {
+                    // Extract information from header
+                    match &header {
+                        SerialFieldHeader::Pos(new_pos) if pos.is_none() => *pos = Some(*new_pos),
+                        _ => {}
+                    }
+                    // Add header even if we extract so we can losslessly reconstruct
                     headers.push(FieldHeader { index, header });
                 }
-                SerialFieldElem::Field(field) => {
+                SerialFieldElem::Field { field } => {
                     let (defined_input_type, defined_input) = self.resolve_node_field(field, node_name);
                     defined_types.push(defined_input_type);
                     defined_values.push(defined_input);

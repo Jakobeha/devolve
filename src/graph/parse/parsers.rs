@@ -10,6 +10,7 @@ use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::parse::lexer_ext::LexerExt;
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::misc::extract::extract;
+use crate::parse::types::{SerialFieldHeader, SerialNodePos};
 use crate::rust_type::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
 use crate::StaticStrs;
 
@@ -89,8 +90,8 @@ struct FieldElemParser<'a, 'b: 'a> {
 
 enum FieldElemParserItem {
     Divider,
-    Header { header: String },
-    Field(SerialField)
+    Header { header: SerialFieldHeader },
+    Field { field: SerialField }
 }
 
 struct BodyParser<'a, 'b: 'a> {
@@ -512,10 +513,10 @@ impl<'a, 'b> FieldElemParser<'a, 'b> {
             parse_divider_or_header_or_field,
             |p, item, lines| {
                 match item {
-                    FieldElemParserItem::Divider | FieldElemParserItem::Header { header: _ } => {
+                    FieldElemParserItem::Divider | FieldElemParserItem::Header { .. } => {
                         expect_no_lines(p, lines)
                     }
-                    FieldElemParserItem::Field(field) => {
+                    FieldElemParserItem::Field { field } => {
                         BodyParser::parse(p, lines, &mut field.value_children);
                     }
                 }
@@ -545,12 +546,12 @@ impl<'a, 'b> FieldElemParser<'a, 'b> {
                     };
                     fields.push(SerialFieldElem::Header { header })
                 },
-                FieldElemParserItem::Field(field) => {
+                FieldElemParserItem::Field { field } => {
                     let fields = match self.field_side {
                         FieldSide::Input => &mut self.input_fields,
                         FieldSide::Output => &mut self.output_fields
                     };
-                    fields.push(SerialFieldElem::Field(field))
+                    fields.push(SerialFieldElem::Field { field })
                 }
             }
         }
@@ -718,10 +719,27 @@ fn parse_divider_or_header_or_field(line: &str) -> Result<FieldElemParserItem, (
     if line == "===" {
         Ok(FieldElemParserItem::Divider)
     } else if line.starts_with("--") {
-        Ok(FieldElemParserItem::Header { header: line["--".len()..].trim().to_string() })
+        let header_str = line["--".len()..].trim_start();
+        let header_offset = line.len() - header_str.len();
+        let header_str = header_str.trim_end();
+        let header = parse_header(header_str).map_err(|(column, body)| (column + header_offset, body))?;
+
+        Ok(FieldElemParserItem::Header { header })
     } else {
-        Ok(FieldElemParserItem::Field(parse_field(line)?))
+        Ok(FieldElemParserItem::Field { field : parse_field(line)? })
     }
+}
+
+fn parse_header(header_str: &str) -> Result<SerialFieldHeader, (usize, ParseErrorBody)> {
+    if let Some(pos_str) = header_str.strip_prefix("@pos") {
+        let mut lexer = Lexer::<GraphToken>::new(pos_str);
+        let x = munch_i32(&mut lexer)?;
+        lexer.munch("','" |token| extract!(token, GraphToken::Punct(',')))?;
+        let y = munch_i32(&mut lexer)?;
+        lexer.munch_end()?;
+        Ok(SerialFieldHeader::Pos(SerialNodePos { x, y }))
+    }
+    Ok(SerialFieldHeader::Message(header_str.to_string()))
 }
 
 fn parse_field_or_tuple_item(line: &str) -> Result<BodyParserItem, (usize, ParseErrorBody)> {
@@ -926,6 +944,12 @@ fn munch_rust_type(lexer: &mut Lexer<GraphToken>) -> Result<SerialRustType, (usi
     let _ = std::mem::replace(lexer, morph_lexer.morph::<GraphToken>());
     // Return
     Ok(rust_type)
+}
+
+fn munch_i32(lexer: &mut Lexer<GraphToken>) -> Result<i32, (usize, ParseErrorBody)> {
+    Ok(i32::try_from(lexer.munch("integer", |token| extract!(token, GraphToken::Integer(integer)))?
+        .map_err(|err| (lexer.span().start, ParseErrorBody::BadInteger(err)))? as i64)
+        .map_err(|err| (lexer.span().start, ParseErrorBody::BadInt32(err)))?)
 }
 
 fn expect_no_lines(p: &mut GraphParser, lines: &[(usize, String)]) {

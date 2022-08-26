@@ -17,8 +17,19 @@ pub struct SerialNode {
 }
 
 pub enum SerialFieldElem {
-    Header { header: String },
-    Field(SerialField)
+    Header { header: SerialFieldHeader },
+    Field { field: SerialField }
+}
+
+pub enum SerialFieldHeader {
+    Message(String),
+    Pos(SerialNodePos)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct SerialNodePos {
+    pub x: i32,
+    pub y: i32
 }
 
 pub struct SerialField {
