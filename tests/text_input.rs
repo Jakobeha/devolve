@@ -5,6 +5,8 @@ mod misc;
 mod batch_file;
 
 use std::error::Error;
+use dui_graph::mutable::{ComptimeCtx, MutableGraph};
+use dui_graph::node_types::NodeTypes;
 use dui_graph::parse::types::SerialGraph;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
 use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_return};
@@ -27,6 +29,17 @@ fn test_parse_serial() {
                         );
                         let input2_string = input2.to_string();
                         assert_eq_multiline!(input_string, input2_string, errors, "round trip failed");
+                    }
+                },
+                RunTest {
+                    test_name: "ir",
+                    associated_files: &[],
+                    run: |errors, input, input_path, _associated_files| {
+                        let input = input.clone();
+                        let graph = MutableGraph::try_from((input, &ComptimeCtx {
+                            qualifiers: vec![],
+                            node_types: NodeTypes::new()
+                        })).unwrap();
                     }
                 }
             ]
