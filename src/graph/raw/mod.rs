@@ -24,6 +24,9 @@ pub struct RawData {
 #[derive(Clone)]
 struct PanickingComputeFn;
 
+#[derive(Clone)]
+struct StaticComputeFn(fn(&mut CompoundViewCtx, RawInputs<'_>, RawOutputs<'_>));
+
 pub trait RawComputeFnTrait: Send + Sync + 'static {
     fn box_clone(&self) -> Box<dyn RawComputeFnTrait>;
 
@@ -85,6 +88,10 @@ impl RawComputeFn {
         RawComputeFn::from(PanickingComputeFn)
     }
 
+    pub fn new(fun: fn(&mut CompoundViewCtx, RawInputs<'_>, RawOutputs<'_>)) -> Self {
+        RawComputeFn::from(StaticComputeFn(fun))
+    }
+
     pub fn run(&self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) {
         self.0.run(ctx, inputs, outputs)
     }
@@ -109,5 +116,15 @@ impl RawComputeFnTrait for PanickingComputeFn {
 
     fn run(&self, _: &mut CompoundViewCtx, _: RawInputs<'_>, _: RawOutputs<'_>) {
         panic!("RawComputeFn::panicking() (dummy compute function, should've never been called)");
+    }
+}
+
+impl RawComputeFnTrait for StaticComputeFn {
+    fn box_clone(&self) -> Box<dyn RawComputeFnTrait> {
+        Box::new(self.clone())
+    }
+
+    fn run(&self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) {
+        (self.0)(ctx, inputs, outputs)
     }
 }

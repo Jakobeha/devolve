@@ -5,11 +5,19 @@ mod misc;
 mod batch_file;
 
 use std::error::Error;
-use dui_graph::mutable::{ComptimeCtx, MutableGraph};
-use dui_graph::node_types::NodeTypes;
+use std::ops::Range;
+use dui_graph::mutable::{ComptimeCtx, MutableGraph, NodeInput, NodeIOType, NodeTypeData};
+use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::parse::types::SerialGraph;
+use dui_graph::raw::{RawComputeFn, UsedRegion};
+use dui_graph::rust_type::RustType;
+use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
 use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_return};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct ViewId(pub usize);
 
 #[test]
 fn test_parse_serial() {
@@ -35,10 +43,127 @@ fn test_parse_serial() {
                     test_name: "ir",
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files| {
+                        let mut node_types = NodeTypes::new();
+                        node_types.insert(String::from("Button"), NodeType {
+                            compute: RawComputeFn::new(|ctx, inputs, outputs| {
+                                eprintln!("TODO Button");
+                            }),
+                            type_data: NodeTypeData {
+                                inputs: vec![
+                                    NodeIOType {
+                                        name: "text".to_string(),
+                                        rust_type: RustType::of::<String>(),
+                                    },
+                                    NodeIOType {
+                                        name: "is_enabled".to_string(),
+                                        rust_type: RustType::of::<bool>(),
+                                    }
+                                ],
+                                outputs: vec![
+                                    NodeIOType {
+                                        name: String::from(StaticStrs::SELF_FIELD),
+                                        rust_type: RustType::of::<ViewId>()
+                                    },
+                                    NodeIOType {
+                                        name: String::from("click"),
+                                        rust_type: RustType::of::<Option<()>>()
+                                    }
+                                ]
+                            },
+                            default_inputs: vec![
+                                NodeInput::Hole,
+                                NodeInput::const_(false)
+                            ],
+                            required_inputs: vec![
+                                UsedRegion::Used,
+                                UsedRegion::Used
+                            ]
+                        });
+                        node_types.insert(String::from("TextField"), NodeType {
+                            compute: RawComputeFn::new(|ctx, inputs, outputs| {
+                                eprintln!("TODO TextField");
+                            }),
+                            type_data: NodeTypeData {
+                                inputs: vec![
+                                    NodeIOType {
+                                        name: "text".to_string(),
+                                        rust_type: RustType::of::<String>(),
+                                    },
+                                    NodeIOType {
+                                        name: "placeholder".to_string(),
+                                        rust_type: RustType::of::<String>(),
+                                    }
+                                ],
+                                outputs: vec![
+                                    NodeIOType {
+                                        name: String::from(StaticStrs::SELF_FIELD),
+                                        rust_type: RustType::of::<ViewId>()
+                                    },
+                                    NodeIOType {
+                                        name: String::from("text"),
+                                        rust_type: RustType::of::<String>()
+                                    },
+                                    NodeIOType {
+                                        name: String::from("text_modified"),
+                                        rust_type: RustType::of::<Option<(Range<usize>, String)>>()
+                                    },
+                                    NodeIOType {
+                                        name: String::from("enter_key"),
+                                        rust_type: RustType::of::<Option<()>>()
+                                    }
+                                ]
+                            },
+                            default_inputs: vec![
+                                NodeInput::Hole,
+                                NodeInput::const_(String::new())
+                            ],
+                            required_inputs: vec![
+                                UsedRegion::Used,
+                                UsedRegion::Used
+                            ]
+                        });
+                        node_types.insert(String::from("Box"), NodeType {
+                            compute: RawComputeFn::new(|ctx, inputs, outputs| {
+                                eprintln!("TODO Box");
+                            }),
+                            type_data: NodeTypeData {
+                                inputs: vec![
+                                    NodeIOType {
+                                        name: "children".to_string(),
+                                        rust_type: RustType::of::<[ViewId]>(),
+                                    },
+                                    NodeIOType {
+                                        name: "width".to_string(),
+                                        rust_type: RustType::of::<usize>()
+                                    },
+                                    NodeIOType {
+                                        name: "height".to_string(),
+                                        rust_type: RsutType::of::<usize>()
+                                    }
+                                ],
+                                outputs: vec![
+                                    NodeIOType {
+                                        name: String::from(StaticStrs::SELF_FIELD),
+                                        rust_type: RustType::of::<ViewId>()
+                                    },
+                                ]
+                            },
+                            default_inputs: vec![
+                                NodeInput::Hole,
+                                NodeInput::const_(0),
+                                NodeInput::const_(0),
+                            ],
+                            required_inputs: vec![
+                                UsedRegion::Used,
+                                UsedRegion::Used,
+                                UsedRegion::Used
+                            ]
+                        });
+
                         let input = input.clone();
                         let graph = MutableGraph::try_from((input, &ComptimeCtx {
                             qualifiers: vec![],
-                            node_types: NodeTypes::new()
+                            node_types
                         })).unwrap();
                     }
                 }

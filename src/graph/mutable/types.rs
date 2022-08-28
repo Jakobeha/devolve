@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem::{MaybeUninit, size_of_val};
 use derive_more::Display;
 use slab::Slab;
 use crate::rust_type::RustType;
@@ -89,6 +90,20 @@ pub struct NodeTypeName(String);
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct NodeId(pub usize);
+
+impl NodeInput {
+    pub fn const_<T: ?Sized>(input: T) -> Self {
+        let mut bytes = Box::<[u8]>::new_uninit_slice(size_of_val(input));
+        let bytes = unsafe {
+            bytes.as_mut_ptr().copy_from_nonoverlapping(
+                &input as *const T as *const MaybeUninit<u8>,
+                size_of_val(input)
+            );
+            bytes.assume_init()
+        };
+        NodeInput::Const(bytes)
+    }
+}
 
 impl Default for NodeInput {
     fn default() -> Self {

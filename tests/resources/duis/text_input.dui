@@ -6,22 +6,22 @@ Input
 
 `Ok Button`: Button
   text = "OK"
-  is_enabled = Inputs.ok_enabled
+  is_enabled = Input.ok_enabled
   ===
-  click = Outputs.click_ok
+  click = Output.click_ok
 
 `Cancel Button`: Button
   text = "Cancel"
   ===
-  click = Outputs.click_cancel
+  click = Output.click_cancel
 
 `Text Input`: TextField
-  text = Inputs.text
-  placeholder = Inputs.placeholder
+  text = Input.text
+  placeholder = Input.placeholder
   ===
-  text = Outputs.text
-  text_modified = Outputs.text_modified
-  enter_key = Outputs.enter_key
+  text = Output.text
+  text_modified = Output.text_modified
+  enter_key = Output.enter_key
 
 Root: Box
   width = 400
