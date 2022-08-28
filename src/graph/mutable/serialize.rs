@@ -85,12 +85,12 @@ impl<'a> GraphSerializer<'a> {
         debug_assert!(node_type.inputs.len() == node.inputs.len(), "node inputs size mismatch");
         for (input_type, input) in zip(&node_type.inputs, &node.inputs) {
             let serial_field = self.serialize_field(input_type, input);
-            serial_node.input_fields.push(SerialFieldElem::Field(serial_field));
+            serial_node.input_fields.push(SerialFieldElem::Field { field: serial_field });
         }
         for output_type in &node_type.outputs {
             // There are no output values
             let serial_field = self.serialize_field(output_type, &NodeInput::Hole);
-            serial_node.output_fields.push(SerialFieldElem::Field(serial_field));
+            serial_node.output_fields.push(SerialFieldElem::Field { field: serial_field });
         }
 
         // Add headers

@@ -5,38 +5,38 @@ pub use super::display::*;
 
 use crate::rust_type::{RustTypeName, TypeStructBodyForm};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialGraph {
     pub rust_types: HashMap<String, SerialTypeDef>,
     pub nodes: HashMap<String, SerialNode>
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialNode {
     pub node_type: Option<String>,
     pub input_fields: Vec<SerialFieldElem>,
     pub output_fields: Vec<SerialFieldElem>
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerialFieldElem {
     Header { header: SerialFieldHeader },
     Field { field: SerialField }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerialFieldHeader {
     Message(String),
     Pos(SerialNodePos)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SerialNodePos {
     pub x: i32,
     pub y: i32
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialField {
     pub name: String,
     pub rust_type: Option<SerialRustType>,
@@ -44,50 +44,50 @@ pub struct SerialField {
     pub value_children: SerialBody
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerialBody {
     None,
     Tuple(Vec<SerialTupleItem>),
     Fields(Vec<SerialField>)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialTupleItem {
     pub rust_type: Option<SerialRustType>,
     pub value: Option<SerialValueHead>,
     pub value_children: SerialBody
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerialTypeDef {
     Struct(SerialStructTypeDef),
     Enum(SerialEnumTypeDef)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialStructTypeDef {
     pub body: SerialTypeDefBody,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialEnumTypeDef {
     pub variants: Vec<SerialEnumVariantTypeDef>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialEnumVariantTypeDef {
     pub name: String,
     pub body: SerialTypeDefBody
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SerialTypeDefBody {
     None,
     Tuple(Vec<SerialRustType>),
     Fields(Vec<SerialFieldTypeDef>)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialFieldTypeDef {
     pub name: String,
     pub rust_type: Option<SerialRustType>,
@@ -97,7 +97,7 @@ pub struct SerialFieldTypeDef {
 
 pub type SerialRustType = RustTypeName;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SerialValueHead {
     Integer(i64),
     Float(f64),
@@ -118,6 +118,8 @@ pub enum SerialValueHead {
         inline_params: Option<Vec<SerialValueHead>>,
     },
 }
+
+impl Eq for SerialValueHead {}
 
 impl SerialGraph {
     pub fn new() -> SerialGraph {
@@ -221,7 +223,7 @@ impl SerialNode {
 impl SerialFieldElem {
     pub fn iter_rust_types(&self) -> impl Iterator<Item=&SerialRustType> {
         match self {
-            SerialFieldElem::Field(field) => Box::new(field.iter_rust_types()) as Box<dyn Iterator<Item=&SerialRustType>>,
+            SerialFieldElem::Field { field } => Box::new(field.iter_rust_types()) as Box<dyn Iterator<Item=&SerialRustType>>,
             SerialFieldElem::Header { .. } => Box::new(empty()) as Box<dyn Iterator<Item=&SerialRustType>>,
         }
     }

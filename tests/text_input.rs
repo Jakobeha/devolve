@@ -5,7 +5,6 @@ mod misc;
 mod batch_file;
 
 use std::error::Error;
-use std::ops::Range;
 use dui_graph::mutable::{ComptimeCtx, MutableGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::parse::types::SerialGraph;
@@ -18,6 +17,13 @@ use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_return};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct ViewId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(C)]
+pub struct CopyRange<Idx> {
+    pub start: Idx,
+    pub end: Idx
+}
 
 #[test]
 fn test_parse_serial() {
@@ -52,7 +58,7 @@ fn test_parse_serial() {
                                 inputs: vec![
                                     NodeIOType {
                                         name: "text".to_string(),
-                                        rust_type: RustType::of::<String>(),
+                                        rust_type: RustType::of::<&str>(),
                                     },
                                     NodeIOType {
                                         name: "is_enabled".to_string(),
@@ -87,11 +93,11 @@ fn test_parse_serial() {
                                 inputs: vec![
                                     NodeIOType {
                                         name: "text".to_string(),
-                                        rust_type: RustType::of::<String>(),
+                                        rust_type: RustType::of::<&str>(),
                                     },
                                     NodeIOType {
                                         name: "placeholder".to_string(),
-                                        rust_type: RustType::of::<String>(),
+                                        rust_type: RustType::of::<&str>(),
                                     }
                                 ],
                                 outputs: vec![
@@ -101,11 +107,11 @@ fn test_parse_serial() {
                                     },
                                     NodeIOType {
                                         name: String::from("text"),
-                                        rust_type: RustType::of::<String>()
+                                        rust_type: RustType::of::<&str>()
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
-                                        rust_type: RustType::of::<Option<(Range<usize>, String)>>()
+                                        rust_type: RustType::of::<Option<(CopyRange<usize>, &str)>>()
                                     },
                                     NodeIOType {
                                         name: String::from("enter_key"),
@@ -115,7 +121,7 @@ fn test_parse_serial() {
                             },
                             default_inputs: vec![
                                 NodeInput::Hole,
-                                NodeInput::const_(String::new())
+                                NodeInput::const_("")
                             ],
                             required_inputs: vec![
                                 UsedRegion::Used,
@@ -130,7 +136,7 @@ fn test_parse_serial() {
                                 inputs: vec![
                                     NodeIOType {
                                         name: "children".to_string(),
-                                        rust_type: RustType::of::<[ViewId]>(),
+                                        rust_type: RustType::of::<&[ViewId]>(),
                                     },
                                     NodeIOType {
                                         name: "width".to_string(),
@@ -138,7 +144,7 @@ fn test_parse_serial() {
                                     },
                                     NodeIOType {
                                         name: "height".to_string(),
-                                        rust_type: RsutType::of::<usize>()
+                                        rust_type: RustType::of::<usize>()
                                     }
                                 ],
                                 outputs: vec![

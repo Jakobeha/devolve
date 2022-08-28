@@ -2,21 +2,16 @@ use std::any::TypeId;
 use std::sync::RwLock;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use bimap::BiHashMap;
-use std::mem::{size_of, align_of};
+use std::mem::{align_of, size_of};
 use lazy_static::lazy_static;
 use log::error;
 use crate::misc::catch_and_log::catch_and_log;
-use crate::rust_type::{IntrinsicRustType, RustType};
+use crate::rust_type::{HasStaticTypeId, IntrinsicRustType, RustType};
+use crate::rust_type::has_structure::HasStructure;
 use crate::rust_type::intrinsic::UnknownIntrinsicType;
 
 use crate::rust_type::structure::TypeStructure;
 use crate::rust_type::type_name::RustTypeName;
-
-/// A type we know the structure of at compile type. We can derive this
-pub trait HasStructure: 'static {
-    fn type_name() -> RustTypeName;
-    fn structure() -> TypeStructure;
-}
 
 lazy_static! {
     static ref KNOWN_TYPES: RwLock<HashMap<RustTypeName, RustType>> = RwLock::new({
@@ -29,9 +24,15 @@ lazy_static! {
 }
 
 impl RustType {
-    pub fn of<T: HasStructure>() -> Self {
+    pub fn of<T: HasStructure + HasStaticTypeId>() -> Self {
+        let rust_type = RustType::_of::<T>();
+        Self::register(rust_type.clone(), Some(IntrinsicRustType::of::<T>()));
+        rust_type
+    }
+
+    fn _of<T: HasStructure + HasStaticTypeId>() -> Self {
         RustType {
-            type_id: Some(TypeId::of::<T>()),
+            type_id: Some(T::static_type_id()),
             type_name: T::type_name(),
             size: size_of::<T>(),
             align: align_of::<T>(),
@@ -39,7 +40,7 @@ impl RustType {
         }
     }
 
-    pub fn register_manually(rust_type: RustType, intrinsic_rust_type: Option<IntrinsicRustType>) {
+    pub fn register(rust_type: RustType, intrinsic_rust_type: Option<IntrinsicRustType>) {
         if let Some(intrinsic_type) = intrinsic_rust_type {
             IntrinsicRustType::register(intrinsic_type);
         }
@@ -59,10 +60,6 @@ impl RustType {
             }
             known_types.insert(type_name.clone(), rust_type);
         }
-    }
-
-    pub fn register_auto<T: HasStructure>() {
-        Self::register_manually(RustType::of::<T>(), Some(IntrinsicRustType::of::<T>()));
     }
 
     /// Index into the type registry.

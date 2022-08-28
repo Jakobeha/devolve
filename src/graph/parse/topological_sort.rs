@@ -43,7 +43,7 @@ pub trait SortByDeps {
             // Actually compare deps
             let lhs_deps = &deps_map[lhs_name];
             let rhs_deps = &deps_map[rhs_name];
-            match (lhs_deps.contains(rhs_name.as_str()), rhs_deps.contains(lhs_name.as_str())) {
+            match (lhs_deps.contains(rhs_name), rhs_deps.contains(lhs_name)) {
                 // Fallback to comparing the name so that this is stable (useful e.g. for tests)
                 (true, true) => lhs_name.cmp(rhs_name),
                 (true, false) => Ordering::Greater,
@@ -206,7 +206,7 @@ fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=SerialTypeDe
 
 pub fn node_deps(node: &SerialNode) -> impl Iterator<Item=SerialNodeDep<'_>> {
     node.input_fields.iter()
-        .filter_map(|field| extract!(field, SerialFieldElem::Field(field)))
+        .filter_map(|field| extract!(field, SerialFieldElem::Field { field }))
         .flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))
 }
 

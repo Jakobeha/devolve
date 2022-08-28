@@ -1,6 +1,7 @@
 use std::any::TypeId;
 
 mod type_name;
+mod has_structure;
 mod structure;
 mod primitive;
 mod registry;
@@ -9,6 +10,7 @@ mod size_align;
 mod intrinsic;
 
 pub use type_name::*;
+pub use has_structure::*;
 pub use structure::*;
 pub use primitive::*;
 pub use registry::*;

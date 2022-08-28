@@ -734,10 +734,10 @@ fn parse_header(header_str: &str) -> Result<SerialFieldHeader, (usize, ParseErro
     if let Some(pos_str) = header_str.strip_prefix("@pos") {
         let mut lexer = Lexer::<GraphToken>::new(pos_str);
         let x = munch_i32(&mut lexer)?;
-        lexer.munch("','" |token| extract!(token, GraphToken::Punct(',')))?;
+        lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
         let y = munch_i32(&mut lexer)?;
         lexer.munch_end()?;
-        Ok(SerialFieldHeader::Pos(SerialNodePos { x, y }))
+        return Ok(SerialFieldHeader::Pos(SerialNodePos { x, y }));
     }
     Ok(SerialFieldHeader::Message(header_str.to_string()))
 }
