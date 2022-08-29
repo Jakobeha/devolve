@@ -1,15 +1,4 @@
-use std::any::TypeId;
-use crate::rust_type::{TypeStructure, IntrinsicRustType, RustTypeName, RustPointerKind, PrimitiveType};
-
-pub trait HasStaticTypeId {
-    fn static_type_id() -> TypeId;
-}
-
-impl<T: ?Sized + 'static> HasStaticTypeId for T {
-    fn static_type_id() -> TypeId {
-        TypeId::of::<T>()
-    }
-}
+use crate::rust_type::{TypeStructure, RustTypeName, RustPointerKind, PrimitiveType, RustType};
 
 pub trait HasTypeName {
     fn type_name() -> RustTypeName;
@@ -46,6 +35,52 @@ impl HasTypeName for str {
     }
 }
 
+impl<T: HasTypeName> HasTypeName for [T] {
+    fn type_name() -> RustTypeName {
+        RustTypeName::Slice {
+            elem: Box::new(T::type_name())
+        }
+    }
+}
+
+impl<T: HasStructure> HasStructure for [T] {
+    fn structure() -> TypeStructure {
+        TypeStructure::Slice {
+            elem: Box::new(RustType::of::<T>())
+        }
+    }
+}
+
+impl<T: HasTypeName, const LEN: usize> HasTypeName for [T; LEN] {
+    fn type_name() -> RustTypeName {
+        RustTypeName::Array {
+            elem: Box::new(T::type_name()),
+            length: LEN
+        }
+    }
+}
+
+impl<T: HasStructure, const LEN: usize> HasStructure for [T; LEN] {
+    fn structure() -> TypeStructure {
+        TypeStructure::Array {
+            elem: Box::new(RustType::of::<T>()),
+            length: LEN
+        }
+    }
+}
+
+impl<T: HasTypeName> HasTypeName for Option<T> {
+    fn type_name() -> RustTypeName {
+        T::type_name()
+    }
+}
+
+impl<T: HasStructure> HasStructure for Option<T> {
+    fn structure() -> TypeStructure {
+        T::structure()
+    }
+}
+
 macro impl_has_structure_primitive($prim_tt:tt, $prim_type:ident) {
 impl HasTypeName for $prim_tt {
     fn type_name() -> RustTypeName {
@@ -65,7 +100,7 @@ impl HasStructure for $prim_tt {
 }
 
 macro impl_has_structure_pointer(($($ptr_tt:tt)+), $ptr_kind:ident) {
-impl<T: HasTypeName> HasTypeName for $($ptr_tt)+ T {
+impl<T: HasTypeName + ?Sized> HasTypeName for $($ptr_tt)+ T {
     fn type_name() -> RustTypeName {
         RustTypeName::Pointer {
             ptr_kind: RustPointerKind::$ptr_kind,
@@ -74,10 +109,10 @@ impl<T: HasTypeName> HasTypeName for $($ptr_tt)+ T {
     }
 }
 
-impl<T: HasTypeName + 'static> HasStructure for $($ptr_tt)+ T {
+impl<T: HasTypeName + ?Sized> HasStructure for $($ptr_tt)+ T {
     fn structure() -> TypeStructure {
         TypeStructure::Pointer {
-            refd: IntrinsicRustType::of::<T>(),
+            refd: T::type_name(),
         }
     }
 }

@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use crate::rust_type::{IntrinsicRustType, PrimitiveType, RustType};
+use crate::rust_type::{PrimitiveType, RustType, RustTypeName};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeStructure {
@@ -10,10 +10,11 @@ pub enum TypeStructure {
     /// Note: these are "technically" not actual tuples, as tuples in Rust have no defined repr.
     /// Thus in order to use them in Rust, you must either assume C-style repr or coerce to a C-repr struct.
     CTuple { elements: Vec<RustType> },
-    /// Might remove length, make it optional, or add Slice later
     Array { elem: Box<RustType>, length: usize },
-    /// Remember: there are no pointer kinds in TypeStructure, because it is structural
-    Pointer { refd: IntrinsicRustType },
+    Slice { elem: Box<RustType> },
+    /// Remember: there are no pointer kinds in TypeStructure,
+    /// because it is structural and all pointers have the same structure
+    Pointer { refd: RustTypeName }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

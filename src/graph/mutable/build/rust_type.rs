@@ -2,7 +2,7 @@ use std::iter::zip;
 use crate::error::GraphFormError;
 use crate::mutable::build::GraphBuilder;
 use crate::parse::types::{SerialBody, SerialRustType, SerialValueHead};
-use crate::rust_type::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IntrinsicRustType, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use crate::rust_type::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn resolve_type(
@@ -95,12 +95,7 @@ impl<'a> GraphBuilder<'a> {
             SerialRustType::ConstExpr { .. } => TypeStructure::Opaque,
             SerialRustType::Anonymous { .. } => TypeStructure::Opaque,
             SerialRustType::Pointer { ptr_kind: _, refd } => TypeStructure::Pointer {
-                refd: refd.lookup_back_intrinsic().unwrap_or_else(|| {
-                    self.errors.push(GraphFormError::PointerToUnregisteredType {
-                        refd_type_name: refd.as_ref().clone()
-                    });
-                    IntrinsicRustType::unknown()
-                })
+                refd: refd.as_ref().clone()
             },
             SerialRustType::Tuple { elems: elements } => TypeStructure::CTuple {
                 elements: elements.iter().map(|element| self.resolve_type2(element.clone())).collect()
@@ -109,8 +104,9 @@ impl<'a> GraphBuilder<'a> {
                 elem: Box::new(self.resolve_type2(elem.as_ref().clone())),
                 length: *length
             },
-            // There is no Slice TypeStructure
-            SerialRustType::Slice { .. } => TypeStructure::Opaque
+            SerialRustType::Slice { elem } => TypeStructure::Slice {
+                elem: Box::new(self.resolve_type2(elem.as_ref().clone()))
+            }
         };
         // use or, because structure.infer_size is guaranteed to be a no-op if known_size has any chance of being Some
         let size = known_size.or(structure.infer_size());

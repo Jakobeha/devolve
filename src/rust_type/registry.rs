@@ -1,4 +1,5 @@
 use std::any::TypeId;
+use std::borrow::Cow;
 use std::sync::RwLock;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use bimap::BiHashMap;
@@ -6,7 +7,7 @@ use std::mem::{align_of, size_of};
 use lazy_static::lazy_static;
 use log::error;
 use crate::misc::catch_and_log::catch_and_log;
-use crate::rust_type::{HasStaticTypeId, IntrinsicRustType, RustType};
+use crate::rust_type::{IntrinsicRustType, RustType};
 use crate::rust_type::has_structure::HasStructure;
 use crate::rust_type::intrinsic::UnknownIntrinsicType;
 
@@ -24,15 +25,17 @@ lazy_static! {
 }
 
 impl RustType {
-    pub fn of<T: HasStructure + HasStaticTypeId>() -> Self {
+    pub fn of<T: HasStructure>() -> Self {
         let rust_type = RustType::_of::<T>();
-        Self::register(rust_type.clone(), Some(IntrinsicRustType::of::<T>()));
+        // TODO: Either remove intrinsic rust types or add back using static type id
+        //   (don't yet know if they'll be needed)
+        Self::register(Cow::Borrowed(&rust_type), None);
         rust_type
     }
 
-    fn _of<T: HasStructure + HasStaticTypeId>() -> Self {
+    fn _of<T: HasStructure>() -> Self {
         RustType {
-            type_id: Some(T::static_type_id()),
+            type_id: None,
             type_name: T::type_name(),
             size: size_of::<T>(),
             align: align_of::<T>(),
@@ -40,7 +43,7 @@ impl RustType {
         }
     }
 
-    pub fn register(rust_type: RustType, intrinsic_rust_type: Option<IntrinsicRustType>) {
+    pub fn register(rust_type: Cow<'_, RustType>, intrinsic_rust_type: Option<IntrinsicRustType>) {
         if let Some(intrinsic_type) = intrinsic_rust_type {
             IntrinsicRustType::register(intrinsic_type);
         }
@@ -50,15 +53,15 @@ impl RustType {
         Self::register_just_type(rust_type);
     }
 
-    fn register_just_type(rust_type: RustType) {
+    fn register_just_type(rust_type: Cow<'_, RustType>) {
         let type_name = &rust_type.type_name;
         if let Some(mut known_types) = catch_and_log!(KNOWN_TYPES.write(), "known rust types poisoned") {
             if let Some(existing_type) = known_types.get(type_name) {
-                if existing_type != &rust_type || &existing_type.type_id != &rust_type.type_id {
+                if existing_type != &*rust_type || &existing_type.type_id != &rust_type.type_id {
                     error!("rust type with name {} already registered with a different structure", type_name.qualified());
                 }
             }
-            known_types.insert(type_name.clone(), rust_type);
+            known_types.insert(type_name.clone(), rust_type.into_owned());
         }
     }
 

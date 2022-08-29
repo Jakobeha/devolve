@@ -1,4 +1,5 @@
 use std::iter::zip;
+use crate::misc::extract::extract;
 use crate::rust_type::{RustType, TypeStructBody};
 use crate::rust_type::structure::{IsSubtypeOf, TypeStructure};
 
@@ -40,7 +41,8 @@ impl RustType {
 
 impl TypeStructure {
     /// Returns true if a value of this type can be casted to the other type.
-    /// Note that this may have more fields or less enum variants than the other type.
+    /// Note that this may have more fields or less enum variants than the other type,
+    /// or this is an array and the other type is a slice.
     pub fn is_structural_subtype_of(&self, other: &TypeStructure) -> IsSubtypeOf {
         match (self, other) {
             (TypeStructure::Opaque, _) | (_, TypeStructure::Opaque) => IsSubtypeOf::Unknown,
@@ -71,6 +73,10 @@ impl TypeStructure {
                     elem.is_rough_subtype_of(other_elem)
                 }
             }
+            (TypeStructure::Array { elem, length: _ }, TypeStructure::Slice { elem: other_elem }) |
+            (TypeStructure::Slice { elem }, TypeStructure::Slice { elem: other_elem }) => {
+                elem.is_rough_subtype_of(other_elem)
+            }
             _ => IsSubtypeOf::No
         }
     }
@@ -86,6 +92,16 @@ impl TypeStructure {
         if matches!(self, TypeStructure::Opaque) {
             *self = other;
             return;
+        }
+        if let Some(elem) = extract!(self, TypeStructure::Slice { elem }) {
+            match other {
+                TypeStructure::Array { elem: other_elem, length: other_length } => {
+                    elem.unify(*other_elem);
+                    *self = TypeStructure::Array { elem: elem.clone(), length: other_length };
+                    return;
+                }
+                _ => {}
+            }
         }
 
         match (self, other) {
@@ -114,6 +130,9 @@ impl TypeStructure {
             }
             (TypeStructure::Array { elem, length: _ }, TypeStructure::Array { elem: other_elem, length: _ }) => {
                 elem.unify(*other_elem);
+            }
+            (TypeStructure::Slice { elem }, TypeStructure::Slice { elem: other_elem }) => {
+                elem.unify(*other_elem)
             }
             _ => {}
         }

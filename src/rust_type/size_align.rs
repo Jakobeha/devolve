@@ -16,6 +16,7 @@ impl TypeStructure {
             TypeStructure::Pointer { refd: _ } => Some(size_of::<*const ()>()),
             TypeStructure::CTuple { elements } => Some(infer_c_tuple_size(elements)),
             TypeStructure::Array { elem, length } => Some(infer_array_size(elem, *length)),
+            TypeStructure::Slice { .. } => None
         }
     }
 
@@ -32,6 +33,7 @@ impl TypeStructure {
             TypeStructure::Pointer { refd: _ } => Some(align_of::<*const ()>()),
             TypeStructure::CTuple { elements } => Some(infer_c_tuple_align(elements)),
             TypeStructure::Array { elem, length: _ } => Some(infer_array_align(elem)),
+            TypeStructure::Slice { elem } => Some(infer_array_align(elem))
         }
     }
 }

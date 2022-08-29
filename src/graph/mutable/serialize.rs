@@ -187,6 +187,9 @@ impl<'a> GraphSerializer<'a> {
                 elem: Box::new(self.serialize_rust_type(elem)?),
                 length: *length
             }),
+            TypeStructure::Slice { elem } => Some(SerialRustType::Slice {
+                elem: Box::new(self.serialize_rust_type(elem)?)
+            }),
         }
     }
 
@@ -479,6 +482,9 @@ impl<'a> GraphSerializer<'a> {
             TypeStructure::Array { elem, length } => {
                 (None, self.serialize_constant_array(constant_data, &elem, *length))
             }
+            TypeStructure::Slice { elem } => {
+                (None, self.serialize_constant_slice(constant_data, &elem))
+            }
         }
     }
 
@@ -535,6 +541,11 @@ impl<'a> GraphSerializer<'a> {
             Some(elements) => elements
         };
         SerialBody::Tuple(elements)
+    }
+
+    fn serialize_constant_slice(&mut self, constant_data: &[u8], element_type: &RustType) -> SerialBody {
+        let length = constant_data.len() / element_type.size;
+        self.serialize_constant_array(constant_data, element_type, length)
     }
 
     fn serialize_constant_compound<'b, U, V, It: Iterator<Item=(&'b RustType, U)>>(
