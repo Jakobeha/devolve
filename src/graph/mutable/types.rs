@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::{MaybeUninit, size_of};
 use derive_more::Display;
 use slab::Slab;
-use crate::rust_type::RustType;
+use structural_reflection::RustType;
 use crate::graph::raw::RawComputeFn;
 use crate::parse::types::{SerialFieldHeader, SerialNodePos};
 

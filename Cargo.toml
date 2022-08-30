@@ -13,6 +13,8 @@ edition = "2021"
 crate-type = ["lib"]
 
 [dependencies]
+# Ours
+structural-reflection = { path = "../structural-reflection", features = ["derive"] }
 # Parse
 logos = "0.12.1"
 snailquote = "0.3.1"

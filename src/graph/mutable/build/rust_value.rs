@@ -5,7 +5,7 @@ use crate::error::{GraphFormError, NodeNameFieldName};
 use crate::mutable::build::{GraphBuilder, SerialBodyOrInlineTuple};
 use crate::mutable::{NodeId, NodeInput, NodeInputDep, NodeInputWithLayout};
 use crate::parse::types::{SerialBody, SerialField, SerialRustType, SerialValueHead};
-use crate::rust_type::{IsSubtypeOf, RustType, RustTypeName, TypeStructBody, TypeStructure};
+use structural_reflection::{IsSubtypeOf, RustType, RustTypeName, TypeStructureBody, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn resolve_value(
@@ -320,14 +320,14 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_constructor_with_type(
         &mut self,
         type_name: RustTypeName,
-        type_body: TypeStructBody,
+        type_body: TypeStructureBody,
         body: SerialBodyOrInlineTuple,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         match (type_body, body) {
-            (TypeStructBody::None, SerialBodyOrInlineTuple::SerialBody(SerialBody::None)) => Vec::new(),
-            (TypeStructBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items))) => {
+            (TypeStructureBody::None, SerialBodyOrInlineTuple::SerialBody(SerialBody::None)) => Vec::new(),
+            (TypeStructureBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items))) => {
                 if tuple_item_types.len() != tuple_items.len() {
                     self.errors.push(GraphFormError::TupleLengthMismatch {
                         actual_length: tuple_items.len(),
@@ -348,7 +348,7 @@ impl<'a> GraphBuilder<'a> {
                     )
                 }).collect()
             }
-            (TypeStructBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::InlineTuple { items }) => {
+            (TypeStructureBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::InlineTuple { items }) => {
                 if tuple_item_types.len() != items.len() {
                     self.errors.push(GraphFormError::TupleLengthMismatch {
                         actual_length: items.len(),
@@ -369,7 +369,7 @@ impl<'a> GraphBuilder<'a> {
                     )
                 }).collect()
             }
-            (TypeStructBody::Fields(field_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Fields(mut fields))) => {
+            (TypeStructureBody::Fields(field_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Fields(mut fields))) => {
                 for field in &fields {
                     if !field_types.iter().any(|field_type| &field_type.name == &field.name) {
                         self.errors.push(GraphFormError::RustFieldNotFound {

@@ -11,7 +11,7 @@ use crate::graph::parse::lexer_ext::LexerExt;
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::misc::extract::extract;
 use crate::parse::types::{SerialFieldHeader, SerialNodePos};
-use crate::rust_type::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
+use structural_reflection::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
 use crate::StaticStrs;
 
 #[derive(Logos)]

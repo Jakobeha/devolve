@@ -8,7 +8,7 @@ use crate::graph::mutable::{FieldHeader, MutableGraph, Node, NodeInput, NodeInpu
 use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialField, SerialFieldElem, SerialFieldTypeDef, SerialGraph, SerialNode, SerialRustType, SerialStructTypeDef, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
 use crate::graph::StaticStrs;
 use crate::mutable::ComptimeCtx;
-use crate::rust_type::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 pub struct GraphSerializer<'a> {
     /// Only actually needs some of the ctx, GraphBuilder needs more, but we use the same struct
@@ -50,7 +50,7 @@ impl<'a> GraphSerializer<'a> {
     fn _serialize(&mut self, graph: MutableGraph) {
         // Setup data
         // Don't need to iterate nested rust types or structures, because any type names are only in the surface types
-        self.rust_type_names.extend(graph.iter_rust_types().flat_map(|rust_type| rust_type.type_name.iter_snis()));
+        self.rust_type_names.extend(graph.iter_rust_types().flat_map(|rust_type| rust_type.type_name.iter_simple_names()));
         self.input_names.extend(graph.input_types.iter().map(|input_type| input_type.name.clone()));
 
         self.node_names_and_output_names.reserve(graph.nodes.capacity());
@@ -168,7 +168,7 @@ impl<'a> GraphSerializer<'a> {
 
     // Don't use &mut even though we can to simulate converting types
     fn serialize_rust_type_name(&mut self, mut rust_type_name: RustTypeName) -> SerialRustType {
-        rust_type_name.remove_qualifiers(&self.ctx.qualifiers);
+        rust_type_name.remove_qualifier(&self.ctx.qualifiers);
         rust_type_name
     }
 
@@ -205,16 +205,16 @@ impl<'a> GraphSerializer<'a> {
         }
     }
 
-    fn serialize_type_def_body(&mut self, body: &TypeStructBody) -> SerialTypeDefBody {
+    fn serialize_type_def_body(&mut self, body: &TypeStructureBody) -> SerialTypeDefBody {
         match body {
-            TypeStructBody::None => SerialTypeDefBody::None,
-            TypeStructBody::Tuple(elements) => {
+            TypeStructureBody::None => SerialTypeDefBody::None,
+            TypeStructureBody::Tuple(elements) => {
                 SerialTypeDefBody::Tuple(elements.iter().map(|element| {
                     self.serialize_rust_type(element).unwrap_or(SerialRustType::unknown())
                 }).collect::<Vec<_>>())
             },
-            TypeStructBody::Fields(fields) => {
-                SerialTypeDefBody::Fields(fields.iter().map(|TypeStructField { name, rust_type }| {
+            TypeStructureBody::Fields(fields) => {
+                SerialTypeDefBody::Fields(fields.iter().map(|TypeStructureBodyField { name, rust_type }| {
                     SerialFieldTypeDef {
                         name: name.to_string(),
                         rust_type: self.serialize_rust_type(&rust_type),
@@ -456,11 +456,11 @@ impl<'a> GraphSerializer<'a> {
                 _ => todo!("primitives which aren't i64 and f64 not yet implemented")
             }
             TypeStructure::CReprStruct { body } => (None, match body {
-                TypeStructBody::None => SerialBody::None,
-                TypeStructBody::Tuple(tuple_item_types) => {
+                TypeStructureBody::None => SerialBody::None,
+                TypeStructureBody::Tuple(tuple_item_types) => {
                     self.serialize_constant_tuple(constant_data, tuple_item_types)
                 }
-                TypeStructBody::Fields(field_types) => {
+                TypeStructureBody::Fields(field_types) => {
                     self.serialize_constant_fields(constant_data, field_types)
                 }
             }),
@@ -506,7 +506,7 @@ impl<'a> GraphSerializer<'a> {
         SerialBody::Tuple(tuple_items)
     }
 
-    fn serialize_constant_fields(&mut self, constant_data: &[u8], field_types: &[TypeStructField]) -> SerialBody {
+    fn serialize_constant_fields(&mut self, constant_data: &[u8], field_types: &[TypeStructureBodyField]) -> SerialBody {
         let fields = match self.serialize_constant_compound(
             constant_data,
             field_types.iter().map(|field_type| (&field_type.rust_type, field_type.name.clone())),
@@ -574,13 +574,13 @@ impl<'a> GraphSerializer<'a> {
         Some(elems)
     }
 
-    fn serialize_body(&mut self, body_type: &TypeStructBody, tuple_items: &[NodeInputWithLayout]) -> SerialBody {
+    fn serialize_body(&mut self, body_type: &TypeStructureBody, tuple_items: &[NodeInputWithLayout]) -> SerialBody {
         match body_type {
-            TypeStructBody::None => SerialBody::None,
-            TypeStructBody::Tuple(tuple_item_types) => {
+            TypeStructureBody::None => SerialBody::None,
+            TypeStructureBody::Tuple(tuple_item_types) => {
                 self.serialize_tuple_body(tuple_item_types, tuple_items)
             }
-            TypeStructBody::Fields(field_types) => {
+            TypeStructureBody::Fields(field_types) => {
                 self.serialize_field_body(field_types, tuple_items)
             }
         }
@@ -598,7 +598,7 @@ impl<'a> GraphSerializer<'a> {
         }).collect())
     }
 
-    fn serialize_field_body(&mut self, field_types: &[TypeStructField], fields: &[NodeInputWithLayout]) -> SerialBody {
+    fn serialize_field_body(&mut self, field_types: &[TypeStructureBodyField], fields: &[NodeInputWithLayout]) -> SerialBody {
         SerialBody::Fields(zip(field_types.iter(), fields.iter()).map(|(field_type, NodeInputWithLayout { input: field, .. })| {
             let rust_type = self.serialize_rust_type(&field_type.rust_type);
             let (value, value_children) = self.serialize_node_value(field, &field_type.rust_type);

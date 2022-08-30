@@ -23,30 +23,28 @@ impl<'a> GraphBuilder<'a> {
     }
 
     pub(super) fn resolve_node(&mut self, node_name: &str, node: SerialNode) -> (NodeTypeData, Node) {
-        let inherited_type = node.node_type.as_ref()
-            .and_then(|node_type| self.resolve_node_type(node_type, node_name));
-
         let mut pos = None;
-        let (defined_input_types, defined_inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
-        let (defined_output_types, defined_outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
+        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
+        let (output_types, outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
 
-        let output_idxs_with_values = defined_outputs.iter().enumerate().filter(|(_, output_value)| !matches!(output_value, NodeInput::Hole)).map(|(idx, _)| idx).collect::<Vec<_>>();
+        let inherited_type = node.node_type.as_ref()
+            .and_then(|node_type| self.resolve_node_type(node_type, node_name, &input_types, &output_types));
+
+        let output_idxs_with_values = outputs.iter().enumerate().filter(|(_, output_value)| !matches!(output_value, NodeInput::Hole)).map(|(idx, _)| idx).collect::<Vec<_>>();
         for output_idx in output_idxs_with_values {
-            let output_name = defined_output_types[output_idx].name.clone();
+            let output_name = output_types[output_idx].name.clone();
             self.errors.push(GraphFormError::OutputHasValue {
                 node_name: node_name.to_string(),
                 output_name
             });
         }
 
-        let mut inputs = defined_inputs;
-
         let (node_type_name, type_data, compute) = match inherited_type {
             None => {
                 // Use structural self-type
                 let self_type_data = NodeTypeData {
-                    inputs: defined_input_types,
-                    outputs: defined_output_types
+                    inputs: input_types,
+                    outputs: output_types
                 };
                 (NodeTypeName::from(node_name.to_string()), self_type_data, RawComputeFn::panicking())
             },
@@ -56,7 +54,7 @@ impl<'a> GraphBuilder<'a> {
                 old_inputs.append(&mut inputs);
                 for input_io_type in inherited_type.type_data.inputs.iter() {
                     let input_field_name = &input_io_type.name;
-                    let input_idx = defined_input_types.iter().position(|input_type| &input_type.name == input_field_name);
+                    let input_idx = input_types.iter().position(|input_type| &input_type.name == input_field_name);
 
                     inputs.push(match input_idx {
                         None => NodeInput::Hole,
@@ -96,21 +94,21 @@ impl<'a> GraphBuilder<'a> {
         (type_data, node)
     }
 
-    fn resolve_node_type(&mut self, type_name: &str, node_name: &str) -> Option<NodeType> {
+    fn resolve_node_type(&mut self, type_name: &str, node_name: &str, input_types: &[NodeIOType], output_types: &[NodeIOType]) -> Option<NodeType> {
         if let Some((fn_name, fn_arg)) = type_name.split_once('(') {
             let fn_arg = fn_arg.strip_suffix(')').unwrap_or_else(|| {
                 self.errors.push(GraphFormError::NodeTypeFunctionMissingRParen { node_name: node_name.to_string() });
                 fn_arg
             });
-            self.resolve_node_type_fn(fn_name, fn_arg, node_name)
+            self._resolve_node_type(fn_name, fn_arg, node_name, input_types, output_types)
         } else {
-            self.resolve_node_type_const(type_name, node_name)
+            self._resolve_node_type(type_name, "", node_name, input_types, output_types)
         }
     }
 
-    fn resolve_node_type_const(&mut self, type_name: &str, node_name: &str) -> Option<NodeType> {
+    fn _resolve_node_type(&mut self, type_name: &str, fn_arg: &str, node_name: &str,  input_types: &[NodeIOType], output_types: &[NodeIOType]) -> Option<NodeType> {
         match self.resolved_rust_types.get(type_name) {
-            None => match self.ctx.node_types.get(type_name) {
+            None => match self.ctx.node_types.get_and_call(type_name, fn_arg, self.node_type_fn_ctx(input_types, output_types)) {
                 None => {
                     self.errors.push(GraphFormError::NodeTypeNotFound {
                         type_name: type_name.to_string(),
@@ -118,7 +116,14 @@ impl<'a> GraphBuilder<'a> {
                     });
                     None
                 },
-                Some(node_type) => Some(node_type)
+                Some(Err(error)) => {
+                    self.errors.push(GraphFormError::NodeTypeFunctionError {
+                        error,
+                        node_name: node_name.to_string()
+                    });
+                    None
+                },
+                Some(Ok(node_type)) => Some(node_type)
             }
             Some(_) => {
                 self.errors.push(GraphFormError::NodeIsDataType {
@@ -130,35 +135,17 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_node_type_fn(&mut self, fn_name: &str, fn_arg: &str, node_name: &str) -> Option<NodeType> {
-        match self.ctx.node_types.get_and_call_fn(fn_name, fn_arg, self.node_type_fn_ctx()) {
-            None => {
-                self.errors.push(GraphFormError::NodeTypeFunctionNotFound {
-                    type_fn_name: fn_name.to_string(),
-                    node_name: node_name.to_string()
-                });
-                None
-            },
-            Some(Err(error)) => {
-                self.errors.push(GraphFormError::NodeTypeFunctionError {
-                    error,
-                    node_name: node_name.to_string()
-                });
-                None
-            },
-            Some(Ok(node_type)) => Some(node_type)
-        }
-    }
-
-    fn node_type_fn_ctx(&self) -> NodeTypeFnCtx<'_> {
+    fn node_type_fn_ctx<'b>(&'b self, input_types: &'b [NodeIOType], output_types: &'b [NodeIOType]) -> NodeTypeFnCtx<'b> {
         NodeTypeFnCtx {
-            resolved_rust_types: &self.resolved_rust_types
+            resolved_rust_types: &self.resolved_rust_types,
+            input_types,
+            output_types
         }
     }
 
     fn resolve_field_elems(&mut self, fields: Vec<SerialFieldElem>, node_name: &str, pos: &mut Option<SerialNodePos>) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
-        let mut defined_types: Vec<NodeIOType> = Vec::new();
-        let mut defined_values: Vec<NodeInput> = Vec::new();
+        let mut types: Vec<NodeIOType> = Vec::new();
+        let mut inputs: Vec<NodeInput> = Vec::new();
         let mut headers: Vec<FieldHeader> = Vec::new();
         for (index, field) in fields.into_iter().enumerate() {
             match field {
@@ -172,13 +159,13 @@ impl<'a> GraphBuilder<'a> {
                     headers.push(FieldHeader { index, header });
                 }
                 SerialFieldElem::Field { field } => {
-                    let (defined_input_type, defined_input) = self.resolve_node_field(field, node_name);
-                    defined_types.push(defined_input_type);
-                    defined_values.push(defined_input);
+                    let (input_type, input) = self.resolve_node_field(field, node_name);
+                    types.push(input_type);
+                    inputs.push(input);
                 }
             }
         }
-        (defined_types, defined_values, headers)
+        (types, inputs, headers)
     }
 
     fn resolve_node_field(&mut self, field: SerialField, node_name: &str) -> (NodeIOType, NodeInput) {

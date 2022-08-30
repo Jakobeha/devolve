@@ -6,7 +6,7 @@ use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, UsedRegion};
-use crate::rust_type::{IsSubtypeOf, RustType};
+use structural_reflection::{IsSubtypeOf, RustType};
 
 /// Compound view graph.
 ///

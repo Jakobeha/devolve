@@ -3,7 +3,7 @@ use std::iter::{empty, once};
 
 pub use super::display::*;
 
-use crate::rust_type::{RustTypeName, TypeStructBodyForm};
+use structural_reflection::{RustTypeName, TypeStructureBodyForm};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialGraph {
@@ -141,11 +141,11 @@ impl SerialNode {
 }
 
 impl SerialBody {
-    pub fn form(&self) -> TypeStructBodyForm {
+    pub fn form(&self) -> TypeStructureBodyForm {
         match self {
-            SerialBody::None => TypeStructBodyForm::None,
-            SerialBody::Tuple(_) => TypeStructBodyForm::Tuple,
-            SerialBody::Fields(_) => TypeStructBodyForm::Fields
+            SerialBody::None => TypeStructureBodyForm::None,
+            SerialBody::Tuple(_) => TypeStructureBodyForm::Tuple,
+            SerialBody::Fields(_) => TypeStructureBodyForm::Fields
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 use crate::CompoundViewCtx;
-use crate::rust_type::RustType;
+use structural_reflection::RustType;
 pub use region::*;
 
 mod region;

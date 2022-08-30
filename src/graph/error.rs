@@ -8,7 +8,7 @@ use snailquote::UnescapeError;
 use join_lazy_fmt::Join;
 
 use crate::graph::mutable::NodeId;
-use crate::rust_type::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructBodyForm};
+use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
 
 #[derive(Debug, Display, Error, From, IntoIterator)]
 #[display(fmt = "parse errors:\n{}", "\"\\n\".join(_0)")]
@@ -93,11 +93,6 @@ pub enum GraphFormError {
         type_name: String,
         node_name: String,
     },
-    #[display(fmt = "node type function not found: {} (in {})", type_fn_name, node_name)]
-    NodeTypeFunctionNotFound {
-        type_fn_name: String,
-        node_name: String,
-    },
     #[display(fmt = "node type function missing ')' (in {})", node_name)]
     NodeTypeFunctionMissingRParen { #[error(not(source))] node_name: String },
     #[display(fmt = "node type function error: {} (in {})", error, node_name)]
@@ -157,8 +152,8 @@ pub enum GraphFormError {
     },
     #[display(fmt = "type constructor has bad form: got {} expected {} (type = {}, referenced in node {})", expected_form, actual_form, "type_name.unqualified()", referenced_from)]
     RustTypeConstructorBadForm {
-        expected_form: TypeStructBodyForm,
-        actual_form: TypeStructBodyForm,
+        expected_form: TypeStructureBodyForm,
+        actual_form: TypeStructureBodyForm,
         type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },

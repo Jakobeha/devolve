@@ -3,7 +3,8 @@ use std::error::Error;
 use log::error;
 use crate::graph::mutable::{NodeInput, NodeTypeData};
 use crate::graph::raw::{RawComputeFn, UsedRegion};
-use crate::rust_type::RustType;
+use crate::mutable::NodeIOType;
+use structural_reflection::RustType;
 
 /// Map of node types available to
 pub struct NodeTypes {
@@ -20,7 +21,9 @@ pub struct NodeType {
 }
 
 pub struct NodeTypeFnCtx<'a> {
-    pub resolved_rust_types: &'a HashMap<String, RustType>
+    pub resolved_rust_types: &'a HashMap<String, RustType>,
+    pub input_types: &'a [NodeIOType],
+    pub output_types: &'a [NodeIOType]
 }
 
 /// The function takes one argument, which may have commas. You can split on the commas and that
@@ -37,7 +40,7 @@ impl NodeTypes {
 
     /// Logs an error and overrides if the name already exists. Use [NodeTypes::contains] to check
     pub fn insert(&mut self, name: String, node_type: NodeType) {
-        if self.statics.contains_key(&name) {
+        if self.statics.contains_key(&name) || self.fns.contains_key(&name) {
             error!("node type with name {} already inserted", name);
         }
         self.statics.insert(name, node_type);
@@ -45,7 +48,7 @@ impl NodeTypes {
 
     /// Logs an error and overrides if the name already exists. Use [NodeTypes::contains_fn] to check
     pub fn insert_fn(&mut self, name: String, node_type_fn: NodeTypeFn) {
-        if self.fns.contains_key(&name) {
+        if self.statics.contains_key(&name) || self.fns.contains_key(&name) {
             error!("node type function with name {} already inserted", name);
         }
         self.fns.insert(name, node_type_fn);
@@ -59,11 +62,16 @@ impl NodeTypes {
         self.fns.contains_key(name)
     }
 
-    pub fn get(&self, name: &str) -> Option<NodeType> {
+    fn get(&self, name: &str) -> Option<NodeType> {
         self.statics.get(name).cloned()
     }
 
-    pub fn get_and_call_fn(&self, fn_name: &str, fn_arg: &str, fn_ctx: NodeTypeFnCtx<'_>) -> Option<Result<NodeType, Box<dyn Error>>> {
+    fn get_and_call_fn(&self, fn_name: &str, fn_arg: &str, fn_ctx: NodeTypeFnCtx<'_>) -> Option<Result<NodeType, Box<dyn Error>>> {
         self.fns.get(fn_name).map(|node_type_fn| node_type_fn(fn_arg, fn_ctx))
+    }
+
+    pub fn get_and_call(&self, name: &str, fn_arg: &str, fn_ctx: NodeTypeFnCtx<'_>) -> Option<Result<NodeType, Box<dyn Error>>> {
+        self.get(name).map(Ok)
+            .or_else(|| self.get_and_call_fn(name, fn_arg, fn_ctx))
     }
 }

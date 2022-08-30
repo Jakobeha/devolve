@@ -2,7 +2,7 @@ use std::iter::zip;
 use crate::error::GraphFormError;
 use crate::mutable::build::GraphBuilder;
 use crate::parse::types::{SerialBody, SerialRustType, SerialValueHead};
-use crate::rust_type::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use structural_reflection::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn resolve_type(
@@ -94,8 +94,10 @@ impl<'a> GraphBuilder<'a> {
             SerialRustType::Ident { .. } => TypeStructure::Opaque,
             SerialRustType::ConstExpr { .. } => TypeStructure::Opaque,
             SerialRustType::Anonymous { .. } => TypeStructure::Opaque,
-            SerialRustType::Pointer { ptr_kind: _, refd } => TypeStructure::Pointer {
-                refd: refd.as_ref().clone()
+            SerialRustType::Pointer { ptr_kind, refd } => TypeStructure::Pointer {
+                ptr_kind: *ptr_kind,
+                refd_id: refd.lookup_back(),
+                refd_name: refd.as_ref().clone()
             },
             SerialRustType::Tuple { elems: elements } => TypeStructure::CTuple {
                 elements: elements.iter().map(|element| self.resolve_type2(element.clone())).collect()
@@ -221,14 +223,14 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         inline_params: Option<&[SerialValueHead]>,
         value_children: &SerialBody
-    ) -> (usize, usize, TypeStructBody) {
+    ) -> (usize, usize, TypeStructureBody) {
         match inline_params {
             None => self.infer_type_body_structurally2(value_children),
             Some(inline_params) => {
                 let elements = inline_params.iter().map(|elem| self.infer_type_structurally((Some(elem), &SerialBody::None))).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&elements);
                 let align = infer_c_tuple_align(&elements);
-                let body = TypeStructBody::Tuple(elements);
+                let body = TypeStructureBody::Tuple(elements);
                 (size, align, body)
             }
         }
@@ -237,9 +239,9 @@ impl<'a> GraphBuilder<'a> {
     fn infer_type_body_structurally2(
         &mut self,
         value_children: &SerialBody
-    ) -> (usize, usize, TypeStructBody) {
+    ) -> (usize, usize, TypeStructureBody) {
         match value_children {
-            SerialBody::None => (0, 0, TypeStructBody::None),
+            SerialBody::None => (0, 0, TypeStructureBody::None),
             SerialBody::Tuple(tuple_items) => {
                 let item_types = tuple_items.iter().map(|tuple_item| {
                     // why do we have to clone rust_type here? are we doing something redundant?
@@ -247,7 +249,7 @@ impl<'a> GraphBuilder<'a> {
                 }).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&item_types);
                 let align = infer_c_tuple_align(&item_types);
-                let body = TypeStructBody::Tuple(item_types);
+                let body = TypeStructureBody::Tuple(item_types);
                 (size, align, body)
             },
             SerialBody::Fields(fields) => {
@@ -257,11 +259,11 @@ impl<'a> GraphBuilder<'a> {
                 }).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&item_types);
                 let align = infer_c_tuple_align(&item_types);
-                let body = TypeStructBody::Fields(
+                let body = TypeStructureBody::Fields(
                     zip(
                         fields.iter().map(|field| &field.name).cloned(),
                         item_types.into_iter()
-                    ).map(|(name, rust_type)| TypeStructField { name, rust_type }).collect::<Vec<_>>()
+                    ).map(|(name, rust_type)| TypeStructureBodyField { name, rust_type }).collect::<Vec<_>>()
                 );
                 (size, align, body)
             }

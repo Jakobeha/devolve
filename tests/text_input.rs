@@ -9,16 +9,18 @@ use dui_graph::mutable::{ComptimeCtx, MutableGraph, NodeInput, NodeIOType, NodeT
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::parse::types::SerialGraph;
 use dui_graph::raw::{RawComputeFn, UsedRegion};
-use dui_graph::rust_type::RustType;
+use structural_reflection::c_tuple::CTuple2;
+use structural_reflection::RustType;
+use structural_reflection::derive::{HasTypeName, HasStructure};
 use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
 use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_return};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 #[repr(transparent)]
 pub struct ViewId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 #[repr(C)]
 pub struct CopyRange<Idx> {
     pub start: Idx,
@@ -72,7 +74,7 @@ fn test_parse_serial() {
                                     },
                                     NodeIOType {
                                         name: String::from("click"),
-                                        rust_type: RustType::of::<Option<()>>()
+                                        rust_type: RustType::of::<()>()
                                     }
                                 ]
                             },
@@ -111,11 +113,11 @@ fn test_parse_serial() {
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
-                                        rust_type: RustType::of::<Option<(CopyRange<usize>, &str)>>()
+                                        rust_type: RustType::of::<CTuple2<CopyRange<usize>, &str>>()
                                     },
                                     NodeIOType {
                                         name: String::from("enter_key"),
-                                        rust_type: RustType::of::<Option<()>>()
+                                        rust_type: RustType::of::<()>()
                                     }
                                 ]
                             },

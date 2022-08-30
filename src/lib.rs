@@ -12,6 +12,4 @@ mod ctx;
 mod graph;
 /// Miscellaneous helpers which may go into other crates in the future
 pub mod misc;
-/// Defines the DSL type system and provides reflection capabilities to interop with Rust's types.
-pub mod rust_type;
 

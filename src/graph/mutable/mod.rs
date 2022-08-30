@@ -9,7 +9,7 @@ use crate::graph::mutable::build::GraphBuilder;
 use crate::graph::mutable::serialize::GraphSerializer;
 use crate::graph::parse::types::SerialGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
-use crate::rust_type::TypeStructure;
+use structural_reflection::TypeStructure;
 
 mod query_mutate;
 mod types;

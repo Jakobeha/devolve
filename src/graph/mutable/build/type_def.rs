@@ -1,7 +1,7 @@
 use crate::error::GraphFormError;
 use crate::mutable::build::GraphBuilder;
 use crate::parse::types::{SerialEnumTypeDef, SerialEnumVariantTypeDef, SerialFieldTypeDef, SerialStructTypeDef, SerialTypeDef, SerialTypeDefBody, SerialBody};
-use crate::rust_type::{RustType, RustTypeName, TypeEnumVariant, TypeStructBody, TypeStructField, TypeStructure};
+use structural_reflection::{RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn resolve_type_def(&mut self, type_def_name: &str, type_def: SerialTypeDef) -> RustType {
@@ -51,26 +51,26 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_type_def_body(&mut self, type_def_name: &str, type_def_body: SerialTypeDefBody) -> TypeStructBody {
+    fn resolve_type_def_body(&mut self, type_def_name: &str, type_def_body: SerialTypeDefBody) -> TypeStructureBody {
         match type_def_body {
-            SerialTypeDefBody::None => TypeStructBody::None,
-            SerialTypeDefBody::Tuple(elements) => TypeStructBody::Tuple(
+            SerialTypeDefBody::None => TypeStructureBody::None,
+            SerialTypeDefBody::Tuple(elements) => TypeStructureBody::Tuple(
                 elements.into_iter().map(|item| self.resolve_type2(item)).collect(),
             ),
-            SerialTypeDefBody::Fields(fields) => TypeStructBody::Fields(
+            SerialTypeDefBody::Fields(fields) => TypeStructureBody::Fields(
                 fields.into_iter().map(|item| self.resolve_field_def(type_def_name, item)).collect(),
             )
         }
     }
 
-    fn resolve_field_def(&mut self, type_def_name: &str, field_def: SerialFieldTypeDef) -> TypeStructField {
+    fn resolve_field_def(&mut self, type_def_name: &str, field_def: SerialFieldTypeDef) -> TypeStructureBodyField {
         if field_def.default_value.is_some() || !matches!(field_def.default_value_children, SerialBody::None) {
             self.errors.push(GraphFormError::FieldDefaultValueNotSupported {
                 type_def_name: type_def_name.to_string(),
                 field_name: field_def.name.to_string()
             });
         }
-        TypeStructField {
+        TypeStructureBodyField {
             name: field_def.name,
             rust_type: self.resolve_type3(field_def.rust_type),
         }

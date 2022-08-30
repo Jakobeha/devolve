@@ -8,7 +8,7 @@ use crate::graph::parse::topological_sort::SortByDeps;
 use crate::graph::parse::types::{SerialBody, SerialGraph, SerialValueHead};
 use crate::graph::StaticStrs;
 use crate::mutable::ComptimeCtx;
-use crate::rust_type::{RustType, TypeStructBodyForm};
+use structural_reflection::{RustType, TypeStructureBodyForm};
 
 mod type_def;
 mod node;
@@ -30,10 +30,10 @@ enum SerialBodyOrInlineTuple {
 }
 
 impl SerialBodyOrInlineTuple {
-    pub fn form(&self) -> TypeStructBodyForm {
+    pub fn form(&self) -> TypeStructureBodyForm {
         match self {
             SerialBodyOrInlineTuple::SerialBody(body) => body.form(),
-            SerialBodyOrInlineTuple::InlineTuple { .. } => TypeStructBodyForm::Tuple
+            SerialBodyOrInlineTuple::InlineTuple { .. } => TypeStructureBodyForm::Tuple
         }
     }
 }

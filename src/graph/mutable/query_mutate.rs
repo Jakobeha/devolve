@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle};
 use crate::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep};
-use crate::rust_type::RustType;
+use structural_reflection::RustType;
 
 impl MutableGraph {
     pub fn insert_node(&mut self, node: Node) -> NodeId {
