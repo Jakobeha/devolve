@@ -67,7 +67,7 @@ impl<'a> GraphBuilder<'a> {
             self.resolved_rust_types.insert(name, type_def);
         }
         for (idx, (name, node)) in sorted_nodes.into_iter().enumerate() {
-            let node_id = NodeId(idx.wrapping_sub(idx));
+            let node_id = NodeId(idx.wrapping_sub(1));
             let (node_type, node) = self.resolve_node(&name, node);
             self.resolved_node_types.insert(node.type_name.clone(), node_type);
             self.resolved_nodes.insert(name, (node_id, node));

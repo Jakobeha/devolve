@@ -22,7 +22,7 @@ impl<'a> TryFrom<(SerialGraph, &'a ComptimeCtx)> for MutableGraph {
     type Error = GraphFormErrors;
 
     fn try_from((graph, ctx): (SerialGraph, &'a ComptimeCtx)) -> Result<Self, Self::Error> {
-        let mut errors = Vec::new();
+        let mut errors = GraphFormErrors::new();
         let graph = GraphBuilder::build(graph, ctx, &mut errors);
 
         if errors.is_empty() {

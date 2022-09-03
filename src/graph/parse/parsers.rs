@@ -47,7 +47,7 @@ enum GraphToken {
 
 struct GraphParser<'a> {
     graph: &'a mut SerialGraph,
-    errors: &'a mut Vec<ParseError>,
+    errors: &'a mut ParseErrors,
     override_input: Option<&'a str>,
     path: PathBuf,
 }
@@ -135,7 +135,7 @@ impl SerialGraph {
 
     fn _parse_from(override_input: Option<&str>, path: &Path) -> Result<Self, ParseErrors> {
         let mut graph = SerialGraph::new();
-        let mut errors = Vec::new();
+        let mut errors = ParseErrors::new();
 
         {
             GraphParser {
@@ -149,7 +149,7 @@ impl SerialGraph {
         if errors.is_empty() {
             Ok(graph)
         } else {
-            Err(ParseErrors::from(errors))
+            Err(errors)
         }
     }
 }

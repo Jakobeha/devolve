@@ -14,7 +14,7 @@ use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
 use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
-use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_return};
+use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_none, try_or_return};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 #[repr(transparent)]
@@ -169,10 +169,10 @@ fn test_parse_serial() {
                         });
 
                         let input = input.clone();
-                        let graph = MutableGraph::try_from((input, &ComptimeCtx {
+                        let graph = try_or_none!(MutableGraph::try_from((input, &ComptimeCtx {
                             qualifiers: vec![],
                             node_types
-                        })).unwrap();
+                        })), errors, "graph to IR failed");
                     }
                 }
             ]

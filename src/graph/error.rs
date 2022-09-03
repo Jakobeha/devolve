@@ -14,6 +14,10 @@ use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause,
 #[display(fmt = "parse errors:\n{}", "\"\\n\".join(_0)")]
 pub struct ParseErrors(#[error(not(source))] Vec<ParseError>);
 
+#[derive(Debug, Display, Error, From, IntoIterator)]
+#[display(fmt = "IR errors:\n- {}", "\"\\n- \".join(_0)")]
+pub struct GraphFormErrors(#[error(not(source))] Vec<GraphFormError>);
+
 #[derive(Debug, Display, Error)]
 #[display(fmt = "- {}:{}:{}\n    {}", "path.display()", "line + 1", "column + 1", body)]
 pub struct ParseError {
@@ -66,8 +70,6 @@ pub enum ParseErrorBody {
     #[display(fmt = "unexpected ','")]
     UnexpectedComma,
 }
-
-pub type GraphFormErrors = Vec<GraphFormError>;
 
 #[derive(Debug, Display, Error)]
 pub enum GraphFormError {
@@ -310,3 +312,31 @@ pub enum GraphIOCheckError {
 #[derive(Debug, Display)]
 #[display(fmt = "[{}]", "\", \".join(_0)")]
 pub struct NodeCycle(pub Vec<NodeId>);
+
+impl ParseErrors {
+    pub fn new() -> Self {
+        ParseErrors(Vec::new())
+    }
+
+    pub fn push(&mut self, error: ParseError) {
+        self.0.push(error)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl GraphFormErrors {
+    pub fn new() -> Self {
+        GraphFormErrors(Vec::new())
+    }
+
+    pub fn push(&mut self, error: GraphFormError) {
+        self.0.push(error)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
