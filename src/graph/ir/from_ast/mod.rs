@@ -15,10 +15,15 @@ mod node;
 mod rust_type;
 mod rust_value;
 
+pub(super) struct ForwardNode {
+    pub(super) input_field_names: Option<Vec<String>>
+}
+
 pub(super) struct GraphBuilder<'a> {
     ctx: &'a ComptimeCtx,
     errors: &'a mut GraphFormErrors,
-    graph_types: HashSet<String>,
+    forward_resolved_rust_types: HashSet<String>,
+    forward_resolved_nodes: HashMap<String, (NodeId, ForwardNode)>,
     resolved_rust_types: HashMap<String, RustType>,
     resolved_node_types: HashMap<NodeTypeName, NodeTypeData>,
     resolved_nodes: HashMap<String, (NodeId, Node)>,
@@ -45,7 +50,8 @@ impl<'a> GraphBuilder<'a> {
         GraphBuilder {
             errors,
             ctx,
-            graph_types: HashSet::new(),
+            forward_resolved_rust_types: HashSet::new(),
+            forward_resolved_nodes: HashMap::new(),
             resolved_rust_types: HashMap::new(),
             resolved_node_types: HashMap::new(),
             resolved_nodes: HashMap::new(),
@@ -53,15 +59,23 @@ impl<'a> GraphBuilder<'a> {
     }
 
     fn _build(mut self, graph: AstGraph) -> IrGraph {
-        for graph_type in graph.rust_types.keys().cloned() {
-            self.graph_types.insert(graph_type);
-        }
-
+        // sort by DAG so we can handle backward references
         let mut sorted_types = graph.rust_types.into_iter().collect::<Vec<_>>();
         sorted_types.sort_by_deps();
         let mut sorted_nodes = graph.nodes.into_iter().collect::<Vec<_>>();
         sorted_nodes.sort_by_deps();
 
+        // Get declared types and nodes so we can handle forward references
+        for (name, _) in &sorted_types {
+            self.forward_resolved_rust_types.insert(name.clone());
+        }
+        for (idx, (name, node)) in sorted_nodes.iter().enumerate() {
+            let node_id = NodeId(idx.wrapping_sub(1));
+            let forward_node = self.forward_resolve_node(node);
+            self.forward_resolved_nodes.insert(name.clone(), (node_id, forward_node));
+        }
+
+        // Resolve individual types and nodes, using backward and forward references via the above
         for (name, type_def) in sorted_types {
             let type_def = self.resolve_type_def(&name, type_def);
             self.resolved_rust_types.insert(name, type_def);
@@ -74,7 +88,7 @@ impl<'a> GraphBuilder<'a> {
         }
 
 
-        // old
+        // get inputs and outputs
         let input_types = match self.resolved_nodes.remove(StaticStrs::INPUT_NODE) {
             None => {
                 self.errors.push(GraphFormError::NoInput);
@@ -126,6 +140,7 @@ impl<'a> GraphBuilder<'a> {
             }
         };
 
+        // build graph
         let mut nodes = Slab::with_capacity(self.resolved_nodes.len());
         // Could remove this allocation but it would require exposing the internals of slab
         let mut sorted_resolved_nodes = self.resolved_nodes.into_values().collect::<Vec<_>>();

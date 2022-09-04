@@ -5,7 +5,7 @@ use snailquote::escape;
 
 use crate::graph::ast::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, DisplayWithCtx2, Indent};
-use crate::ast::types::{AstBody, AstField, AstFieldElem, AstFieldHeader, AstFieldTypeDef, AstGraph, AstNode, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
+use crate::ast::types::{AstBody, AstField, AstFieldElem, AstFieldHeader, AstFieldTypeDef, AstGraph, AstLiteral, AstNode, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
 use structural_reflection::DuplicateNamesInScope;
 use crate::StaticStrs;
 
@@ -203,9 +203,7 @@ impl DisplayWithCtx for AstValueHead {
     //noinspection DuplicatedCode
     fn fmt(&self, f: &mut Formatter<'_>, dnis: &Self::Ctx) -> std::fmt::Result {
         match self {
-            AstValueHead::Integer(value) => write!(f, "{}", value),
-            AstValueHead::Float(value) => write!(f, "{}", value),
-            AstValueHead::String(value) => write!(f, "{}", escape(value)),
+            AstValueHead::Literal(literal) => write!(f, "{}", literal),
             AstValueHead::Ref { node_name, field_name } => if field_name == StaticStrs::SELF_FIELD {
                 write!(f, "{}", node_name)
             } else {
@@ -227,6 +225,20 @@ impl DisplayWithCtx for AstValueHead {
                 }
                 Ok(())
             },
+        }
+    }
+}
+
+impl Display for AstLiteral {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AstLiteral::Bool(value) => match value {
+                false => write!(f, "false"),
+                true => write!(f, "true")
+            }
+            AstLiteral::Integer(value) => write!(f, "{}", value),
+            AstLiteral::Float(value) => write!(f, "{}", value),
+            AstLiteral::String(value) => write!(f, "{}", escape(value)),
         }
     }
 }

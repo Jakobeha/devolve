@@ -1,10 +1,10 @@
 Input
+  ===
   placeholder: &str
   text: String
   ok_enabled: bool = true
   -- events
   enter_key?: ()
-  ===
 
 `Ok Button`: Button
   text = "OK"

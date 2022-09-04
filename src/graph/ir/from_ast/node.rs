@@ -2,30 +2,47 @@ use std::borrow::Cow;
 use std::iter::zip;
 use std::mem::take;
 use crate::error::GraphFormError;
-use crate::ir::from_ast::GraphBuilder;
+use crate::ir::from_ast::{ForwardNode, GraphBuilder};
 use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
 use crate::raw::RawComputeFn;
 
 impl<'a> GraphBuilder<'a> {
+    pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
+        self.forward_resolved_nodes.get(node_name).map(|(id, node)| (*id, node))
+    }
+
     pub(super) fn resolved_node_type(&self, node_name: &str) -> Option<&NodeTypeData> {
         self.resolved_nodes.get(node_name).map(|(_, node)| {
             self.resolved_node_types.get(&node.type_name).expect("resolved node missing its type")
         })
     }
 
-    pub(super) fn resolved_node_and_type(&self, node_name: &str) -> Option<(&NodeId, &NodeTypeData, &Node)> {
+    pub(super) fn resolved_node_and_type(&self, node_name: &str) -> Option<(NodeId, &NodeTypeData, &Node)> {
         self.resolved_nodes.get(node_name).map(|(node_id, node)| {
             let node_type = self.resolved_node_types.get(&node.type_name).expect("resolved node missing its type");
-            (node_id, node_type, node)
+            (*node_id, node_type, node)
         })
+    }
+
+    pub(super) fn forward_resolve_node(&mut self, node: &AstNode) -> ForwardNode {
+        let input_field_names = if node.node_type.is_none() {
+            Some(self.forward_resolve_field_names(&node.input_fields))
+        } else {
+            // Determining field names is too complex, since we need to resolve the type, which requires field types, which we don't have
+            None
+        };
+
+        ForwardNode {
+            input_field_names
+        }
     }
 
     pub(super) fn resolve_node(&mut self, node_name: &str, node: AstNode) -> (NodeTypeData, Node) {
         let mut pos = None;
-        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
-        let (output_types, outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
+        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos, false);
+        let (output_types, outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos, true);
 
         let inherited_type = node.node_type.as_ref()
             .and_then(|node_type| self.resolve_node_type(node_type, node_name, &input_types, &output_types));
@@ -143,7 +160,20 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_field_elems(&mut self, fields: Vec<AstFieldElem>, node_name: &str, pos: &mut Option<AstNodePos>) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
+    fn forward_resolve_field_names(&mut self, fields: &[AstFieldElem]) -> Vec<String> {
+        fields.into_iter().filter_map(|field| match field {
+            AstFieldElem::Field { field } => Some(field.name.clone()),
+            AstFieldElem::Header { .. } => None
+        }).collect()
+    }
+
+    fn resolve_field_elems(
+        &mut self,
+        fields: Vec<AstFieldElem>,
+        node_name: &str,
+        pos: &mut Option<AstNodePos>,
+        is_output: bool
+    ) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
         let mut types: Vec<NodeIOType> = Vec::new();
         let mut inputs: Vec<NodeInput> = Vec::new();
         let mut headers: Vec<FieldHeader> = Vec::new();
@@ -159,7 +189,7 @@ impl<'a> GraphBuilder<'a> {
                     headers.push(FieldHeader { index, header });
                 }
                 AstFieldElem::Field { field } => {
-                    let (input_type, input) = self.resolve_node_field(field, node_name);
+                    let (input_type, input) = self.resolve_node_field(field, node_name, is_output);
                     types.push(input_type);
                     inputs.push(input);
                 }
@@ -168,12 +198,18 @@ impl<'a> GraphBuilder<'a> {
         (types, inputs, headers)
     }
 
-    fn resolve_node_field(&mut self, field: AstField, node_name: &str) -> (NodeIOType, NodeInput) {
+    fn resolve_node_field(&mut self, field: AstField, node_name: &str, is_output_field: bool) -> (NodeIOType, NodeInput) {
         let rust_type = self.resolve_type(
             field.rust_type,
             (field.value.as_ref(), &field.value_children),
         );
-        let value = self.resolve_value((field.value, field.value_children), Cow::Borrowed(&rust_type), node_name, &field.name);
+        let value = self.resolve_value(
+            (field.value, field.value_children),
+            Cow::Borrowed(&rust_type),
+            node_name,
+            &field.name,
+            is_output_field
+        );
         let io_type = NodeIOType {
             name: field.name,
             rust_type,

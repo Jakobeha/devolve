@@ -44,11 +44,11 @@ pub trait SortByDeps {
             let lhs_deps = &deps_map[lhs_name];
             let rhs_deps = &deps_map[rhs_name];
             match (lhs_deps.contains(rhs_name), rhs_deps.contains(lhs_name)) {
-                // Fallback to comparing the name so that this is stable (useful e.g. for tests)
-                (true, true) => lhs_name.cmp(rhs_name),
                 (true, false) => Ordering::Greater,
                 (false, true) => Ordering::Less,
-                (false, false) => Ordering::Equal
+                // Fallback to comparing the name so that this is stable (useful e.g. for tests)
+                (true, true) |
+                (false, false) => lhs_name.cmp(rhs_name)
             }
         });
     }
@@ -220,7 +220,7 @@ fn value_deps<'a>(value: Option<&'a AstValueHead>, value_children: &'a AstBody) 
 
 fn value_head_deps(value_head: Option<&AstValueHead>) -> impl Iterator<Item=AstNodeDep> {
     match value_head {
-        None | Some(AstValueHead::Integer(_)) | Some(AstValueHead::Float(_)) | Some(AstValueHead::String(_)) => {
+        None | Some(AstValueHead::Literal(_)) => {
             Box::new(empty()) as Box<dyn Iterator<Item=AstNodeDep>>
         },
         Some(AstValueHead::Ref { node_name: node_ident, field_name: field_ident }) => {

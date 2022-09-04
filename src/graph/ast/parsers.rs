@@ -8,7 +8,7 @@ use snailquote::unescape;
 
 use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::ast::lexer_ext::LexerExt;
-use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
+use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstLiteral, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
 use crate::misc::extract::extract;
 use crate::ast::types::{AstFieldHeader, AstNodePos};
 use structural_reflection::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
@@ -22,6 +22,10 @@ enum GraphToken {
     Struct,
     #[token("enum")]
     Enum,
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
 
     #[regex("[~!@#$%^&*-=+|:;,.?/(\\[{<>}\\])]", |lex| lex.slice().chars().next().unwrap())]
     Punct(char),
@@ -896,17 +900,19 @@ fn munch_value_or_underscore(lexer: &mut Lexer<GraphToken>) -> Result<Option<Ast
 fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<AstValueHead, (usize, ParseErrorBody)> {
     match lexer.next() {
         None => Err((lexer.span().end, ParseErrorBody::ExpectedMore("value"))),
+        Some(GraphToken::True) => Ok(AstValueHead::Literal(AstLiteral::Bool(true))),
+        Some(GraphToken::False) => Ok(AstValueHead::Literal(AstLiteral::Bool(false))),
         Some(GraphToken::Integer(int)) => match int {
             Err(error) => Err((lexer.span().start, ParseErrorBody::BadInteger(error))),
-            Ok(int) => Ok(AstValueHead::Integer(int))
+            Ok(int) => Ok(AstValueHead::Literal(AstLiteral::Integer(int)))
         }
         Some(GraphToken::Float(float)) => match float {
             Err(error) => Err((lexer.span().start, ParseErrorBody::BadFloat(error))),
-            Ok(float) => Ok(AstValueHead::Float(float))
+            Ok(float) => Ok(AstValueHead::Literal(AstLiteral::Float(float)))
         }
         Some(GraphToken::String) => match unescape(lexer.slice()) {
             Err(error) => Err((lexer.span().start, ParseErrorBody::BadEscape(error))),
-            Ok(string) => Ok(AstValueHead::String(string))
+            Ok(string) => Ok(AstValueHead::Literal(AstLiteral::String(string)))
         }
         Some(GraphToken::Ident) => {
             let node_name = lexer.slice().to_string();

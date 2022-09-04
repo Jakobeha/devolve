@@ -100,11 +100,9 @@ pub struct AstFieldTypeDef {
 
 pub type AstRustType = RustTypeName;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstValueHead {
-    Integer(i64),
-    Float(f64),
-    String(String),
+    Literal(AstLiteral),
     Ref {
         node_name: String,
         field_name: String
@@ -122,7 +120,15 @@ pub enum AstValueHead {
     },
 }
 
-impl Eq for AstValueHead {}
+#[derive(Debug, Clone, PartialEq)]
+pub enum AstLiteral {
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(String),
+}
+
+impl Eq for AstLiteral {}
 
 impl AstGraph {
     pub fn new() -> AstGraph {
@@ -235,9 +241,7 @@ impl AstFieldElem {
 impl AstValueHead {
     pub fn iter_rust_types(&self) -> impl Iterator<Item=&AstRustType> {
         match self {
-            AstValueHead::Integer(_) => Box::new(empty()) as Box<dyn Iterator<Item=&AstRustType>>,
-            AstValueHead::Float(_) => Box::new(empty()) as Box<dyn Iterator<Item=&AstRustType>>,
-            AstValueHead::String(_) => Box::new(empty()) as Box<dyn Iterator<Item=&AstRustType>>,
+            AstValueHead::Literal(_) => Box::new(empty()) as Box<dyn Iterator<Item=&AstRustType>>,
             AstValueHead::Ref { .. } => Box::new(empty()) as Box<dyn Iterator<Item=&AstRustType>>,
             AstValueHead::Tuple(items) => Box::new(
                 items.iter().flat_map(|item| item.iter_rust_types())

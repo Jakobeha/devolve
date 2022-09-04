@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::iter::{repeat_with, zip};
 use std::mem::size_of;
 
@@ -9,6 +10,7 @@ use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstEnumVariantTypeDef, A
 use crate::graph::StaticStrs;
 use crate::ir::ComptimeCtx;
 use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
+use crate::ast::types::AstLiteral;
 
 pub struct GraphSerializer<'a> {
     /// Only actually needs some of the ctx, GraphBuilder needs more, but we use the same struct
@@ -443,22 +445,50 @@ impl<'a> GraphSerializer<'a> {
             return (None, AstBody::None)
         }
 
+        // Literals which aren't primitives
+        match rust_type.type_id {
+            Some(type_id) if type_id == TypeId::of::<String>() => {
+                let string = match String::from_utf8(constant_data.to_vec()) {
+                    Err(error) => {
+                        error!("deserialized string is not valid utf8: {}", error);
+                        return (None, AstBody::None)
+                    },
+                    Ok(string) => string
+                };
+                return (Some(AstValueHead::Literal(AstLiteral::String(string))), AstBody::None);
+            }
+            _ => {}
+        }
+
         match &rust_type.structure {
-            TypeStructure::Primitive(primitive) => match primitive {
+            TypeStructure::Primitive(primitive) => (Some(AstValueHead::Literal(match primitive {
                 PrimitiveType::I64 => {
                     let mut constant_data_bytes = [0; size_of::<i64>()];
                     constant_data_bytes.copy_from_slice(constant_data);
                     let value = i64::from_ne_bytes(constant_data_bytes);
-                    (Some(AstValueHead::Integer(value)), AstBody::None)
+                    AstLiteral::Integer(value)
                 }
                 PrimitiveType::F64 => {
                     let mut constant_data_bytes = [0; size_of::<f64>()];
                     constant_data_bytes.copy_from_slice(constant_data);
                     let value = f64::from_ne_bytes(constant_data_bytes);
-                    (Some(AstValueHead::Float(value)), AstBody::None)
+                    AstLiteral::Float(value)
+                }
+                PrimitiveType::Bool => {
+                    let mut constant_data_bytes = [0];
+                    constant_data_bytes.copy_from_slice(constant_data);
+                    let value = match constant_data_bytes[0] {
+                        0 => false,
+                        1 => true,
+                        not_a_bool => {
+                            error!("deserialized bool constant with invalid value: {}", not_a_bool);
+                            return (None, AstBody::None)
+                        }
+                    };
+                    AstLiteral::Bool(value)
                 }
                 _ => todo!("primitives which aren't i64 and f64 not yet implemented")
-            }
+            })), AstBody::None),
             TypeStructure::CReprStruct { body } => (None, match body {
                 TypeStructureBody::None => AstBody::None,
                 TypeStructureBody::Tuple(tuple_item_types) => {
@@ -641,9 +671,7 @@ impl<'a> GraphSerializer<'a> {
 
     fn is_type_trivial(&self, (value, value_children): (Option<&AstValueHead>, &AstBody)) -> bool {
         match value {
-            Some(AstValueHead::Integer(_)) |
-            Some(AstValueHead::Float(_)) |
-            Some(AstValueHead::String(_)) |
+            Some(AstValueHead::Literal(_)) |
             Some(AstValueHead::Struct { .. }) |
             Some(AstValueHead::Enum { .. }) => true,
             Some(AstValueHead::Ref { .. }) => false,

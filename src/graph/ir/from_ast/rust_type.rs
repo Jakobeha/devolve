@@ -1,7 +1,7 @@
 use std::iter::zip;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::GraphBuilder;
-use crate::ast::types::{AstBody, AstRustType, AstValueHead};
+use crate::ast::types::{AstBody, AstLiteral, AstRustType, AstValueHead};
 use structural_reflection::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
@@ -133,9 +133,12 @@ impl<'a> GraphBuilder<'a> {
     ) -> RustType {
         match value {
             None => self.infer_type_structurally2(value_children),
-            Some(AstValueHead::Integer(_)) => PrimitiveType::I64.rust_type(),
-            Some(AstValueHead::Float(_)) => PrimitiveType::F64.rust_type(),
-            Some(AstValueHead::String(_)) => RustType::lookup(&RustTypeName::simple(String::from("String"))).expect("String type should be defined"),
+            Some(AstValueHead::Literal(literal)) => match literal {
+                AstLiteral::Bool(_) => PrimitiveType::Bool.rust_type(),
+                AstLiteral::Integer(_) => PrimitiveType::I64.rust_type(),
+                AstLiteral::Float(_) => PrimitiveType::F64.rust_type(),
+                AstLiteral::String(_) => RustType::of::<String>()
+            }
             Some(AstValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name }) => match self.resolved_node_type(refd_node_name) {
                 // Error will show up later
                 None => RustType::unknown(),

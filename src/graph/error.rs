@@ -113,6 +113,16 @@ pub enum GraphFormError {
         node_name: String,
         referenced_from: NodeNameFieldName
     },
+    #[display(fmt = "can't refer to output field of node {} from node {}, it's a forward reference", node_name, referenced_from)]
+    ForwardNodeRefInInput {
+        node_name: String,
+        referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "can't refer to input field of node {} from node {}, it's a forward reference and the former node has a type so we don't yet know its fields", node_name, referenced_from)]
+    ForwardNodeRefOfTypedNode {
+        node_name: String,
+        referenced_from: NodeNameFieldName
+    },
     #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
     NodeIsDataType {
         type_name: String,
