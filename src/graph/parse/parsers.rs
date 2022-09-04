@@ -763,69 +763,106 @@ fn parse_field_type_or_tuple_item_type(line: &str) -> Result<TypeBodyParserItem,
 }
 
 fn parse_field(line: &str) -> Result<SerialField, (usize, ParseErrorBody)> {
-    parse_abstract_field(line, |name, rust_type, value| SerialField {
+    parse_abstract_field(line, |name, rust_type, rust_type_may_be_null, value| SerialField {
         name,
         rust_type,
+        rust_type_may_be_null,
         value,
         value_children: SerialBody::None
     })
 }
 
 fn parse_field_type(line: &str) -> Result<SerialFieldTypeDef, (usize, ParseErrorBody)> {
-    parse_abstract_field(line, |name, rust_type, value| SerialFieldTypeDef {
+    parse_abstract_field(line, |name, rust_type, rust_type_may_be_null, value| SerialFieldTypeDef {
         name,
         rust_type,
+        rust_type_may_be_null,
         default_value: value,
         default_value_children: SerialBody::None
     })
 }
 
-fn parse_abstract_field<Field>(line: &str, mk_field: fn(String, Option<SerialRustType>, Option<SerialValueHead>) -> Field) -> Result<Field, (usize, ParseErrorBody)> {
+fn parse_abstract_field<Field>(line: &str, mk_field: fn(String, Option<SerialRustType>, bool, Option<SerialValueHead>) -> Field) -> Result<Field, (usize, ParseErrorBody)> {
     let mut lexer = Lexer::<GraphToken>::new(line);
     lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
     let name = lexer.slice().to_string();
-    let (rust_type, value) = match lexer.next() {
-        None => (None, None),
-        Some(GraphToken::Punct(':')) => {
-            let rust_type = munch_rust_type(&mut lexer)?;
-            match lexer.next() {
-                None => (Some(rust_type), None),
-                Some(GraphToken::Punct('=')) => {
-                    let value = munch_value(&mut lexer)?;
-                    lexer.munch_end()?;
-                    (Some(rust_type), Some(value))
-                },
-                Some(_) => return Err((lexer.span().start, ParseErrorBody::Expected("= or end of line")))
+    let (mut rust_type_may_be_null, mut rust_type, mut value) = (false, None, None);
+    while let Some(token) = lexer.next() {
+        match token {
+            GraphToken::Punct('?') => {
+                if value.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("end of line")))
+                } else if rust_type.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("'=' or end of line")))
+                } else if rust_type_may_be_null {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("':', '=' or end of line")))
+                }
+                rust_type_may_be_null = true
             }
-        },
-        Some(GraphToken::Punct('=')) => {
-            let value = munch_value(&mut lexer)?;
-            lexer.munch_end()?;
-            (None, Some(value))
-        },
-        Some(_) => return Err((lexer.span().start, ParseErrorBody::Expected(":, =, or end of line")))
-    };
+            GraphToken::Punct(':') => {
+                if value.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("end of line")))
+                } else if rust_type.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("'=' or end of line")))
+                }
+                rust_type = Some(munch_rust_type(&mut lexer)?);
+            },
+            GraphToken::Punct('=') => {
+                if value.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("end of line")))
+                }
+                value = Some(munch_value(&mut lexer)?);
+            },
+            _ => return Err((lexer.span().start, if value.is_some() {
+                ParseErrorBody::Expected("end of line")
+            } else if rust_type.is_some() {
+                ParseErrorBody::Expected("'=' or end of line")
+            } else if rust_type_may_be_null {
+                ParseErrorBody::Expected("':', '=' or end of line")
+            } else {
+                ParseErrorBody::Expected("'?', ':', '=', or end of line")
+            }))
+        };
+    }
 
-    Ok(mk_field(name, rust_type, value))
+    Ok(mk_field(name, rust_type, rust_type_may_be_null, value))
 }
 
 fn parse_tuple_item(line: &str) -> Result<SerialTupleItem, (usize, ParseErrorBody)> {
     let mut lexer = Lexer::<GraphToken>::new(line);
     let value = munch_value_or_underscore(&mut lexer)?;
     // Rust type may not be allowed in the future
-    let rust_type = match lexer.next() {
-        None => None,
-        Some(GraphToken::Punct(':')) => {
-            let rust_type = munch_rust_type(&mut lexer)?;
-            lexer.munch_end()?;
-            Some(rust_type)
-        },
-        Some(_) => return Err((lexer.span().start, ParseErrorBody::Expected(": or end of line")))
-    };
+    let (mut rust_type_may_be_null, mut rust_type) = (false, None);
+    while let Some(token) = lexer.next() {
+        match token {
+            GraphToken::Punct('?') => {
+                if rust_type.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("end of line")));
+                } else if rust_type_may_be_null {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("':' or end of line")));
+                }
+                rust_type_may_be_null = true
+            }
+            GraphToken::Punct(':') => {
+                if rust_type.is_some() {
+                    return Err((lexer.span().start, ParseErrorBody::Expected("end of line")));
+                }
+                rust_type = Some(munch_rust_type(&mut lexer)?);
+            },
+            _ => return Err((lexer.span().start, if rust_type.is_some() {
+                ParseErrorBody::Expected("end of line")
+            } else if rust_type_may_be_null {
+                ParseErrorBody::Expected(": or end of line")
+            } else {
+                ParseErrorBody::Expected("'?', ':', or end of line")
+            }))
+        }
+    }
 
     Ok(SerialTupleItem {
-        value,
         rust_type,
+        rust_type_may_be_null,
+        value,
         value_children: SerialBody::None
     })
 }

@@ -5,7 +5,7 @@ use std::ptr::copy_nonoverlapping;
 use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
-use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, UsedRegion};
+use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, NullRegion};
 use structural_reflection::{IsSubtypeOf, RustType};
 
 /// Compound view graph.
@@ -103,7 +103,7 @@ impl BuiltGraph {
             let mut cached_input_data = RawData {
                 types: input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
-                used_regions: inputs.iter().map(|input| UsedRegion::of(input)).collect::<Vec<_>>()
+                used_regions: inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices))
@@ -119,7 +119,7 @@ impl BuiltGraph {
             let cached_output_data = RawData {
                 types: node_type.outputs.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
-                used_regions: node.inputs.iter().map(|input| UsedRegion::of(input)).collect::<Vec<_>>()
+                used_regions: node.inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
             };
             let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices);
 

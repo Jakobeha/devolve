@@ -559,7 +559,7 @@ impl<'a> GraphBuilder<'a> {
             SerialBody::None => NodeInput::Hole,
             SerialBody::Tuple(tuple_items) => {
                 let tuple_item_types = rust_type.structure
-                    .tuple_struct_tuple_item_types()
+                    .tuple_struct_item_types()
                     .or(rust_type.structure.tuple_elem_types());
                 if tuple_item_types.is_none() {
                     self.errors.push(GraphFormError::NotATupleOrTupleStruct {

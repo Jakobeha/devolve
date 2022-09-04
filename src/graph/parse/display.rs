@@ -82,6 +82,9 @@ impl DisplayWithCtx for SerialFieldTypeDef {
 
     fn fmt(&self, f: &mut Formatter<'_>, dnis: &Self::Ctx) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
+        if self.rust_type_may_be_null {
+            write!(f, "?")?;
+        }
         if let Some(rust_type) = self.rust_type.as_ref() {
             write!(f, ": {}", rust_type.display(dnis))?;
         }
@@ -140,6 +143,9 @@ impl DisplayWithCtx2 for SerialField {
 
     fn fmt(&self, f: &mut Formatter<'_>, (dnis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
+        if self.rust_type_may_be_null {
+            write!(f, "?")?;
+        }
         if let Some(rust_type) = self.rust_type.as_ref() {
             write!(f, ": {}", rust_type.display(dnis))?;
         }
@@ -180,6 +186,9 @@ impl DisplayWithCtx2 for SerialTupleItem {
         match self.value.as_ref() {
             None => write!(f, "_")?,
             Some(value) => write!(f, "{}", value.with_ctx(dnis))?
+        }
+        if self.rust_type_may_be_null {
+            write!(f, "?")?;
         }
         if let Some(rust_type) = self.rust_type.as_ref() {
             write!(f, ": {}", rust_type.display(dnis))?;

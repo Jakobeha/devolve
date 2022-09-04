@@ -8,7 +8,7 @@ use std::error::Error;
 use dui_graph::mutable::{ComptimeCtx, MutableGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::parse::types::SerialGraph;
-use dui_graph::raw::{RawComputeFn, UsedRegion};
+use dui_graph::raw::RawComputeFn;
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
@@ -61,20 +61,24 @@ fn test_parse_serial() {
                                     NodeIOType {
                                         name: "text".to_string(),
                                         rust_type: RustType::of::<&str>(),
+                                        rust_type_may_be_null: false
                                     },
                                     NodeIOType {
                                         name: "is_enabled".to_string(),
                                         rust_type: RustType::of::<bool>(),
+                                        rust_type_may_be_null: false,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
-                                        rust_type: RustType::of::<ViewId>()
+                                        rust_type: RustType::of::<ViewId>(),
+                                        rust_type_may_be_null: false,
                                     },
                                     NodeIOType {
                                         name: String::from("click"),
-                                        rust_type: RustType::of::<()>()
+                                        rust_type: RustType::of::<()>(),
+                                        rust_type_may_be_null: true
                                     }
                                 ]
                             },
@@ -82,10 +86,6 @@ fn test_parse_serial() {
                                 NodeInput::Hole,
                                 NodeInput::const_(false)
                             ],
-                            required_inputs: vec![
-                                UsedRegion::Used,
-                                UsedRegion::Used
-                            ]
                         });
                         node_types.insert(String::from("TextField"), NodeType {
                             compute: RawComputeFn::new(|ctx, inputs, outputs| {
@@ -96,28 +96,34 @@ fn test_parse_serial() {
                                     NodeIOType {
                                         name: "text".to_string(),
                                         rust_type: RustType::of::<&str>(),
+                                        rust_type_may_be_null: false,
                                     },
                                     NodeIOType {
                                         name: "placeholder".to_string(),
                                         rust_type: RustType::of::<&str>(),
+                                        rust_type_may_be_null: true,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
-                                        rust_type: RustType::of::<ViewId>()
+                                        rust_type: RustType::of::<ViewId>(),
+                                        rust_type_may_be_null: false,
                                     },
                                     NodeIOType {
                                         name: String::from("text"),
-                                        rust_type: RustType::of::<&str>()
+                                        rust_type: RustType::of::<&str>(),
+                                        rust_type_may_be_null: false,
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
-                                        rust_type: RustType::of::<CTuple2<CopyRange<usize>, &str>>()
+                                        rust_type: RustType::of::<CTuple2<CopyRange<usize>, &str>>(),
+                                        rust_type_may_be_null: true
                                     },
                                     NodeIOType {
                                         name: String::from("enter_key"),
-                                        rust_type: RustType::of::<()>()
+                                        rust_type: RustType::of::<()>(),
+                                        rust_type_may_be_null: true
                                     }
                                 ]
                             },
@@ -125,12 +131,8 @@ fn test_parse_serial() {
                                 NodeInput::Hole,
                                 NodeInput::const_("")
                             ],
-                            required_inputs: vec![
-                                UsedRegion::Used,
-                                UsedRegion::Used
-                            ]
                         });
-                        node_types.insert(String::from("Box"), NodeType {
+                        node_types.insert_fn0(String::from("Box"), |ctx| Ok(NodeType {
                             compute: RawComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Box");
                             }),
@@ -138,35 +140,34 @@ fn test_parse_serial() {
                                 inputs: vec![
                                     NodeIOType {
                                         name: "children".to_string(),
-                                        rust_type: RustType::of::<&[ViewId]>(),
+                                        rust_type: RustType::of_array::<ViewId>(ctx.input_types.get(0).and_then(|input_type| input_type.rust_type.structure.array_or_tuple_length()).unwrap_or(0)),
+                                        rust_type_may_be_null: false,
                                     },
                                     NodeIOType {
                                         name: "width".to_string(),
-                                        rust_type: RustType::of::<usize>()
+                                        rust_type: RustType::of::<usize>(),
+                                        rust_type_may_be_null: true,
                                     },
                                     NodeIOType {
                                         name: "height".to_string(),
-                                        rust_type: RustType::of::<usize>()
+                                        rust_type: RustType::of::<usize>(),
+                                        rust_type_may_be_null: true,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
-                                        rust_type: RustType::of::<ViewId>()
+                                        rust_type: RustType::of::<ViewId>(),
+                                        rust_type_may_be_null: false,
                                     },
                                 ]
                             },
                             default_inputs: vec![
                                 NodeInput::Hole,
-                                NodeInput::const_(0),
-                                NodeInput::const_(0),
+                                NodeInput::Hole,
+                                NodeInput::Hole,
                             ],
-                            required_inputs: vec![
-                                UsedRegion::Used,
-                                UsedRegion::Used,
-                                UsedRegion::Used
-                            ]
-                        });
+                        }));
 
                         let input = input.clone();
                         let graph = try_or_none!(MutableGraph::try_from((input, &ComptimeCtx {

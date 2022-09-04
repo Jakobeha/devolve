@@ -2,7 +2,7 @@ Input
   placeholder: &str
   text: String
   -- events
-  enter_key: Option<()>
+  enter_key?: ()
 
 `Ok Button`: Button
   text = "OK"
@@ -35,7 +35,7 @@ Output
   ===
   text: String
   -- events
-  text_modified: Option<(Range<usize>, String)>
-  enter_key: Option<()>
-  click_ok: Option<()>
-  click_cancel: Option<()>
+  text_modified?: (Range<usize>, String)
+  enter_key?: ()
+  click_ok?: ()
+  click_cancel?: ()

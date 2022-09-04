@@ -30,7 +30,9 @@ pub struct NodeTypeData {
 #[derive(Clone)]
 pub struct NodeIOType {
     pub name: String,
-    pub rust_type: RustType
+    pub rust_type: RustType,
+    /// Means "can be null" ("is nullable") if an input, or "could be null" ("sometimes null") if an output.
+    pub rust_type_may_be_null: bool,
 }
 
 #[derive(Clone)]

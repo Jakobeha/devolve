@@ -40,6 +40,7 @@ pub struct SerialNodePos {
 pub struct SerialField {
     pub name: String,
     pub rust_type: Option<SerialRustType>,
+    pub rust_type_may_be_null: bool,
     pub value: Option<SerialValueHead>,
     pub value_children: SerialBody
 }
@@ -54,6 +55,7 @@ pub enum SerialBody {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SerialTupleItem {
     pub rust_type: Option<SerialRustType>,
+    pub rust_type_may_be_null: bool,
     pub value: Option<SerialValueHead>,
     pub value_children: SerialBody
 }
@@ -91,6 +93,7 @@ pub enum SerialTypeDefBody {
 pub struct SerialFieldTypeDef {
     pub name: String,
     pub rust_type: Option<SerialRustType>,
+    pub rust_type_may_be_null: bool,
     pub default_value: Option<SerialValueHead>,
     pub default_value_children: SerialBody
 }

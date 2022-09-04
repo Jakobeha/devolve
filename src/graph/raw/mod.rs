@@ -17,7 +17,7 @@ pub struct RawOutputs<'a>(&'a mut RawData);
 pub struct RawData {
     pub types: Vec<RustType>,
     /// Non-null in input, required to be set in output
-    pub used_regions: Vec<UsedRegion>,
+    pub used_regions: Vec<NullRegion>,
     pub data: Vec<Box<[MaybeUninit<u8>]>>
 }
 
@@ -38,7 +38,7 @@ impl<'a> RawInputs<'a> {
         &self.0.types
     }
 
-    pub fn nonnull_regions(&self) -> &[UsedRegion] {
+    pub fn nonnull_regions(&self) -> &[NullRegion] {
         &self.0.used_regions
     }
 
@@ -57,7 +57,7 @@ impl<'a> RawOutputs<'a> {
         &self.0.types
     }
 
-    pub fn nonnull_regions(&self) -> &[UsedRegion] {
+    pub fn nonnull_regions(&self) -> &[NullRegion] {
         &self.0.used_regions
     }
 

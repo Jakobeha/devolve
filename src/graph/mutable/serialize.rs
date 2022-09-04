@@ -116,6 +116,7 @@ impl<'a> GraphSerializer<'a> {
         SerialField {
             name: field_type.name.to_string(),
             rust_type,
+            rust_type_may_be_null: field_type.rust_type_may_be_null,
             value,
             value_children
         }
@@ -218,6 +219,8 @@ impl<'a> GraphSerializer<'a> {
                     SerialFieldTypeDef {
                         name: name.to_string(),
                         rust_type: self.serialize_rust_type(&rust_type),
+                        // Nullable values are currently unsupported and only a feature of parsing
+                        rust_type_may_be_null: false,
                         // Default values are currently unsupported and only a feature of parsing
                         default_value: None,
                         default_value_children: SerialBody::None
@@ -386,6 +389,7 @@ impl<'a> GraphSerializer<'a> {
                     let (value, value_children) = self.serialize_node_value(elem, array_elem_type.unwrap_or(&RustType::unknown()));
                     SerialTupleItem {
                         rust_type,
+                        rust_type_may_be_null: false,
                         value,
                         value_children
                     }
@@ -495,6 +499,7 @@ impl<'a> GraphSerializer<'a> {
             |serial_rust_type, serial_value, serial_value_children, ()| {
                 SerialTupleItem {
                     rust_type: serial_rust_type,
+                    rust_type_may_be_null: false,
                     value: serial_value,
                     value_children: serial_value_children
                 }
@@ -514,6 +519,7 @@ impl<'a> GraphSerializer<'a> {
                 SerialField {
                     name,
                     rust_type: serial_rust_type,
+                    rust_type_may_be_null: false,
                     value: serial_value,
                     value_children: serial_value_children
                 }
@@ -532,6 +538,7 @@ impl<'a> GraphSerializer<'a> {
             |serial_rust_type, serial_value, serial_value_children, ()| {
                 SerialTupleItem {
                     rust_type: serial_rust_type,
+                    rust_type_may_be_null: false,
                     value: serial_value,
                     value_children: serial_value_children
                 }
@@ -592,6 +599,7 @@ impl<'a> GraphSerializer<'a> {
             let (value, value_children) = self.serialize_node_value(tuple_item, tuple_item_type);
             SerialTupleItem {
                 rust_type,
+                rust_type_may_be_null: false,
                 value,
                 value_children
             }
@@ -605,6 +613,7 @@ impl<'a> GraphSerializer<'a> {
             SerialField {
                 name: field_type.name.clone(),
                 rust_type,
+                rust_type_may_be_null: false,
                 value,
                 value_children
             }

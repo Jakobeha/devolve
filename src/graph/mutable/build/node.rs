@@ -176,7 +176,8 @@ impl<'a> GraphBuilder<'a> {
         let value = self.resolve_value((field.value, field.value_children), Cow::Borrowed(&rust_type), node_name, &field.name);
         let io_type = NodeIOType {
             name: field.name,
-            rust_type
+            rust_type,
+            rust_type_may_be_null: field.rust_type_may_be_null,
         };
         (io_type, value)
     }
