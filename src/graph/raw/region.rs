@@ -1,5 +1,5 @@
 use std::ops::Index;
-use crate::graph::mutable::NodeInput;
+use crate::graph::ir::NodeInput;
 
 #[derive(Clone)]
 pub enum NullRegion {

@@ -179,20 +179,20 @@ impl<T: 'static> RunTestsOnFiles<T> {
 
         /*
         // Test round trip
-        let instance_str = (pretty_print)(&serial_instance)?;
+        let instance_str = (pretty_print)(&ast_instance)?;
         // Serializer's format is a bit different than ours
         // So we have to re-serialize to really check
-        let instance2 = SerialDuiFile::try_from(&instance_str).map_err(|err| {
+        let instance2 = AstDuiFile::try_from(&instance_str).map_err(|err| {
             error!("* failed on round-trip second deserialize");
             err
         })?;
-        if instance2 != serial_instance {
-            let instance_str2 = toml::to_string_pretty(&serial_instance)?;
+        if instance2 != ast_instance {
+            let instance_str2 = toml::to_string_pretty(&ast_instance)?;
             errors.push(SmallError(format!("round trip, input mismatch\nexpected: <\n{}\n> but was <\n{}\n> then was <\n{}\n> (ignore non-semantic differences)", input, instance_str, instance_str2).into()));
         }
 
-        // Test finish serialization
-        let instance = DuiFile::try_from(serial_instance)?;
+        // Test finish astization
+        let instance = DuiFile::try_from(ast_instance)?;
 
         // Test expected debug
         expected_debug.check_or_replace(&mut errors, || format!("{:?}", instance));

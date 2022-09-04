@@ -1,28 +1,28 @@
 use std::iter::zip;
 use crate::error::GraphFormError;
-use crate::mutable::build::GraphBuilder;
-use crate::parse::types::{SerialBody, SerialRustType, SerialValueHead};
+use crate::ir::from_ast::GraphBuilder;
+use crate::ast::types::{AstBody, AstRustType, AstValueHead};
 use structural_reflection::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn resolve_type(
         &mut self,
-        serial_type: Option<SerialRustType>,
-        (value, value_children): (Option<&SerialValueHead>, &SerialBody)
+        ast_type: Option<AstRustType>,
+        (value, value_children): (Option<&AstValueHead>, &AstBody)
     ) -> RustType {
-        let structural_type = self.resolve_type_structurally(serial_type, (value, value_children));
+        let structural_type = self.resolve_type_structurally(ast_type, (value, value_children));
         self.further_resolve_structural_type(structural_type)
     }
 
-    pub(super) fn resolve_type2(&mut self, serial_type: SerialRustType) -> RustType {
-        let structural_type = self.resolve_type_structurally2(serial_type);
+    pub(super) fn resolve_type2(&mut self, ast_type: AstRustType) -> RustType {
+        let structural_type = self.resolve_type_structurally2(ast_type);
         self.further_resolve_structural_type(structural_type)
     }
 
-    pub(super) fn resolve_type3(&mut self, serial_type: Option<SerialRustType>) -> RustType {
-        match serial_type {
+    pub(super) fn resolve_type3(&mut self, ast_type: Option<AstRustType>) -> RustType {
+        match ast_type {
             None => RustType::unknown(),
-            Some(serial_type) => self.resolve_type2(serial_type)
+            Some(ast_type) => self.resolve_type2(ast_type)
         }
     }
 
@@ -44,17 +44,17 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_type_structurally(
         &mut self,
-        serial_type: Option<SerialRustType>,
-        (value, value_children): (Option<&SerialValueHead>, &SerialBody)
+        ast_type: Option<AstRustType>,
+        (value, value_children): (Option<&AstValueHead>, &AstBody)
     ) -> RustType {
-        let resolved_type = serial_type.map(|serial_type| self.resolve_type_structurally2(serial_type));
+        let resolved_type = ast_type.map(|ast_type| self.resolve_type_structurally2(ast_type));
         let inferred_type = self.infer_type_structurally((value, value_children));
         self.merge_resolved_type(resolved_type, inferred_type)
     }
 
-    fn resolve_type_structurally2(&mut self, serial_type: SerialRustType) -> RustType {
-        let (known_size, known_align) = match &serial_type {
-            SerialRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
+    fn resolve_type_structurally2(&mut self, ast_type: AstRustType) -> RustType {
+        let (known_size, known_align) = match &ast_type {
+            AstRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
                 let (previously_defined_size, previously_defined_align) = if qualifiers == &self.ctx.qualifiers {
                     match self.resolved_rust_types.get(simple_name.as_str()) {
                         None => (None, None),
@@ -66,7 +66,7 @@ impl<'a> GraphBuilder<'a> {
                     (None, None)
                 };
                 let (intrinsic_size, intrinsic_align) = {
-                    match RustType::lookup(&serial_type) {
+                    match RustType::lookup(&ast_type) {
                         None => (None, None),
                         Some(known_type) => (Some(known_type.size), Some(known_type.align))
                     }
@@ -74,9 +74,9 @@ impl<'a> GraphBuilder<'a> {
                 // Support simple case of recursively-defined types:
                 // we do this by registering a type with {unknown} on the params, which still has size and align
                 let (generic_intrinsic_size, generic_intrinsic_align) = {
-                    let mut serial_type_without_generics = serial_type.clone();
-                    serial_type_without_generics.erase_generics();
-                    match RustType::lookup(&serial_type_without_generics) {
+                    let mut ast_type_without_generics = ast_type.clone();
+                    ast_type_without_generics.erase_generics();
+                    match RustType::lookup(&ast_type_without_generics) {
                         None => (None, None),
                         Some(known_type) => (Some(known_type.size), Some(known_type.align))
                     }
@@ -88,25 +88,25 @@ impl<'a> GraphBuilder<'a> {
             },
             _ => (None, None)
         };
-        let structure = match &serial_type {
+        let structure = match &ast_type {
             // Even if we defined the structure elsewhere, don't need to include it here
             // too much work and not actually necessary because we infer the size and alignment separately
-            SerialRustType::Ident { .. } => TypeStructure::Opaque,
-            SerialRustType::ConstExpr { .. } => TypeStructure::Opaque,
-            SerialRustType::Anonymous { .. } => TypeStructure::Opaque,
-            SerialRustType::Pointer { ptr_kind, refd } => TypeStructure::Pointer {
+            AstRustType::Ident { .. } => TypeStructure::Opaque,
+            AstRustType::ConstExpr { .. } => TypeStructure::Opaque,
+            AstRustType::Anonymous { .. } => TypeStructure::Opaque,
+            AstRustType::Pointer { ptr_kind, refd } => TypeStructure::Pointer {
                 ptr_kind: *ptr_kind,
                 refd_id: refd.lookup_back(),
                 refd_name: refd.as_ref().clone()
             },
-            SerialRustType::Tuple { elems: elements } => TypeStructure::CTuple {
+            AstRustType::Tuple { elems: elements } => TypeStructure::CTuple {
                 elements: elements.iter().map(|element| self.resolve_type2(element.clone())).collect()
             },
-            SerialRustType::Array { elem, length } => TypeStructure::Array {
+            AstRustType::Array { elem, length } => TypeStructure::Array {
                 elem: Box::new(self.resolve_type2(elem.as_ref().clone())),
                 length: *length
             },
-            SerialRustType::Slice { elem } => TypeStructure::Slice {
+            AstRustType::Slice { elem } => TypeStructure::Slice {
                 elem: Box::new(self.resolve_type2(elem.as_ref().clone()))
             }
         };
@@ -115,12 +115,12 @@ impl<'a> GraphBuilder<'a> {
         let align = known_align.or(structure.infer_align());
         if size.is_none() || align.is_none() {
             self.errors.push(GraphFormError::TypeLayoutNotResolved {
-                type_name: serial_type.clone()
+                type_name: ast_type.clone()
             });
         }
         RustType {
             type_id: None,
-            type_name: serial_type,
+            type_name: ast_type,
             size: size.unwrap_or(usize::MAX),
             align: align.unwrap_or(usize::MAX),
             structure
@@ -129,14 +129,14 @@ impl<'a> GraphBuilder<'a> {
 
     pub(super) fn infer_type_structurally(
         &mut self,
-        (value, value_children): (Option<&SerialValueHead>, &SerialBody)
+        (value, value_children): (Option<&AstValueHead>, &AstBody)
     ) -> RustType {
         match value {
             None => self.infer_type_structurally2(value_children),
-            Some(SerialValueHead::Integer(_)) => PrimitiveType::I64.rust_type(),
-            Some(SerialValueHead::Float(_)) => PrimitiveType::F64.rust_type(),
-            Some(SerialValueHead::String(_)) => RustType::lookup(&RustTypeName::simple(String::from("String"))).expect("String type should be defined"),
-            Some(SerialValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name }) => match self.resolved_node_type(refd_node_name) {
+            Some(AstValueHead::Integer(_)) => PrimitiveType::I64.rust_type(),
+            Some(AstValueHead::Float(_)) => PrimitiveType::F64.rust_type(),
+            Some(AstValueHead::String(_)) => RustType::lookup(&RustTypeName::simple(String::from("String"))).expect("String type should be defined"),
+            Some(AstValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name }) => match self.resolved_node_type(refd_node_name) {
                 // Error will show up later
                 None => RustType::unknown(),
                 Some(node_type) => match node_type.outputs.iter().find(|io_type| &io_type.name == refd_field_name) {
@@ -145,8 +145,8 @@ impl<'a> GraphBuilder<'a> {
                     Some(io_type) => io_type.rust_type.clone()
                 }
             },
-            Some(SerialValueHead::Tuple(elements)) => {
-                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &SerialBody::None))).collect::<Vec<_>>();
+            Some(AstValueHead::Tuple(elements)) => {
+                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstBody::None))).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&elements);
                 let align = infer_c_tuple_align(&elements);
                 let structure = TypeStructure::CTuple { elements };
@@ -158,8 +158,8 @@ impl<'a> GraphBuilder<'a> {
                     structure
                 }
             }
-            Some(SerialValueHead::Array(elements)) => {
-                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &SerialBody::None))).collect::<Vec<_>>();
+            Some(AstValueHead::Array(elements)) => {
+                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstBody::None))).collect::<Vec<_>>();
                 let num_elements = elements.len();
                 let element_type = self.merge_resolved_types(elements);
                 let size = infer_array_size(&element_type, num_elements);
@@ -176,7 +176,7 @@ impl<'a> GraphBuilder<'a> {
                     structure
                 }
             }
-            Some(SerialValueHead::Struct { type_name, inline_params }) => {
+            Some(AstValueHead::Struct { type_name, inline_params }) => {
                 let (size, align, body) = self.infer_type_body_structurally(inline_params.as_deref(), value_children);
                 RustType {
                     type_id: None,
@@ -186,7 +186,7 @@ impl<'a> GraphBuilder<'a> {
                     structure: TypeStructure::CReprStruct { body }
                 }
             }
-            Some(SerialValueHead::Enum { type_name, variant_name, inline_params }) => {
+            Some(AstValueHead::Enum { type_name, variant_name, inline_params }) => {
                 let (size, align, body) = self.infer_type_body_structurally(inline_params.as_deref(), value_children);
                 RustType {
                     type_id: None,
@@ -205,8 +205,8 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn infer_type_structurally2(&mut self, value_children: &SerialBody) -> RustType {
-        if matches!(value_children, SerialBody::None) {
+    fn infer_type_structurally2(&mut self, value_children: &AstBody) -> RustType {
+        if matches!(value_children, AstBody::None) {
             return RustType::unknown();
         }
         let (size, align, body) = self.infer_type_body_structurally2(value_children);
@@ -221,13 +221,13 @@ impl<'a> GraphBuilder<'a> {
 
     fn infer_type_body_structurally(
         &mut self,
-        inline_params: Option<&[SerialValueHead]>,
-        value_children: &SerialBody
+        inline_params: Option<&[AstValueHead]>,
+        value_children: &AstBody
     ) -> (usize, usize, TypeStructureBody) {
         match inline_params {
             None => self.infer_type_body_structurally2(value_children),
             Some(inline_params) => {
-                let elements = inline_params.iter().map(|elem| self.infer_type_structurally((Some(elem), &SerialBody::None))).collect::<Vec<_>>();
+                let elements = inline_params.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstBody::None))).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&elements);
                 let align = infer_c_tuple_align(&elements);
                 let body = TypeStructureBody::Tuple(elements);
@@ -238,11 +238,11 @@ impl<'a> GraphBuilder<'a> {
 
     fn infer_type_body_structurally2(
         &mut self,
-        value_children: &SerialBody
+        value_children: &AstBody
     ) -> (usize, usize, TypeStructureBody) {
         match value_children {
-            SerialBody::None => (0, 0, TypeStructureBody::None),
-            SerialBody::Tuple(tuple_items) => {
+            AstBody::None => (0, 0, TypeStructureBody::None),
+            AstBody::Tuple(tuple_items) => {
                 let item_types = tuple_items.iter().map(|tuple_item| {
                     // why do we have to clone rust_type here? are we doing something redundant?
                     self.resolve_type(tuple_item.rust_type.clone(), (tuple_item.value.as_ref(), &tuple_item.value_children))
@@ -252,7 +252,7 @@ impl<'a> GraphBuilder<'a> {
                 let body = TypeStructureBody::Tuple(item_types);
                 (size, align, body)
             },
-            SerialBody::Fields(fields) => {
+            AstBody::Fields(fields) => {
                 let item_types = fields.iter().map(|field| {
                     // why do we have to clone rust_type here? (see above)
                     self.resolve_type(field.rust_type.clone(), (field.value.as_ref(), &field.value_children))

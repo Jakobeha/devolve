@@ -5,23 +5,23 @@ pub use ctx::*;
 pub use types::*;
 
 use crate::graph::error::GraphFormErrors;
-use crate::graph::mutable::build::GraphBuilder;
-use crate::graph::mutable::serialize::GraphSerializer;
-use crate::graph::parse::types::SerialGraph;
+use crate::graph::ir::from_ast::GraphBuilder;
+use crate::graph::ir::serialize::GraphSerializer;
+use crate::graph::ast::types::AstGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
 use structural_reflection::TypeStructure;
 
 mod query_mutate;
 mod types;
 mod ctx;
-mod build;
+mod from_ast;
 mod serialize;
 
 // region serialization / deserialization
-impl<'a> TryFrom<(SerialGraph, &'a ComptimeCtx)> for MutableGraph {
+impl<'a> TryFrom<(AstGraph, &'a ComptimeCtx)> for IrGraph {
     type Error = GraphFormErrors;
 
-    fn try_from((graph, ctx): (SerialGraph, &'a ComptimeCtx)) -> Result<Self, Self::Error> {
+    fn try_from((graph, ctx): (AstGraph, &'a ComptimeCtx)) -> Result<Self, Self::Error> {
         let mut errors = GraphFormErrors::new();
         let graph = GraphBuilder::build(graph, ctx, &mut errors);
 
@@ -33,21 +33,21 @@ impl<'a> TryFrom<(SerialGraph, &'a ComptimeCtx)> for MutableGraph {
     }
 }
 
-impl<'a> Into<SerialGraph> for (MutableGraph, &'a ComptimeCtx) {
-    fn into(self) -> SerialGraph {
+impl<'a> Into<AstGraph> for (IrGraph, &'a ComptimeCtx) {
+    fn into(self) -> AstGraph {
         GraphSerializer::serialize(self.0, self.1, empty())
     }
 }
 
-impl<'a> Into<SerialGraph> for (MutableGraph, &'a ComptimeCtx, &'a [(String, TypeStructure)]) {
-    fn into(self) -> SerialGraph {
+impl<'a> Into<AstGraph> for (IrGraph, &'a ComptimeCtx, &'a [(String, TypeStructure)]) {
+    fn into(self) -> AstGraph {
         GraphSerializer::serialize(self.0, self.1, self.2.into_iter())
     }
 }
 // endregion
 
 // region index boilerplate
-impl TryIndex<NodeId> for MutableGraph {
+impl TryIndex<NodeId> for IrGraph {
     type Output = Node;
 
     fn try_index(&self, index: NodeId) -> Result<&Self::Output, NotFound<NodeId>> {
@@ -55,13 +55,13 @@ impl TryIndex<NodeId> for MutableGraph {
     }
 }
 
-impl TryIndexMut<NodeId> for MutableGraph {
+impl TryIndexMut<NodeId> for IrGraph {
     fn try_index_mut(&mut self, index: NodeId) -> Result<&mut Self::Output, NotFound<NodeId>> {
         self.nodes.get_mut(index.0).ok_or(NotFound { index })
     }
 }
 
-impl Index<NodeId> for MutableGraph {
+impl Index<NodeId> for IrGraph {
     type Output = Node;
 
     fn index(&self, index: NodeId) -> &Self::Output {
@@ -69,13 +69,13 @@ impl Index<NodeId> for MutableGraph {
     }
 }
 
-impl IndexMut<NodeId> for MutableGraph {
+impl IndexMut<NodeId> for IrGraph {
     fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
         self.nodes.index_mut(index.0)
     }
 }
 
-impl<'a> TryIndex<&'a NodeTypeName> for MutableGraph {
+impl<'a> TryIndex<&'a NodeTypeName> for IrGraph {
     type Output = NodeTypeData;
 
     fn try_index(&self, index: &'a NodeTypeName) -> Result<&Self::Output, NotFound<&'a NodeTypeName>> {
@@ -83,13 +83,13 @@ impl<'a> TryIndex<&'a NodeTypeName> for MutableGraph {
     }
 }
 
-impl<'a> TryIndexMut<&'a NodeTypeName> for MutableGraph {
+impl<'a> TryIndexMut<&'a NodeTypeName> for IrGraph {
     fn try_index_mut(&mut self, index: &'a NodeTypeName) -> Result<&mut Self::Output, NotFound<&'a NodeTypeName>> {
         self.types.try_index_mut(index)
     }
 }
 
-impl<'a> Index<&'a NodeTypeName> for MutableGraph {
+impl<'a> Index<&'a NodeTypeName> for IrGraph {
     type Output = NodeTypeData;
 
     fn index(&self, index: &'a NodeTypeName) -> &Self::Output {
@@ -97,7 +97,7 @@ impl<'a> Index<&'a NodeTypeName> for MutableGraph {
     }
 }
 
-impl<'a> IndexMut<&'a NodeTypeName> for MutableGraph {
+impl<'a> IndexMut<&'a NodeTypeName> for IrGraph {
     fn index_mut(&mut self, index: &'a NodeTypeName) -> &mut Self::Output {
         self.types.get_mut(index).expect("index_mut: key not found")
     }

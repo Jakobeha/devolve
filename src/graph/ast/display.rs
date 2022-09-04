@@ -3,13 +3,13 @@ use std::fmt::{Display, Formatter};
 use join_lazy_fmt::Join;
 use snailquote::escape;
 
-use crate::graph::parse::topological_sort::SortByDeps;
+use crate::graph::ast::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, DisplayWithCtx2, Indent};
-use crate::parse::types::{SerialBody, SerialField, SerialFieldElem, SerialFieldHeader, SerialFieldTypeDef, SerialGraph, SerialNode, SerialTupleItem, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
+use crate::ast::types::{AstBody, AstField, AstFieldElem, AstFieldHeader, AstFieldTypeDef, AstGraph, AstNode, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
 use structural_reflection::DuplicateNamesInScope;
 use crate::StaticStrs;
 
-impl Display for SerialGraph {
+impl Display for AstGraph {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let dnis = self.iter_rust_types()
             .flat_map(|rust_type| rust_type.iter_simple_names())
@@ -32,18 +32,18 @@ impl Display for SerialGraph {
     }
 }
 
-impl DisplayWithCtx2 for SerialTypeDef {
+impl DisplayWithCtx2 for AstTypeDef {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = String;
 
     fn fmt(&self, f: &mut Formatter<'_>, (dnis, type_name): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
-            SerialTypeDef::Struct(struct_type) => {
+            AstTypeDef::Struct(struct_type) => {
                 writeln!(f, "struct {} {{", type_name)?;
                 writeln!(f, "{}", struct_type.body.with_ctx((dnis, &Indent(1))))?;
                 writeln!(f, "}}")
             }
-            SerialTypeDef::Enum(enum_type) => {
+            AstTypeDef::Enum(enum_type) => {
                 writeln!(f, "pub enum {} {{", type_name)?;
                 for variant in &enum_type.variants {
                     writeln!(f, "  {}", variant.name)?;
@@ -55,19 +55,19 @@ impl DisplayWithCtx2 for SerialTypeDef {
     }
 }
 
-impl DisplayWithCtx2 for SerialTypeDefBody {
+impl DisplayWithCtx2 for AstTypeDefBody {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (dnis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
-            SerialTypeDefBody::None => {},
-            SerialTypeDefBody::Tuple(tuple_items) => {
+            AstTypeDefBody::None => {},
+            AstTypeDefBody::Tuple(tuple_items) => {
                 for tuple_item in tuple_items {
                     writeln!(f, "{}{}", indent, tuple_item.display(dnis))?;
                 }
             }
-            SerialTypeDefBody::Fields(fields) => {
+            AstTypeDefBody::Fields(fields) => {
                 for field in fields {
                     writeln!(f, "{}{}", indent, field.with_ctx(dnis))?;
                 }
@@ -77,7 +77,7 @@ impl DisplayWithCtx2 for SerialTypeDefBody {
     }
 }
 
-impl DisplayWithCtx for SerialFieldTypeDef {
+impl DisplayWithCtx for AstFieldTypeDef {
     type Ctx = DuplicateNamesInScope;
 
     fn fmt(&self, f: &mut Formatter<'_>, dnis: &Self::Ctx) -> std::fmt::Result {
@@ -92,7 +92,7 @@ impl DisplayWithCtx for SerialFieldTypeDef {
     }
 }
 
-impl DisplayWithCtx2 for SerialNode {
+impl DisplayWithCtx2 for AstNode {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = String;
 
@@ -116,28 +116,28 @@ impl DisplayWithCtx2 for SerialNode {
     }
 }
 
-impl DisplayWithCtx2 for SerialFieldElem {
+impl DisplayWithCtx2 for AstFieldElem {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (dnis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
-            SerialFieldElem::Header { header } => write!(f, "-- {}", header),
-            SerialFieldElem::Field { field } => write!(f, "{}", field.with_ctx((dnis, indent)))
+            AstFieldElem::Header { header } => write!(f, "-- {}", header),
+            AstFieldElem::Field { field } => write!(f, "{}", field.with_ctx((dnis, indent)))
         }
     }
 }
 
-impl Display for SerialFieldHeader {
+impl Display for AstFieldHeader {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SerialFieldHeader::Message(message) => write!(f, "{}", message),
-            SerialFieldHeader::Pos(pos) => write!(f, "@pos {},{}", pos.x, pos.y)
+            AstFieldHeader::Message(message) => write!(f, "{}", message),
+            AstFieldHeader::Pos(pos) => write!(f, "@pos {},{}", pos.x, pos.y)
         }
     }
 }
 
-impl DisplayWithCtx2 for SerialField {
+impl DisplayWithCtx2 for AstField {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
@@ -156,19 +156,19 @@ impl DisplayWithCtx2 for SerialField {
     }
 }
 
-impl DisplayWithCtx2 for SerialBody {
+impl DisplayWithCtx2 for AstBody {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (dnis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
-            SerialBody::None => {},
-            SerialBody::Tuple(tuple_items) => {
+            AstBody::None => {},
+            AstBody::Tuple(tuple_items) => {
                 for tuple_item in tuple_items {
                     write!(f, "\n{}{}", indent, tuple_item.with_ctx((dnis, &indent.next())))?;
                 }
             }
-            SerialBody::Fields(fields) => {
+            AstBody::Fields(fields) => {
                 for field in fields {
                     write!(f, "\n{}{}", indent, field.with_ctx((dnis, &indent.next())))?;
                 }
@@ -178,7 +178,7 @@ impl DisplayWithCtx2 for SerialBody {
     }
 }
 
-impl DisplayWithCtx2 for SerialTupleItem {
+impl DisplayWithCtx2 for AstTupleItem {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
@@ -197,30 +197,30 @@ impl DisplayWithCtx2 for SerialTupleItem {
     }
 }
 
-impl DisplayWithCtx for SerialValueHead {
+impl DisplayWithCtx for AstValueHead {
     type Ctx = DuplicateNamesInScope;
 
     //noinspection DuplicatedCode
     fn fmt(&self, f: &mut Formatter<'_>, dnis: &Self::Ctx) -> std::fmt::Result {
         match self {
-            SerialValueHead::Integer(value) => write!(f, "{}", value),
-            SerialValueHead::Float(value) => write!(f, "{}", value),
-            SerialValueHead::String(value) => write!(f, "{}", escape(value)),
-            SerialValueHead::Ref { node_name, field_name } => if field_name == StaticStrs::SELF_FIELD {
+            AstValueHead::Integer(value) => write!(f, "{}", value),
+            AstValueHead::Float(value) => write!(f, "{}", value),
+            AstValueHead::String(value) => write!(f, "{}", escape(value)),
+            AstValueHead::Ref { node_name, field_name } => if field_name == StaticStrs::SELF_FIELD {
                 write!(f, "{}", node_name)
             } else {
                 write!(f, "{}.{}", node_name, field_name)
             },
-            SerialValueHead::Tuple(items) => write!(f, "({})", ", ".join(items.iter().map(|x| x.with_ctx(dnis)))),
-            SerialValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems.iter().map(|x| x.with_ctx(dnis)))),
-            SerialValueHead::Struct { type_name: rust_type, inline_params } => {
+            AstValueHead::Tuple(items) => write!(f, "({})", ", ".join(items.iter().map(|x| x.with_ctx(dnis)))),
+            AstValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems.iter().map(|x| x.with_ctx(dnis)))),
+            AstValueHead::Struct { type_name: rust_type, inline_params } => {
                 write!(f, "{}", rust_type.display(dnis))?;
                 if let Some(inline_params) = inline_params.as_ref() {
                     write!(f, "({})", ", ".join(inline_params.iter().map(|x| x.with_ctx(dnis))))?;
                 }
                 Ok(())
             },
-            SerialValueHead::Enum { type_name: rust_type, variant_name, inline_params } => {
+            AstValueHead::Enum { type_name: rust_type, variant_name, inline_params } => {
                 write!(f, "{}::{}", rust_type.display(dnis), variant_name)?;
                 if let Some(inline_params) = inline_params.as_ref() {
                     write!(f, "({})", ", ".join(inline_params.iter().map(|x| x.with_ctx(dnis))))?;

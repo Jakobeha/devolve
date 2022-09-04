@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle};
-use crate::mutable::{MutableGraph, Node, NodeId, NodeInput, NodeInputDep};
+use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep};
 use structural_reflection::RustType;
 
-impl MutableGraph {
+impl IrGraph {
     pub fn insert_node(&mut self, node: Node) -> NodeId {
         NodeId(self.nodes.insert(node))
     }

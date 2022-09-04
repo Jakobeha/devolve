@@ -4,7 +4,7 @@ use std::mem::{MaybeUninit, transmute};
 use std::ptr::copy_nonoverlapping;
 use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
-use crate::graph::mutable::{MutableGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
+use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, NullRegion};
 use structural_reflection::{IsSubtypeOf, RustType};
 
@@ -15,7 +15,7 @@ use structural_reflection::{IsSubtypeOf, RustType};
 ///
 /// This graph is internally validated: as long as any given inputs and outputs are valid,
 /// a computation can be run unchecked.
-pub struct BuiltGraph {
+pub struct LowerGraph {
     input_types: Vec<NodeIOType>,
     output_types: Vec<NodeIOType>,
     compute_dag: Vec<Node>,
@@ -55,17 +55,17 @@ enum NodeInputDep {
     }
 }
 
-impl BuiltGraph {
-    pub unsafe fn try_from_but_assume_sorted_if_there_are_no_cycles(graph: MutableGraph) -> Result<Self, GraphValidationErrors> {
+impl LowerGraph {
+    pub unsafe fn try_from_but_assume_sorted_if_there_are_no_cycles(graph: IrGraph) -> Result<Self, GraphValidationErrors> {
         let errors = graph.validate();
         if errors.is_empty() {
-            Ok(BuiltGraph::new_unchecked(graph, true))
+            Ok(LowerGraph::new_unchecked(graph, true))
         } else {
             Err(errors)
         }
     }
 
-    pub unsafe fn new_unchecked(graph: MutableGraph, assume_deps_are_sorted: bool) -> Self {
+    pub unsafe fn new_unchecked(graph: IrGraph, assume_deps_are_sorted: bool) -> Self {
         debug_assert!(graph.validate().is_empty());
 
         let input_types = graph.input_types;
@@ -132,7 +132,7 @@ impl BuiltGraph {
         }).collect::<Vec<_>>();
         let (cached_output_data, outputs) = get_inputs(&output_types, graph.outputs, &node_indices);
 
-        BuiltGraph {
+        LowerGraph {
             input_types,
             output_types,
             compute_dag,
@@ -271,13 +271,13 @@ impl BuiltGraph {
     }
 }
 
-impl TryFrom<MutableGraph> for BuiltGraph {
+impl TryFrom<IrGraph> for LowerGraph {
     type Error = GraphValidationErrors;
 
-    fn try_from(value: MutableGraph) -> Result<Self, Self::Error> {
+    fn try_from(value: IrGraph) -> Result<Self, Self::Error> {
         let errors = value.validate();
         if errors.is_empty() {
-            Ok(unsafe { BuiltGraph::new_unchecked(value, false) })
+            Ok(unsafe { LowerGraph::new_unchecked(value, false) })
         } else {
             Err(errors)
         }

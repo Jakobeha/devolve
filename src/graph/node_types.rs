@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::error::Error;
 use log::error;
-use crate::graph::mutable::{NodeInput, NodeTypeData};
+use crate::graph::ir::{NodeInput, NodeTypeData};
 use crate::graph::raw::RawComputeFn;
-use crate::mutable::NodeIOType;
+use crate::ir::NodeIOType;
 use structural_reflection::RustType;
 use derive_more::{Display, Error};
 

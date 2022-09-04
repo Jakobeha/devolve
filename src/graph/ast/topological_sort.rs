@@ -3,17 +3,17 @@ use std::collections::{HashMap, HashSet};
 use std::iter::{empty, once};
 
 use crate::graph::StaticStrs;
-use crate::graph::parse::types::{SerialBody, SerialEnumTypeDef, SerialNode, SerialRustType, SerialStructTypeDef, SerialTypeDef, SerialTypeDefBody, SerialValueHead};
+use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstNode, AstRustType, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstValueHead};
 //noinspection RsUnusedImport (IntelliJ fails to detect use)
-use crate::graph::parse::types::SerialFieldElem;
+use crate::graph::ast::types::AstFieldElem;
 use crate::misc::extract::extract;
 
-pub struct SerialNodeDep<'a> {
+pub struct AstNodeDep<'a> {
     pub node_ident: &'a str,
     pub field_ident: &'a str
 }
 
-pub struct SerialTypeDep<'a> {
+pub struct AstTypeDep<'a> {
     pub qualifiers: &'a Vec<String>,
     pub simple_name: &'a str
 }
@@ -110,7 +110,7 @@ pub trait HasDeps {
     fn cmp_special_case(lhs_name: &str, rhs_name: &str) -> Ordering;
 }
 
-impl HasDeps for SerialNode {
+impl HasDeps for AstNode {
     fn deps_set(&self) -> HashSet<String> {
         node_dep_nodes(self).map(String::from).collect::<HashSet<_>>()
     }
@@ -129,7 +129,7 @@ impl HasDeps for SerialNode {
     }
 }
 
-impl HasDeps for SerialTypeDef {
+impl HasDeps for AstTypeDef {
     fn deps_set(&self) -> HashSet<String> {
         type_def_local_deps(self).map(String::from).collect::<HashSet<_>>()
     }
@@ -139,119 +139,119 @@ impl HasDeps for SerialTypeDef {
     }
 }
 
-pub fn type_def_local_deps(type_def: &SerialTypeDef) -> impl Iterator<Item=&str> {
+pub fn type_def_local_deps(type_def: &AstTypeDef) -> impl Iterator<Item=&str> {
     type_def_deps(type_def)
         .filter(|dep| dep.qualifiers.is_empty())
         .map(|dep| dep.simple_name)
 }
 
-pub fn type_def_deps(type_def: &SerialTypeDef) -> impl Iterator<Item=SerialTypeDep<'_>> {
+pub fn type_def_deps(type_def: &AstTypeDef) -> impl Iterator<Item=AstTypeDep<'_>> {
     match type_def {
-        SerialTypeDef::Struct(struct_type) => Box::new(struct_type_def_deps(struct_type)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>,
-        SerialTypeDef::Enum(enum_type) => Box::new(enum_type_def_deps(enum_type)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstTypeDef::Struct(struct_type) => Box::new(struct_type_def_deps(struct_type)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>,
+        AstTypeDef::Enum(enum_type) => Box::new(enum_type_def_deps(enum_type)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
     }
 }
 
-fn struct_type_def_deps(struct_type: &SerialStructTypeDef) -> impl Iterator<Item=SerialTypeDep<'_>> {
+fn struct_type_def_deps(struct_type: &AstStructTypeDef) -> impl Iterator<Item=AstTypeDep<'_>> {
     type_def_body_deps(&struct_type.body)
 }
 
-fn enum_type_def_deps(enum_type: &SerialEnumTypeDef) -> impl Iterator<Item=SerialTypeDep<'_>> {
+fn enum_type_def_deps(enum_type: &AstEnumTypeDef) -> impl Iterator<Item=AstTypeDep<'_>> {
     enum_type.variants.iter()
         .flat_map(|variant| type_def_body_deps(&variant.body))
 }
 
-fn type_def_body_deps(type_body: &SerialTypeDefBody) -> impl Iterator<Item=SerialTypeDep<'_>> {
+fn type_def_body_deps(type_body: &AstTypeDefBody) -> impl Iterator<Item=AstTypeDep<'_>> {
     match type_body {
-        SerialTypeDefBody::None => Box::new(empty()),
-        SerialTypeDefBody::Tuple(tuple_items) => {
-            Box::new(tuple_items.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstTypeDefBody::None => Box::new(empty()),
+        AstTypeDefBody::Tuple(tuple_items) => {
+            Box::new(tuple_items.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialTypeDefBody::Fields(fields) => {
-            Box::new(fields.iter().filter_map(|item| item.rust_type.as_ref()).flat_map(rust_type_deps)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstTypeDefBody::Fields(fields) => {
+            Box::new(fields.iter().filter_map(|item| item.rust_type.as_ref()).flat_map(rust_type_deps)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
     }
 }
 
-fn rust_type_deps(rust_type: &SerialRustType) -> impl Iterator<Item=SerialTypeDep<'_>> {
+fn rust_type_deps(rust_type: &AstRustType) -> impl Iterator<Item=AstTypeDep<'_>> {
     match rust_type {
-        SerialRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
+        AstRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
             // Generic args may add indirection, in which case we shouldn't count them.
             // Currently we assume all generic args are indirect, but in the future we may change this.
             // Either way generic args are only supported in registered builtin types.
-            let dep = SerialTypeDep { qualifiers, simple_name };
-            Box::new(once(dep)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+            let dep = AstTypeDep { qualifiers, simple_name };
+            Box::new(once(dep)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialRustType::ConstExpr { .. } => {
-            Box::new(empty()) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstRustType::ConstExpr { .. } => {
+            Box::new(empty()) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialRustType::Anonymous { .. } => {
-            Box::new(empty()) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstRustType::Anonymous { .. } => {
+            Box::new(empty()) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialRustType::Pointer { .. } => {
+        AstRustType::Pointer { .. } => {
             // Reference adds indirection, which we don't count as a dependency
-            Box::new(empty()) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+            Box::new(empty()) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialRustType::Tuple { elems } => {
-            Box::new(elems.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstRustType::Tuple { elems } => {
+            Box::new(elems.iter().flat_map(rust_type_deps)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialRustType::Array { elem, length: _ } => {
-            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstRustType::Array { elem, length: _ } => {
+            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
-        SerialRustType::Slice { elem } => {
-            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=SerialTypeDep<'_>>>
+        AstRustType::Slice { elem } => {
+            Box::new(rust_type_deps(elem)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
     }
 }
 
-pub fn node_deps(node: &SerialNode) -> impl Iterator<Item=SerialNodeDep<'_>> {
+pub fn node_deps(node: &AstNode) -> impl Iterator<Item=AstNodeDep<'_>> {
     node.input_fields.iter()
-        .filter_map(|field| extract!(field, SerialFieldElem::Field { field }))
+        .filter_map(|field| extract!(field, AstFieldElem::Field { field }))
         .flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))
 }
 
-fn node_dep_nodes(node: &SerialNode) -> impl Iterator<Item=&str> {
+fn node_dep_nodes(node: &AstNode) -> impl Iterator<Item=&str> {
     node_deps(node).map(|dep| dep.node_ident)
 }
 
-fn value_deps<'a>(value: Option<&'a SerialValueHead>, value_children: &'a SerialBody) -> impl Iterator<Item=SerialNodeDep<'a>> {
+fn value_deps<'a>(value: Option<&'a AstValueHead>, value_children: &'a AstBody) -> impl Iterator<Item=AstNodeDep<'a>> {
     value_head_deps(value).chain(value_children_deps(value_children))
 }
 
-fn value_head_deps(value_head: Option<&SerialValueHead>) -> impl Iterator<Item=SerialNodeDep> {
+fn value_head_deps(value_head: Option<&AstValueHead>) -> impl Iterator<Item=AstNodeDep> {
     match value_head {
-        None | Some(SerialValueHead::Integer(_)) | Some(SerialValueHead::Float(_)) | Some(SerialValueHead::String(_)) => {
-            Box::new(empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
+        None | Some(AstValueHead::Integer(_)) | Some(AstValueHead::Float(_)) | Some(AstValueHead::String(_)) => {
+            Box::new(empty()) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        Some(SerialValueHead::Ref { node_name: node_ident, field_name: field_ident }) => {
-            Box::new(once(SerialNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=SerialNodeDep>>
+        Some(AstValueHead::Ref { node_name: node_ident, field_name: field_ident }) => {
+            Box::new(once(AstNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        Some(SerialValueHead::Array(elems)) => {
-            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=SerialNodeDep>>
+        Some(AstValueHead::Array(elems)) => {
+            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        Some(SerialValueHead::Tuple(elems)) => {
-            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=SerialNodeDep>>
+        Some(AstValueHead::Tuple(elems)) => {
+            Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        Some(SerialValueHead::Struct { type_name: _, inline_params }) |
-        Some(SerialValueHead::Enum { type_name: _, variant_name: _, inline_params }) => match inline_params {
-            None => Box::new(empty()) as Box<dyn Iterator<Item=SerialNodeDep>>,
+        Some(AstValueHead::Struct { type_name: _, inline_params }) |
+        Some(AstValueHead::Enum { type_name: _, variant_name: _, inline_params }) => match inline_params {
+            None => Box::new(empty()) as Box<dyn Iterator<Item=AstNodeDep>>,
             Some(inline_params) => {
-                Box::new(inline_params.iter().flat_map(|inline_param| value_head_deps(Some(inline_param)))) as Box<dyn Iterator<Item=SerialNodeDep>>
+                Box::new(inline_params.iter().flat_map(|inline_param| value_head_deps(Some(inline_param)))) as Box<dyn Iterator<Item=AstNodeDep>>
             }
         }
     }
 }
 
-fn value_children_deps(value_children: &SerialBody) -> impl Iterator<Item=SerialNodeDep> {
+fn value_children_deps(value_children: &AstBody) -> impl Iterator<Item=AstNodeDep> {
     match value_children {
-        SerialBody::None => {
-            Box::new(empty()) as Box<dyn Iterator<Item=SerialNodeDep>>
+        AstBody::None => {
+            Box::new(empty()) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        SerialBody::Tuple(elems) => {
-            Box::new(elems.iter().flat_map(|elem| value_deps(elem.value.as_ref(), &elem.value_children))) as Box<dyn Iterator<Item=SerialNodeDep>>
+        AstBody::Tuple(elems) => {
+            Box::new(elems.iter().flat_map(|elem| value_deps(elem.value.as_ref(), &elem.value_children))) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        SerialBody::Fields(fields) => {
-            Box::new(fields.iter().flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))) as Box<dyn Iterator<Item=SerialNodeDep>>
+        AstBody::Fields(fields) => {
+            Box::new(fields.iter().flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))) as Box<dyn Iterator<Item=AstNodeDep>>
         }
     }
 }

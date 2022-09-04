@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::iter::zip;
 use std::mem::take;
 use crate::error::GraphFormError;
-use crate::mutable::build::GraphBuilder;
-use crate::mutable::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
+use crate::ir::from_ast::GraphBuilder;
+use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
-use crate::parse::types::{SerialField, SerialFieldElem, SerialFieldHeader, SerialNode, SerialNodePos};
+use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
 use crate::raw::RawComputeFn;
 
 impl<'a> GraphBuilder<'a> {
@@ -22,7 +22,7 @@ impl<'a> GraphBuilder<'a> {
         })
     }
 
-    pub(super) fn resolve_node(&mut self, node_name: &str, node: SerialNode) -> (NodeTypeData, Node) {
+    pub(super) fn resolve_node(&mut self, node_name: &str, node: AstNode) -> (NodeTypeData, Node) {
         let mut pos = None;
         let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
         let (output_types, outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
@@ -143,22 +143,22 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn resolve_field_elems(&mut self, fields: Vec<SerialFieldElem>, node_name: &str, pos: &mut Option<SerialNodePos>) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
+    fn resolve_field_elems(&mut self, fields: Vec<AstFieldElem>, node_name: &str, pos: &mut Option<AstNodePos>) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
         let mut types: Vec<NodeIOType> = Vec::new();
         let mut inputs: Vec<NodeInput> = Vec::new();
         let mut headers: Vec<FieldHeader> = Vec::new();
         for (index, field) in fields.into_iter().enumerate() {
             match field {
-                SerialFieldElem::Header { header } => {
+                AstFieldElem::Header { header } => {
                     // Extract information from header
                     match &header {
-                        SerialFieldHeader::Pos(new_pos) if pos.is_none() => *pos = Some(*new_pos),
+                        AstFieldHeader::Pos(new_pos) if pos.is_none() => *pos = Some(*new_pos),
                         _ => {}
                     }
                     // Add header even if we extract so we can losslessly reconstruct
                     headers.push(FieldHeader { index, header });
                 }
-                SerialFieldElem::Field { field } => {
+                AstFieldElem::Field { field } => {
                     let (input_type, input) = self.resolve_node_field(field, node_name);
                     types.push(input_type);
                     inputs.push(input);
@@ -168,7 +168,7 @@ impl<'a> GraphBuilder<'a> {
         (types, inputs, headers)
     }
 
-    fn resolve_node_field(&mut self, field: SerialField, node_name: &str) -> (NodeIOType, NodeInput) {
+    fn resolve_node_field(&mut self, field: AstField, node_name: &str) -> (NodeIOType, NodeInput) {
         let rust_type = self.resolve_type(
             field.rust_type,
             (field.value.as_ref(), &field.value_children),

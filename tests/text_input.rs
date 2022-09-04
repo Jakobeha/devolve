@@ -5,9 +5,9 @@ mod misc;
 mod batch_file;
 
 use std::error::Error;
-use dui_graph::mutable::{ComptimeCtx, MutableGraph, NodeInput, NodeIOType, NodeTypeData};
+use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
-use dui_graph::parse::types::SerialGraph;
+use dui_graph::ast::types::AstGraph;
 use dui_graph::raw::RawComputeFn;
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
@@ -22,17 +22,17 @@ pub struct ViewId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 #[repr(C)]
-pub struct CopyRange<Idx> {
+pub struct CRange<Idx> {
     pub start: Idx,
     pub end: Idx
 }
 
 #[test]
-fn test_parse_serial() {
+fn test_parse_ast() {
     ErrorNodes::log_errors_and_panic(|errors| {
         RunTestsOnFiles {
             dir_name: "duis",
-            try_parse: |input_string, path| SerialGraph::parse_from_input(&input_string, path).map_err(|err| Box::new(err) as Box<dyn Error + 'static>),
+            try_parse: |input_string, path| AstGraph::parse_from_input(&input_string, path).map_err(|err| Box::new(err) as Box<dyn Error + 'static>),
             tests: &[
                 RunTest {
                     test_name: "round-trip",
@@ -40,7 +40,7 @@ fn test_parse_serial() {
                     run: |errors, input, input_path, _associated_files| {
                         let input_string = input.to_string();
                         let input2 = try_or_return!(
-                            SerialGraph::parse_from_input(&input_string, input_path),
+                            AstGraph::parse_from_input(&input_string, input_path),
                             errors, "couldn't re-parse input:\n{}", input_string
                         );
                         let input2_string = input2.to_string();
@@ -117,7 +117,7 @@ fn test_parse_serial() {
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
-                                        rust_type: RustType::of::<CTuple2<CopyRange<usize>, &str>>(),
+                                        rust_type: RustType::of::<CTuple2<CRange<usize>, &str>>(),
                                         rust_type_may_be_null: true
                                     },
                                     NodeIOType {
@@ -170,7 +170,7 @@ fn test_parse_serial() {
                         }));
 
                         let input = input.clone();
-                        let graph = try_or_none!(MutableGraph::try_from((input, &ComptimeCtx {
+                        let graph = try_or_none!(IrGraph::try_from((input, &ComptimeCtx {
                             qualifiers: vec![],
                             node_types
                         })), errors, "graph to IR failed");
@@ -186,7 +186,7 @@ async fn text_input(
     mut c: PromptContext<'_>,
     placeholder: In<str>,
     text: InOut<String>,
-    text_modified: OutSend<(Range<usize>, String)>,
+    text_modified: OutSend<(CRange<usize>, String)>,
     ok_enabled: In<bool>
 ) -> String {
     let (enter_key_send, enter_key) = out_channel();

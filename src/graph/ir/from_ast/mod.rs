@@ -3,11 +3,11 @@ use std::collections::{HashMap, HashSet};
 use slab::Slab;
 
 use crate::graph::error::{GraphFormError, GraphFormErrors};
-use crate::graph::mutable::{MutableGraph, Node, NodeId, NodeTypeData, NodeTypeName};
-use crate::graph::parse::topological_sort::SortByDeps;
-use crate::graph::parse::types::{SerialBody, SerialGraph, SerialValueHead};
+use crate::graph::ir::{IrGraph, Node, NodeId, NodeTypeData, NodeTypeName};
+use crate::graph::ast::topological_sort::SortByDeps;
+use crate::graph::ast::types::{AstBody, AstGraph, AstValueHead};
 use crate::graph::StaticStrs;
-use crate::mutable::ComptimeCtx;
+use crate::ir::ComptimeCtx;
 use structural_reflection::{RustType, TypeStructureBodyForm};
 
 mod type_def;
@@ -24,16 +24,16 @@ pub(super) struct GraphBuilder<'a> {
     resolved_nodes: HashMap<String, (NodeId, Node)>,
 }
 
-enum SerialBodyOrInlineTuple {
-    SerialBody(SerialBody),
-    InlineTuple { items: Vec<SerialValueHead> }
+enum AstBodyOrInlineTuple {
+    AstBody(AstBody),
+    InlineTuple { items: Vec<AstValueHead> }
 }
 
-impl SerialBodyOrInlineTuple {
+impl AstBodyOrInlineTuple {
     pub fn form(&self) -> TypeStructureBodyForm {
         match self {
-            SerialBodyOrInlineTuple::SerialBody(body) => body.form(),
-            SerialBodyOrInlineTuple::InlineTuple { .. } => TypeStructureBodyForm::Tuple
+            AstBodyOrInlineTuple::AstBody(body) => body.form(),
+            AstBodyOrInlineTuple::InlineTuple { .. } => TypeStructureBodyForm::Tuple
         }
     }
 }
@@ -41,7 +41,7 @@ impl SerialBodyOrInlineTuple {
 impl<'a> GraphBuilder<'a> {
     /// Note: the built graph's nodes are guaranteed to be topologically sorted as long as there are no cycles.
     /// This is not the case for [MutableGraph] in general though.
-    pub(super) fn build(graph: SerialGraph, ctx: &'a ComptimeCtx, errors: &'a mut GraphFormErrors) -> MutableGraph {
+    pub(super) fn build(graph: AstGraph, ctx: &'a ComptimeCtx, errors: &'a mut GraphFormErrors) -> IrGraph {
         GraphBuilder {
             errors,
             ctx,
@@ -52,7 +52,7 @@ impl<'a> GraphBuilder<'a> {
         }._build(graph)
     }
 
-    fn _build(mut self, graph: SerialGraph) -> MutableGraph {
+    fn _build(mut self, graph: AstGraph) -> IrGraph {
         for graph_type in graph.rust_types.keys().cloned() {
             self.graph_types.insert(graph_type);
         }
@@ -136,7 +136,7 @@ impl<'a> GraphBuilder<'a> {
             debug_assert!(node_id.0 == node_id2, "sanity check failed");
         }
 
-        MutableGraph {
+        IrGraph {
             input_types,
             output_types,
             types: self.resolved_node_types,

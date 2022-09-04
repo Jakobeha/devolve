@@ -1,8 +1,10 @@
 Input
   placeholder: &str
   text: String
+  ok_enabled: bool = true
   -- events
   enter_key?: ()
+  ===
 
 `Ok Button`: Button
   text = "OK"
@@ -32,10 +34,9 @@ Root: Box
     `Text Input`
 
 Output
-  ===
   text: String
   -- events
-  text_modified?: (Range<usize>, String)
+  text_modified?: (CRange<usize>, String)
   enter_key?: ()
   click_ok?: ()
   click_cancel?: ()

@@ -7,7 +7,7 @@ use snailquote::UnescapeError;
 //noinspection RsUnusedImport (IntelliJ fails to detect)
 use join_lazy_fmt::Join;
 
-use crate::graph::mutable::NodeId;
+use crate::graph::ir::NodeId;
 use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
 
 #[derive(Debug, Display, Error, From, IntoIterator)]

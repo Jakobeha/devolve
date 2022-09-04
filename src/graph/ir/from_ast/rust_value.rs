@@ -2,31 +2,31 @@ use std::borrow::Cow;
 use std::iter::zip;
 use smallvec::SmallVec;
 use crate::error::{GraphFormError, NodeNameFieldName};
-use crate::mutable::build::{GraphBuilder, SerialBodyOrInlineTuple};
-use crate::mutable::{NodeId, NodeInput, NodeInputDep, NodeInputWithLayout};
-use crate::parse::types::{SerialBody, SerialField, SerialRustType, SerialValueHead};
+use crate::ir::from_ast::{GraphBuilder, AstBodyOrInlineTuple};
+use crate::ir::{NodeId, NodeInput, NodeInputDep, NodeInputWithLayout};
+use crate::ast::types::{AstBody, AstField, AstRustType, AstValueHead};
 use structural_reflection::{IsSubtypeOf, RustType, RustTypeName, TypeStructureBody, TypeStructure};
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn resolve_value(
         &mut self,
-        (value, value_children): (Option<SerialValueHead>, SerialBody),
+        (value, value_children): (Option<AstValueHead>, AstBody),
         rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> NodeInput {
         match value {
             None => self.resolve_value_via_children(value_children, rust_type, node_name, field_name),
-            Some(SerialValueHead::Struct { type_name, inline_params }) => {
-                let body = self.resolve_serial_constructor_body(inline_params, value_children, node_name, field_name);
+            Some(AstValueHead::Struct { type_name, inline_params }) => {
+                let body = self.resolve_ast_constructor_body(inline_params, value_children, node_name, field_name);
                 NodeInput::Tuple(self.resolve_struct_constructor(type_name, body, rust_type, node_name, field_name))
             }
-            Some(SerialValueHead::Enum { type_name, variant_name, inline_params }) => {
-                let body = self.resolve_serial_constructor_body(inline_params, value_children, node_name, field_name);
+            Some(AstValueHead::Enum { type_name, variant_name, inline_params }) => {
+                let body = self.resolve_ast_constructor_body(inline_params, value_children, node_name, field_name);
                 NodeInput::Tuple(self.resolve_enum_constructor(type_name, variant_name, body, rust_type, node_name, field_name))
             }
             Some(value) => {
-                if !matches!(value_children, SerialBody::None) {
+                if !matches!(value_children, AstBody::None) {
                     self.errors.push(GraphFormError::InlineValueHasChildren {
                         source: NodeNameFieldName {
                             node_name: node_name.to_string(),
@@ -41,39 +41,39 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_value_via_head(
         &mut self,
-        value: SerialValueHead,
+        value: AstValueHead,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
     ) -> NodeInput {
         match value {
-            SerialValueHead::Integer(int) => NodeInput::Const(Box::new(int.to_ne_bytes())),
-            SerialValueHead::Float(float) => NodeInput::Const(Box::new(float.to_ne_bytes())),
-            SerialValueHead::String(string) => NodeInput::Const(string.into_boxed_str().into_boxed_bytes()),
-            SerialValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name } => {
+            AstValueHead::Integer(int) => NodeInput::Const(Box::new(int.to_ne_bytes())),
+            AstValueHead::Float(float) => NodeInput::Const(Box::new(float.to_ne_bytes())),
+            AstValueHead::String(string) => NodeInput::Const(string.into_boxed_str().into_boxed_bytes()),
+            AstValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name } => {
                 self.resolve_ref(refd_node_name, refd_field_name, node_name, field_name)
             }
-            SerialValueHead::Array(elems) => {
+            AstValueHead::Array(elems) => {
                 self.resolve_array_via_head(elems, rust_type, node_name, field_name)
             }
-            SerialValueHead::Tuple(elems) => {
+            AstValueHead::Tuple(elems) => {
                 self.resolve_tuple_via_head(elems, rust_type, node_name, field_name)
             },
-            SerialValueHead::Struct { .. } | SerialValueHead::Enum { .. } => unreachable!("struct and enum may have children")
+            AstValueHead::Struct { .. } | AstValueHead::Enum { .. } => unreachable!("struct and enum may have children")
         }
     }
 
-    fn resolve_serial_constructor_body(
+    fn resolve_ast_constructor_body(
         &mut self,
-        inline_params: Option<Vec<SerialValueHead>>,
-        value_children: SerialBody,
+        inline_params: Option<Vec<AstValueHead>>,
+        value_children: AstBody,
         node_name: &str,
         field_name: &str
-    ) -> SerialBodyOrInlineTuple {
+    ) -> AstBodyOrInlineTuple {
         match inline_params {
-            None => SerialBodyOrInlineTuple::SerialBody(value_children),
+            None => AstBodyOrInlineTuple::AstBody(value_children),
             Some(inline_params) => {
-                if !matches!(value_children, SerialBody::None) {
+                if !matches!(value_children, AstBody::None) {
                     self.errors.push(GraphFormError::InlineValueHasChildren {
                         source: NodeNameFieldName {
                             node_name: node_name.to_string(),
@@ -81,7 +81,7 @@ impl<'a> GraphBuilder<'a> {
                         }
                     });
                 }
-                SerialBodyOrInlineTuple::InlineTuple { items: inline_params }
+                AstBodyOrInlineTuple::InlineTuple { items: inline_params }
             }
         }
     }
@@ -89,7 +89,7 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_struct_constructor(
         &mut self,
         type_name: RustTypeName,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
@@ -138,7 +138,7 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         type_name: RustTypeName,
         variant_name: String,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
@@ -185,7 +185,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn fallback_resolve_constructor_infer_type(
         &mut self,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
@@ -204,18 +204,18 @@ impl<'a> GraphBuilder<'a> {
 
     fn _fallback_resolve_constructor_infer_type(
         &mut self,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInput> {
         match body {
-            SerialBodyOrInlineTuple::InlineTuple { items } => {
+            AstBodyOrInlineTuple::InlineTuple { items } => {
                 items.into_iter().map(|item| {
                     self.resolve_value_via_head(item, Cow::Owned(RustType::unknown()), node_name, field_name)
                 }).collect()
             },
-            SerialBodyOrInlineTuple::SerialBody(SerialBody::None) => Vec::new(),
-            SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items)) => {
+            AstBodyOrInlineTuple::AstBody(AstBody::None) => Vec::new(),
+            AstBodyOrInlineTuple::AstBody(AstBody::Tuple(tuple_items)) => {
                 tuple_items.into_iter().map(|tuple_item| {
                     // ??? if creating the rust type here is correct. Maybe this is why we clone in the other place...
                     let rust_type = self.resolve_type3(tuple_item.rust_type);
@@ -227,7 +227,7 @@ impl<'a> GraphBuilder<'a> {
                     )
                 }).collect()
             }
-            SerialBodyOrInlineTuple::SerialBody(SerialBody::Fields(fields)) => {
+            AstBodyOrInlineTuple::AstBody(AstBody::Fields(fields)) => {
                 fields.into_iter().map(|field| {
                     // ??? if creating the rust type here is correct. Maybe this is why we clone in the other place...
                     let rust_type = self.resolve_type3(field.rust_type);
@@ -245,7 +245,7 @@ impl<'a> GraphBuilder<'a> {
     fn resolve_struct_constructor_with_type(
         &mut self,
         rust_type: RustType,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
@@ -272,7 +272,7 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         rust_type: RustType,
         variant_name: String,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
@@ -321,13 +321,13 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         type_name: RustTypeName,
         type_body: TypeStructureBody,
-        body: SerialBodyOrInlineTuple,
+        body: AstBodyOrInlineTuple,
         node_name: &str,
         field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         match (type_body, body) {
-            (TypeStructureBody::None, SerialBodyOrInlineTuple::SerialBody(SerialBody::None)) => Vec::new(),
-            (TypeStructureBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Tuple(tuple_items))) => {
+            (TypeStructureBody::None, AstBodyOrInlineTuple::AstBody(AstBody::None)) => Vec::new(),
+            (TypeStructureBody::Tuple(tuple_item_types), AstBodyOrInlineTuple::AstBody(AstBody::Tuple(tuple_items))) => {
                 if tuple_item_types.len() != tuple_items.len() {
                     self.errors.push(GraphFormError::TupleLengthMismatch {
                         actual_length: tuple_items.len(),
@@ -348,7 +348,7 @@ impl<'a> GraphBuilder<'a> {
                     )
                 }).collect()
             }
-            (TypeStructureBody::Tuple(tuple_item_types), SerialBodyOrInlineTuple::InlineTuple { items }) => {
+            (TypeStructureBody::Tuple(tuple_item_types), AstBodyOrInlineTuple::InlineTuple { items }) => {
                 if tuple_item_types.len() != items.len() {
                     self.errors.push(GraphFormError::TupleLengthMismatch {
                         actual_length: items.len(),
@@ -362,14 +362,14 @@ impl<'a> GraphBuilder<'a> {
                 }
                 zip(tuple_item_types.into_iter(), items.into_iter()).map(|(tuple_item_type, item)| {
                     self.resolve_value_child(
-                        (Some(item), SerialBody::None),
+                        (Some(item), AstBody::None),
                         (Some(tuple_item_type), None),
                         node_name,
                         field_name
                     )
                 }).collect()
             }
-            (TypeStructureBody::Fields(field_types), SerialBodyOrInlineTuple::SerialBody(SerialBody::Fields(mut fields))) => {
+            (TypeStructureBody::Fields(field_types), AstBodyOrInlineTuple::AstBody(AstBody::Fields(mut fields))) => {
                 for field in &fields {
                     if !field_types.iter().any(|field_type| &field_type.name == &field.name) {
                         self.errors.push(GraphFormError::RustFieldNotFound {
@@ -385,7 +385,7 @@ impl<'a> GraphBuilder<'a> {
                 field_types.into_iter().map(|field_type| {
                     let fields = fields
                         .drain_filter(|field| &field.name == &field_type.name)
-                        .collect::<SmallVec<[SerialField; 1]>>();
+                        .collect::<SmallVec<[AstField; 1]>>();
                     if fields.len() > 1 {
                         self.errors.push(GraphFormError::RustFieldMultipleOccurrences {
                             field_name: field_type.name.to_string(),
@@ -480,7 +480,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_array_via_head(
         &mut self,
-        elements: Vec<SerialValueHead>,
+        elements: Vec<AstValueHead>,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
@@ -518,7 +518,7 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_tuple_via_head(
         &mut self,
-        tuple_elems: Vec<SerialValueHead>,
+        tuple_elems: Vec<AstValueHead>,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
         field_name: &str
@@ -546,7 +546,7 @@ impl<'a> GraphBuilder<'a> {
         NodeInput::Tuple(tuple_elems.into_iter().enumerate().map(|(index, elem)| {
             let elem_type = elem_types.map(|elem_types| elem_types[index].clone());
             self.resolve_value_child(
-                (Some(elem), SerialBody::None),
+                (Some(elem), AstBody::None),
                 (elem_type, None),
                 node_name,
                 field_name
@@ -554,10 +554,10 @@ impl<'a> GraphBuilder<'a> {
         }).collect())
     }
 
-    fn resolve_value_via_children(&mut self, value: SerialBody, rust_type: Cow<'_, RustType>, node_name: &str, field_name: &str) -> NodeInput {
+    fn resolve_value_via_children(&mut self, value: AstBody, rust_type: Cow<'_, RustType>, node_name: &str, field_name: &str) -> NodeInput {
         match value {
-            SerialBody::None => NodeInput::Hole,
-            SerialBody::Tuple(tuple_items) => {
+            AstBody::None => NodeInput::Hole,
+            AstBody::Tuple(tuple_items) => {
                 let tuple_item_types = rust_type.structure
                     .tuple_struct_item_types()
                     .or(rust_type.structure.tuple_elem_types());
@@ -590,7 +590,7 @@ impl<'a> GraphBuilder<'a> {
                     )
                 }).collect())
             }
-            SerialBody::Fields(fields) => {
+            AstBody::Fields(fields) => {
                 let field_types = rust_type.structure.field_struct_field_types();
                 if field_types.is_none() {
                     self.errors.push(GraphFormError::NotAFieldStruct {
@@ -631,8 +631,8 @@ impl<'a> GraphBuilder<'a> {
 
     fn resolve_value_child(
         &mut self,
-        (elem, elem_children): (Option<SerialValueHead>, SerialBody),
-        (inferred_elem_type, explicit_elem_type): (Option<RustType>, Option<SerialRustType>),
+        (elem, elem_children): (Option<AstValueHead>, AstBody),
+        (inferred_elem_type, explicit_elem_type): (Option<RustType>, Option<AstRustType>),
         node_name: &str,
         field_name: &str
     ) -> NodeInputWithLayout {

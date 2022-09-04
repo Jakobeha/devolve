@@ -4,7 +4,7 @@ use derive_more::Display;
 use slab::Slab;
 use structural_reflection::RustType;
 use crate::graph::raw::RawComputeFn;
-use crate::parse::types::{SerialFieldHeader, SerialNodePos};
+use crate::ast::types::{AstFieldHeader, AstNodePos};
 
 /// Compound view graph.
 ///
@@ -12,7 +12,7 @@ use crate::parse::types::{SerialFieldHeader, SerialNodePos};
 /// It is loaded from a .dui file.
 ///
 /// This graph is well-formed but not validated.
-pub struct MutableGraph {
+pub struct IrGraph {
     pub(in crate::graph) input_types: Vec<NodeIOType>,
     pub(in crate::graph) output_types: Vec<NodeIOType>,
     pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
@@ -72,7 +72,7 @@ pub struct Node {
 /// Display info which is not used in actual computations
 pub struct NodeMetadata {
     pub node_name: String,
-    pub pos: Option<SerialNodePos>,
+    pub pos: Option<AstNodePos>,
     pub input_headers: Vec<FieldHeader>,
     pub output_headers: Vec<FieldHeader>,
 }
@@ -81,7 +81,7 @@ pub struct FieldHeader {
     /// Note that the index counts indices of previous headers,
     /// so unlike usual you *don't* want to add these in reverse.
     pub index: usize,
-    pub header: SerialFieldHeader
+    pub header: AstFieldHeader
 }
 
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
