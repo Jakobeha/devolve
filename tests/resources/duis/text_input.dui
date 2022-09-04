@@ -2,29 +2,20 @@ Input
   ===
   placeholder: &str
   text: String
-  -- TODO: default values in inputs?
-  ok_enabled: bool
+  ok_enabled: bool = true
   -- events
   enter_key?: ()
 
 `Ok Button`: Button
   text = "OK"
   is_enabled = Input.ok_enabled
-  ===
-  click = Output.click_ok
 
 `Cancel Button`: Button
   text = "Cancel"
-  ===
-  click = Output.click_cancel
 
 `Text Input`: TextField
   text = Input.text
   placeholder = Input.placeholder
-  ===
-  text = Output.text
-  text_modified = Output.text_modified
-  enter_key = Output.enter_key
 
 Root: Box
   width = 400
@@ -35,9 +26,9 @@ Root: Box
     `Text Input`
 
 Output
-  text: String
+  text: String = `Text Input`.text
   -- events
-  text_modified?: (CRange<usize>, String)
-  enter_key?: ()
-  click_ok?: ()
-  click_cancel?: ()
+  text_modified?: (CRange<usize>, &str) = `Text Input`.text_modified
+  enter_key?: () = `Text Input`.enter_key
+  click_ok?: () = `Ok Button`.click
+  click_cancel?: () = `Cancel Button`.click

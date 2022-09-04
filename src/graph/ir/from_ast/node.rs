@@ -3,11 +3,10 @@ use std::iter::zip;
 use std::mem::take;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::{ForwardNode, GraphBuilder};
-use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeInputDep, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
+use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
 use crate::raw::RawComputeFn;
-use crate::StaticStrs;
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
@@ -36,53 +35,24 @@ impl<'a> GraphBuilder<'a> {
         };
 
         ForwardNode {
-            input_field_names,
-            forward_inputs: Vec::new()
+            input_field_names
         }
     }
 
     pub(super) fn resolve_node(&mut self, node_name: &str, node_id: NodeId, node: AstNode) -> (NodeTypeData, Node) {
-        let (node_id_, forward_node) = self.forward_resolved_nodes.remove(node_name).expect("node not forward resolved");
+        let (node_id_, _) = self.forward_resolved_nodes.remove(node_name).expect("node not forward resolved");
         debug_assert!(node_id == node_id_, "sanity check failed");
-        let forward_inputs = forward_node.forward_inputs;
 
         // Get input / output fields and metadata
         let mut pos = None;
-        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos, false);
-        let (output_types, outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos, true);
+        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
+        let (output_types, mut outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
 
         // Get and resolve inherited type (includes computing type fn)
         let inherited_type = node.node_type.as_ref()
             .and_then(|node_type| self.resolve_node_type(node_type, node_name, &input_types, &output_types));
 
-        // Forward node outputs...
-        for (output_idx, output) in outputs.iter().enumerate() {
-            let output_name = &output_types[output_idx].name;
-            self.resolve_node_output(output_idx, output_name, output, node_name, node_id);
-        }
-
-        // ...handle node outputs which were forwarded, filling in inputs
-        for ((forwarded_input, input), input_type) in zip(zip(forward_inputs, &mut inputs), &input_types) {
-            if let Some((referencing_node_id, referencing_output_idx)) = forwarded_input {
-                let input_name = &input_type.name;
-
-                if !matches!(input, NodeInput::Hole) {
-                    let referencing_node_name = &self.node_name_for_id(referencing_node_id);
-                    self.errors.push(GraphFormError::NodeInputConflictsWithForwardRef {
-                        referencing_node_name: referencing_node_name.to_string(),
-                        target_node_name: node_name.to_string(),
-                        input_name: input_name.to_string()
-                    });
-                } else {
-                    *input = NodeInput::Dep(NodeInputDep::OtherNodeOutput {
-                        id: referencing_node_id,
-                        idx: referencing_output_idx
-                    });
-                }
-            }
-        }
-
-        // Get node type name and data, fill in more inputs with default values
+        // Get node type name and data, fill in more inputs / outputs with default values
         // and reorder inputs and outputs if we have an inherited type with different order
         let (node_type_name, type_data, compute) = match inherited_type {
             None => {
@@ -94,26 +64,9 @@ impl<'a> GraphBuilder<'a> {
                 (NodeTypeName::from(node_name.to_string()), self_type_data, RawComputeFn::panicking())
             },
             Some(inherited_type) => {
-                // Reorder inputs and fill with holes, to match inherited type (there are no outputs)
-                let mut old_inputs = Vec::new();
-                old_inputs.append(&mut inputs);
-                for input_io_type in inherited_type.type_data.inputs.iter() {
-                    let input_field_name = &input_io_type.name;
-                    let input_idx = input_types.iter().position(|input_type| &input_type.name == input_field_name);
-
-                    inputs.push(match input_idx {
-                        None => NodeInput::Hole,
-                        Some(input_idx) => take(&mut old_inputs[input_idx])
-                    });
-                }
-
-                // Add default inputs which were not overridden
-                for (input, default_input) in zip(inputs.iter_mut(), inherited_type.default_inputs.iter()) {
-                    if matches!(input, NodeInput::Hole) {
-                        // Add this default input since it's not overridden
-                        *input = default_input.clone();
-                    }
-                }
+                // Reorder inputs and outputs to match inherited type, then add defaults which were not overridden
+                self.apply_inherited_to_fields(&inherited_type.type_data.inputs, &inherited_type.default_inputs, &input_types, &mut inputs);
+                self.apply_inherited_to_fields(&inherited_type.type_data.outputs, &inherited_type.default_default_outputs, &output_types, &mut outputs);
 
                 // Use inherited type
                 let inherited_type_name = NodeTypeName::from(node.node_type.unwrap());
@@ -133,6 +86,7 @@ impl<'a> GraphBuilder<'a> {
         let node = Node {
             type_name: node_type_name,
             inputs,
+            default_outputs: outputs,
             compute,
             meta
         };
@@ -200,8 +154,7 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         fields: Vec<AstFieldElem>,
         node_name: &str,
-        pos: &mut Option<AstNodePos>,
-        is_output: bool
+        pos: &mut Option<AstNodePos>
     ) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
         let mut types: Vec<NodeIOType> = Vec::new();
         let mut inputs: Vec<NodeInput> = Vec::new();
@@ -218,7 +171,7 @@ impl<'a> GraphBuilder<'a> {
                     headers.push(FieldHeader { index, header });
                 }
                 AstFieldElem::Field { field } => {
-                    let (input_type, input) = self.resolve_node_field(field, node_name, is_output);
+                    let (input_type, input) = self.resolve_node_field(field, node_name);
                     types.push(input_type);
                     inputs.push(input);
                 }
@@ -227,7 +180,7 @@ impl<'a> GraphBuilder<'a> {
         (types, inputs, headers)
     }
 
-    fn resolve_node_field(&mut self, field: AstField, node_name: &str, is_output_field: bool) -> (NodeIOType, NodeInput) {
+    fn resolve_node_field(&mut self, field: AstField, node_name: &str) -> (NodeIOType, NodeInput) {
         let rust_type = self.resolve_type(
             field.rust_type,
             (field.value.as_ref(), &field.value_children),
@@ -236,8 +189,7 @@ impl<'a> GraphBuilder<'a> {
             (field.value, field.value_children),
             Cow::Borrowed(&rust_type),
             node_name,
-            &field.name,
-            is_output_field
+            &field.name
         );
         let io_type = NodeIOType {
             name: field.name,
@@ -247,76 +199,25 @@ impl<'a> GraphBuilder<'a> {
         (io_type, value)
     }
 
-    fn resolve_node_output(&mut self, output_idx: usize, output_name: &str, output: &NodeInput, node_name: &str, node_id: NodeId) {
-        match output {
-            NodeInput::Hole => {},
-            NodeInput::Const(_) => {
-                self.errors.push(GraphFormError::OutputHasConstant {
-                    node_name: node_name.to_string(),
-                    output_name: output_name.to_string(),
-                });
-            }
-            NodeInput::Dep(output_dep) => self.resolve_node_output_dep(output_idx, output_name, output_dep, node_name, node_id),
-            NodeInput::Array(_outputs) => {
-                self.errors.push(GraphFormError::TodoPartRefFromOutput {
-                    node_name: node_name.to_string(),
-                    output_name: output_name.to_string(),
-                });
-                // for output in outputs.iter() {
-                //     self.resolve_node_output(output_idx, output_name, output, node_name, node_id);
-                // }
-            }
-            NodeInput::Tuple(_outputs) => {
-                self.errors.push(GraphFormError::TodoPartRefFromOutput {
-                    node_name: node_name.to_string(),
-                    output_name: output_name.to_string(),
-                });
-                // for output in outputs.iter() {
-                //     self.resolve_node_output(output_idx, output_name, &output.input, node_name, node_id);
-                // }
+    fn apply_inherited_to_fields(&mut self, inherited_field_types: &[NodeIOType], inherited_field_defaults: &[NodeInput], field_types: &[NodeIOType], fields: &mut Vec<NodeInput>) {
+        let mut old_fields = Vec::new();
+        old_fields.append(fields);
+        for field_io_type in inherited_field_types {
+            let field_field_name = &field_io_type.name;
+            let field_idx = field_types.iter().position(|field_type| &field_type.name == field_field_name);
+
+            fields.push(match field_idx {
+                None => NodeInput::Hole,
+                Some(field_idx) => take(&mut old_fields[field_idx])
+            });
+        }
+
+        // Add default fields which were not overridden
+        for (field, default_field) in zip(fields, inherited_field_defaults) {
+            if matches!(field, NodeInput::Hole) {
+                // Add this default field since it's not overridden
+                *field = default_field.clone();
             }
         }
-    }
-
-    fn resolve_node_output_dep(&mut self, output_idx: usize, output_name: &str, output_dep: &NodeInputDep, node_name: &str, node_id: NodeId) {
-        match output_dep {
-            NodeInputDep::GraphInput { .. } => {
-                self.errors.push(GraphFormError::BackwardsOutputRef {
-                    referred_to_node_name: StaticStrs::INPUT_NODE.to_string(),
-                    node_name: node_name.to_string(),
-                    output_name: output_name.to_string()
-                });
-            }
-            NodeInputDep::OtherNodeOutput { id: forward_node_id, idx: input_idx } => {
-                let forward_node_name = Self::_node_name_for_id(&self.node_names, *forward_node_id);
-                // We know it comes before if id is less
-                if forward_node_id.0 < node_id.0 {
-                    self.errors.push(GraphFormError::BackwardsOutputRef {
-                        referred_to_node_name: forward_node_name.to_string(),
-                        node_name: node_name.to_string(),
-                        output_name: output_name.to_string()
-                    });
-                } else {
-                    let (forward_node_id_, forward_node) = self.forward_resolved_nodes.get_mut(forward_node_name)
-                        // Add a message because this is guaranteed but not *too* trivial
-                        .expect("node id order is ok but forwarded node was removed");
-                    debug_assert!(*forward_node_id == *forward_node_id_, "sanity check failed");
-                    if forward_node.forward_inputs.len() < input_idx + 1 {
-                        forward_node.forward_inputs.resize(input_idx + 1, None);
-                    }
-                    forward_node.forward_inputs[*input_idx] = Some((node_id, output_idx));
-                }
-            }
-        }
-    }
-
-    fn node_name_for_id(&self, id: NodeId) -> &str {
-        Self::_node_name_for_id(&self.node_names, id)
-    }
-
-    // For partial borrows
-    fn _node_name_for_id(self_node_names: &[String], id: NodeId) -> &str {
-        let idx = id.0.wrapping_add(1);
-        &self_node_names[idx]
     }
 }

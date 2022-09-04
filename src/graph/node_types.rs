@@ -18,6 +18,7 @@ pub struct NodeType {
     pub compute: RawComputeFn,
     pub type_data: NodeTypeData,
     pub default_inputs: Vec<NodeInput>,
+    pub default_default_outputs: Vec<NodeInput>,
 }
 
 pub struct NodeTypeFnCtx<'a> {

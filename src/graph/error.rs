@@ -85,22 +85,11 @@ pub enum GraphFormError {
     InputHasInputs,
     #[display(fmt = "'Output' node has outputs")]
     OutputHasOutputs,
-    #[display(fmt = "outputs can only be holes, references, or structures of references: in node {}, output {}", node_name, output_name)]
-    OutputHasConstant {
-        node_name: String,
-        output_name: String
-    },
-    #[display(fmt = "output refers to earlier node: {}: in node {}, output {}", referred_to_node_name, node_name, output_name)]
-    BackwardsOutputRef {
-        referred_to_node_name: String,
-        node_name: String,
-        output_name: String
-    },
     // TODO part refs
-    #[display(fmt = "output value is invalid because input refs which are parts are not yet implemented: in node {}, output {}", node_name, output_name)]
-    TodoPartRefFromOutput {
+    #[display(fmt = "input refs which are parts are not yet implemented: in node {}, output {}", node_name, field_name)]
+    TodoPartRef {
         node_name: String,
-        output_name: String
+        field_name: String
     },
     #[display(fmt = "node type not found: {} (in {})", type_name, node_name)]
     NodeTypeNotFound {
@@ -125,21 +114,10 @@ pub enum GraphFormError {
         node_name: String,
         referenced_from: NodeNameFieldName
     },
-    #[display(fmt = "can't refer to output field of node {} from node {}, it's a forward reference", node_name, referenced_from)]
-    ForwardNodeRefInInput {
+    #[display(fmt = "can't refer to {} from node {} because it forms a cycle", node_name, referenced_from)]
+    CyclicReference {
         node_name: String,
         referenced_from: NodeNameFieldName
-    },
-    #[display(fmt = "can't refer to input field of node {} from node {}, it's a forward reference and the former node has a type so we don't yet know its fields", node_name, referenced_from)]
-    ForwardNodeRefOfTypedNode {
-        node_name: String,
-        referenced_from: NodeNameFieldName
-    },
-    #[display(fmt = "node has input value and another node references it in its output: referencing node: {}, target node {}, field name {}", referencing_node_name, target_node_name, input_name)]
-    NodeInputConflictsWithForwardRef {
-        referencing_node_name: String,
-        target_node_name: String,
-        input_name: String
     },
     #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
     NodeIsDataType {

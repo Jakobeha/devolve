@@ -86,6 +86,10 @@ fn test_parse_ast() {
                                 NodeInput::Hole,
                                 NodeInput::const_(false)
                             ],
+                            default_default_outputs: vec![
+                                NodeInput::Hole,
+                                NodeInput::Hole,
+                            ]
                         });
                         node_types.insert(String::from("TextField"), NodeType {
                             compute: RawComputeFn::new(|ctx, inputs, outputs| {
@@ -131,6 +135,12 @@ fn test_parse_ast() {
                                 NodeInput::Hole,
                                 NodeInput::const_("")
                             ],
+                            default_default_outputs: vec![
+                                NodeInput::Hole,
+                                NodeInput::Hole,
+                                NodeInput::Hole,
+                                NodeInput::Hole,
+                            ]
                         });
                         node_types.insert_fn0(String::from("Box"), |ctx| Ok(NodeType {
                             compute: RawComputeFn::new(|ctx, inputs, outputs| {
@@ -167,6 +177,9 @@ fn test_parse_ast() {
                                 NodeInput::Hole,
                                 NodeInput::Hole,
                             ],
+                            default_default_outputs: vec![
+                                NodeInput::Hole
+                            ]
                         }));
 
                         let input = input.clone();

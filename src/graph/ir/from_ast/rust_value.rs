@@ -13,18 +13,17 @@ impl<'a> GraphBuilder<'a> {
         (value, value_children): (Option<AstValueHead>, AstBody),
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInput {
         match value {
-            None => self.resolve_value_via_children(value_children, rust_type, node_name, field_name, is_output_field),
+            None => self.resolve_value_via_children(value_children, rust_type, node_name, field_name),
             Some(AstValueHead::Struct { type_name, inline_params }) => {
                 let body = self.resolve_ast_constructor_body(inline_params, value_children, node_name, field_name);
-                NodeInput::Tuple(self.resolve_struct_constructor(type_name, body, rust_type, node_name, field_name, is_output_field))
+                NodeInput::Tuple(self.resolve_struct_constructor(type_name, body, rust_type, node_name, field_name))
             }
             Some(AstValueHead::Enum { type_name, variant_name, inline_params }) => {
                 let body = self.resolve_ast_constructor_body(inline_params, value_children, node_name, field_name);
-                NodeInput::Tuple(self.resolve_enum_constructor(type_name, variant_name, body, rust_type, node_name, field_name, is_output_field))
+                NodeInput::Tuple(self.resolve_enum_constructor(type_name, variant_name, body, rust_type, node_name, field_name))
             }
             Some(value) => {
                 if !matches!(value_children, AstBody::None) {
@@ -35,7 +34,7 @@ impl<'a> GraphBuilder<'a> {
                         }
                     });
                 }
-                self.resolve_value_via_head(value, rust_type, node_name, field_name, is_output_field)
+                self.resolve_value_via_head(value, rust_type, node_name, field_name)
             }
         }
     }
@@ -45,8 +44,7 @@ impl<'a> GraphBuilder<'a> {
         value: AstValueHead,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInput {
         match value {
             AstValueHead::Literal(literal) => NodeInput::Const(match literal {
@@ -56,13 +54,13 @@ impl<'a> GraphBuilder<'a> {
                 AstLiteral::String(string) => string.into_boxed_str().into_boxed_bytes()
             }),
             AstValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name } => {
-                self.resolve_ref(refd_node_name, refd_field_name, node_name, field_name, is_output_field)
+                self.resolve_ref(refd_node_name, refd_field_name, node_name, field_name)
             }
             AstValueHead::Array(elems) => {
-                self.resolve_array_via_head(elems, rust_type, node_name, field_name, is_output_field)
+                self.resolve_array_via_head(elems, rust_type, node_name, field_name)
             }
             AstValueHead::Tuple(elems) => {
-                self.resolve_tuple_via_head(elems, rust_type, node_name, field_name, is_output_field)
+                self.resolve_tuple_via_head(elems, rust_type, node_name, field_name)
             },
             AstValueHead::Struct { .. } | AstValueHead::Enum { .. } => unreachable!("struct and enum may have children")
         }
@@ -97,8 +95,7 @@ impl<'a> GraphBuilder<'a> {
         body: AstBodyOrInlineTuple,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         let resolved_type = match &type_name {
             RustTypeName::Ident { qualifiers, simple_name, generic_args }
@@ -116,9 +113,9 @@ impl<'a> GraphBuilder<'a> {
                 });
                 // Best guess
                 if matches!(rust_type.structure, TypeStructure::CReprStruct { body: _ }) {
-                    self.resolve_struct_constructor_with_type(rust_type.into_owned(), body, node_name, field_name, is_output_field)
+                    self.resolve_struct_constructor_with_type(rust_type.into_owned(), body, node_name, field_name)
                 } else {
-                    self.fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+                    self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
                 }
             }
             Some(explicit_rust_type) => {
@@ -135,7 +132,7 @@ impl<'a> GraphBuilder<'a> {
                 }
                 let mut final_rust_type = explicit_rust_type.clone();
                 final_rust_type.structure.unify(rust_type.into_owned().structure);
-                self.resolve_struct_constructor_with_type(final_rust_type, body, node_name, field_name, is_output_field)
+                self.resolve_struct_constructor_with_type(final_rust_type, body, node_name, field_name)
             }
         }
     }
@@ -147,8 +144,7 @@ impl<'a> GraphBuilder<'a> {
         body: AstBodyOrInlineTuple,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         let resolved_type = match &type_name {
             RustTypeName::Ident { qualifiers, simple_name, generic_args }
@@ -166,9 +162,9 @@ impl<'a> GraphBuilder<'a> {
                 });
                 // Best guess
                 if matches!(rust_type.structure, TypeStructure::CReprEnum { variants: _ }) {
-                    self.resolve_enum_constructor_with_type(rust_type.into_owned(), variant_name, body, node_name, field_name, is_output_field)
+                    self.resolve_enum_constructor_with_type(rust_type.into_owned(), variant_name, body, node_name, field_name)
                 } else {
-                    self.fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+                    self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
                 }
             }
             Some(explicit_rust_type) => {
@@ -185,7 +181,7 @@ impl<'a> GraphBuilder<'a> {
                 }
                 let mut final_rust_type = explicit_rust_type.clone();
                 final_rust_type.structure.unify(rust_type.into_owned().structure);
-                self.resolve_enum_constructor_with_type(final_rust_type, variant_name, body, node_name, field_name, is_output_field)
+                self.resolve_enum_constructor_with_type(final_rust_type, variant_name, body, node_name, field_name)
             }
         }
     }
@@ -194,10 +190,9 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         body: AstBodyOrInlineTuple,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInputWithLayout> {
-        self._fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+        self._fallback_resolve_constructor_infer_type(body, node_name, field_name)
             .into_iter()
             .map(|input| {
                 // Yeah we won't infer size and align because we can't compile anyways
@@ -214,13 +209,12 @@ impl<'a> GraphBuilder<'a> {
         &mut self,
         body: AstBodyOrInlineTuple,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInput> {
         match body {
             AstBodyOrInlineTuple::InlineTuple { items } => {
                 items.into_iter().map(|item| {
-                    self.resolve_value_via_head(item, Cow::Owned(RustType::unknown()), node_name, field_name, is_output_field)
+                    self.resolve_value_via_head(item, Cow::Owned(RustType::unknown()), node_name, field_name)
                 }).collect()
             },
             AstBodyOrInlineTuple::AstBody(AstBody::None) => Vec::new(),
@@ -232,8 +226,7 @@ impl<'a> GraphBuilder<'a> {
                         (tuple_item.value, tuple_item.value_children),
                         Cow::Owned(rust_type),
                         node_name,
-                        field_name,
-                        is_output_field
+                        field_name
                     )
                 }).collect()
             }
@@ -245,8 +238,7 @@ impl<'a> GraphBuilder<'a> {
                         (field.value, field.value_children),
                         Cow::Owned(rust_type),
                         node_name,
-                        field_name,
-                        is_output_field
+                        field_name
                     )
                 }).collect()
             }
@@ -258,13 +250,12 @@ impl<'a> GraphBuilder<'a> {
         rust_type: RustType,
         body: AstBodyOrInlineTuple,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         let type_name = rust_type.type_name;
         match rust_type.structure {
             TypeStructure::CReprStruct { body: type_body } => {
-                self.resolve_constructor_with_type(type_name, type_body, body, node_name, field_name, is_output_field)
+                self.resolve_constructor_with_type(type_name, type_body, body, node_name, field_name)
             },
             _ => {
                 self.errors.push(GraphFormError::RustTypeNotStructFromConstructor {
@@ -275,7 +266,7 @@ impl<'a> GraphBuilder<'a> {
                         field_name: field_name.to_string()
                     }
                 });
-                self.fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+                self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
             }
         }
     }
@@ -286,8 +277,7 @@ impl<'a> GraphBuilder<'a> {
         variant_name: String,
         body: AstBodyOrInlineTuple,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         let type_name = rust_type.type_name;
         match rust_type.structure {
@@ -302,7 +292,7 @@ impl<'a> GraphBuilder<'a> {
                                 field_name: field_name.to_string()
                             }
                         });
-                        self.fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+                        self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
                     }
                     Some(variant) => {
                         self.resolve_constructor_with_type(
@@ -310,8 +300,7 @@ impl<'a> GraphBuilder<'a> {
                             variant.body,
                             body,
                             node_name,
-                            field_name,
-                            is_output_field
+                            field_name
                         )
                     }
                 }
@@ -326,7 +315,7 @@ impl<'a> GraphBuilder<'a> {
                         field_name: field_name.to_string()
                     }
                 });
-                self.fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+                self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
             }
         }
     }
@@ -337,8 +326,7 @@ impl<'a> GraphBuilder<'a> {
         type_body: TypeStructureBody,
         body: AstBodyOrInlineTuple,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> Vec<NodeInputWithLayout> {
         match (type_body, body) {
             (TypeStructureBody::None, AstBodyOrInlineTuple::AstBody(AstBody::None)) => Vec::new(),
@@ -359,8 +347,7 @@ impl<'a> GraphBuilder<'a> {
                         (tuple_item.value, tuple_item.value_children),
                         (Some(tuple_item_type), tuple_item.rust_type),
                         node_name,
-                        field_name,
-                        is_output_field
+                        field_name
                     )
                 }).collect()
             }
@@ -381,8 +368,7 @@ impl<'a> GraphBuilder<'a> {
                         (Some(item), AstBody::None),
                         (Some(tuple_item_type), None),
                         node_name,
-                        field_name,
-                        is_output_field
+                        field_name
                     )
                 }).collect()
             }
@@ -426,8 +412,7 @@ impl<'a> GraphBuilder<'a> {
                                 (field.value, field.value_children),
                                 (Some(field_type), field.rust_type),
                                 node_name,
-                                field_name,
-                                is_output_field
+                                field_name
                             )
                         }
                     }
@@ -443,7 +428,7 @@ impl<'a> GraphBuilder<'a> {
                         field_name: field_name.to_string()
                     }
                 });
-                self.fallback_resolve_constructor_infer_type(body, node_name, field_name, is_output_field)
+                self.fallback_resolve_constructor_infer_type(body, node_name, field_name)
             }
         }
     }
@@ -453,51 +438,34 @@ impl<'a> GraphBuilder<'a> {
         refd_node_name: String,
         refd_field_name: String,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInput {
         let (node_id, field_idx) = match self.resolved_node_and_type(&refd_node_name) {
             None => match self.forward_resolved_node(&refd_node_name) {
                 Some((node_id, forward_node)) => {
-                    // Remember: output field refers to input, and vice versa
-                    let field_idx = if is_output_field {
-                        match &forward_node.input_field_names {
-                            None => {
-                                self.errors.push(GraphFormError::ForwardNodeRefOfTypedNode {
-                                    node_name: refd_node_name.to_string(),
-                                    referenced_from: NodeNameFieldName {
-                                        node_name: node_name.to_string(),
-                                        field_name: field_name.to_string()
-                                    }
-                                });
-                                // Fill with some dummy value so we don't get NodeFieldNotFound error
-                                Some(usize::MAX)
-                            },
-                            Some(input_field_names) => input_field_names.iter().position(|name| name == &refd_field_name)
-                        }
-                    } else {
-                        self.errors.push(GraphFormError::ForwardNodeRefInInput {
-                            node_name: refd_node_name.to_string(),
-                            referenced_from: NodeNameFieldName {
-                                node_name: node_name.to_string(),
-                                field_name: field_name.to_string()
-                            }
-                        });
-                        // Fill with some dummy value so we don't get NodeFieldNotFound error
-                        Some(usize::MAX)
+                    // Still try to resolve field name, so we can also report field-not-found
+                    let field_idx = match &forward_node.input_field_names {
+                        None => {
+                            // Fill with some dummy value so we don't get NodeFieldNotFound error
+                            Some(usize::MAX)
+                        },
+                        Some(input_field_names) => input_field_names.iter().position(|name| name == &refd_field_name)
                     };
+
+                    self.errors.push(GraphFormError::CyclicReference {
+                        node_name: refd_node_name.to_string(),
+                        referenced_from: NodeNameFieldName {
+                            node_name: node_name.to_string(),
+                            field_name: field_name.to_string()
+                        }
+                    });
+
                     (Some(node_id), field_idx)
                 },
                 None => (None, None)
             },
             Some((node_id, node_type, _)) => {
-                // Remember: output field refers to input, and vice versa
-                let field_types = if is_output_field {
-                    &node_type.inputs
-                } else {
-                    &node_type.outputs
-                };
-                (Some(node_id), field_types.iter().position(|field_type| &field_type.name == &refd_field_name))
+                (Some(node_id), node_type.outputs.iter().position(|field_type| &field_type.name == &refd_field_name))
             }
         };
 
@@ -538,8 +506,7 @@ impl<'a> GraphBuilder<'a> {
         elements: Vec<AstValueHead>,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInput {
         let elem_type = match rust_type.structure.array_elem_type_and_length() {
             None => {
@@ -568,7 +535,7 @@ impl<'a> GraphBuilder<'a> {
             }
         };
         NodeInput::Array(elements.into_iter().map(|element| {
-            self.resolve_value_via_head(element, elem_type.clone(), node_name, field_name, is_output_field)
+            self.resolve_value_via_head(element, elem_type.clone(), node_name, field_name)
         }).collect())
     }
 
@@ -577,8 +544,7 @@ impl<'a> GraphBuilder<'a> {
         tuple_elems: Vec<AstValueHead>,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInput {
         let elem_types = rust_type.structure.tuple_elem_types();
         if elem_types.is_none() {
@@ -606,8 +572,7 @@ impl<'a> GraphBuilder<'a> {
                 (Some(elem), AstBody::None),
                 (elem_type, None),
                 node_name,
-                field_name,
-                is_output_field
+                field_name
             )
         }).collect())
     }
@@ -617,8 +582,7 @@ impl<'a> GraphBuilder<'a> {
         value: AstBody,
         rust_type: Cow<'_, RustType>,
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInput {
         match value {
             AstBody::None => NodeInput::Hole,
@@ -651,8 +615,7 @@ impl<'a> GraphBuilder<'a> {
                         (tuple_item.value, tuple_item.value_children),
                         (tuple_item_type, tuple_item.rust_type),
                         node_name,
-                        field_name,
-                        is_output_field
+                        field_name
                     )
                 }).collect())
             }
@@ -688,8 +651,7 @@ impl<'a> GraphBuilder<'a> {
                         (field.value, field.value_children),
                         (field_type, field.rust_type),
                         node_name,
-                        field_name,
-                        is_output_field
+                        field_name
                     )
                 }).collect())
             }
@@ -701,8 +663,7 @@ impl<'a> GraphBuilder<'a> {
         (elem, elem_children): (Option<AstValueHead>, AstBody),
         (inferred_elem_type, explicit_elem_type): (Option<RustType>, Option<AstRustType>),
         node_name: &str,
-        field_name: &str,
-        is_output_field: bool
+        field_name: &str
     ) -> NodeInputWithLayout {
         let explicit_elem_type = explicit_elem_type.map(|explicit_elem_type| {
             self.resolve_type2(explicit_elem_type)
@@ -735,7 +696,7 @@ impl<'a> GraphBuilder<'a> {
         };
         let size = elem_type.size;
         let align = elem_type.align;
-        let input = self.resolve_value((elem, elem_children), Cow::Owned(elem_type), node_name, field_name, is_output_field);
+        let input = self.resolve_value((elem, elem_children), Cow::Owned(elem_type), node_name, field_name);
         NodeInputWithLayout { input, size, align }
     }
 

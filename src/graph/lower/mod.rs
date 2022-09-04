@@ -26,12 +26,14 @@ pub struct LowerGraph {
 struct Node {
     compute: RawComputeFn,
     inputs: Vec<NodeInput>,
+    default_outputs: Vec<NodeInput>,
     cached_input_data: RawData,
     cached_output_data: RawData
 }
 
 enum NodeInput {
     Dep(NodeInputDep),
+    Hole,
     Const,
     Array(Vec<NodeInput>),
     // Different-sized elems means we need to know the layout
@@ -87,26 +89,29 @@ impl LowerGraph {
                 }
             }
         }
-        unsafe fn get_input(input: GraphNodeInput, cached_input_data: &mut Box<[MaybeUninit<u8>]>, node_indices: &HashMap<NodeId, usize>) -> NodeInput {
+        unsafe fn get_input(input: GraphNodeInput, cached_input_data: &mut Box<[MaybeUninit<u8>]>, node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> NodeInput {
             match input {
-                GraphNodeInput::Hole => panic!("Hole input not valid"),
+                GraphNodeInput::Hole => {
+                    assert!(hole_is_valid, "Hole input not valid");
+                    NodeInput::Hole
+                },
                 GraphNodeInput::Dep(dep) => NodeInput::Dep(get_input_dep(dep, node_indices)),
                 GraphNodeInput::Const(const_) => {
                     *cached_input_data = transmute::<Box<[u8]>, Box<[MaybeUninit<u8>]>>(const_);
                     NodeInput::Const
                 },
-                GraphNodeInput::Array(inputs) => NodeInput::Array(inputs.into_iter().map(|input| get_input(input, cached_input_data, node_indices)).collect()),
-                GraphNodeInput::Tuple(inputs_with_layouts) => NodeInput::Tuple(inputs_with_layouts.into_iter().map(|GraphNodeInputWithLayout { input, size, align }| NodeInputWithLayout { input: get_input(input, cached_input_data, node_indices), size, align }).collect())
+                GraphNodeInput::Array(inputs) => NodeInput::Array(inputs.into_iter().map(|input| get_input(input, cached_input_data, node_indices, hole_is_valid)).collect()),
+                GraphNodeInput::Tuple(inputs_with_layouts) => NodeInput::Tuple(inputs_with_layouts.into_iter().map(|GraphNodeInputWithLayout { input, size, align }| NodeInputWithLayout { input: get_input(input, cached_input_data, node_indices, hole_is_valid), size, align }).collect())
             }
         }
-        unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>) -> (RawData, Vec<NodeInput>) {
+        unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> (RawData, Vec<NodeInput>) {
             let mut cached_input_data = RawData {
                 types: input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
                 used_regions: inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
-                .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices))
+                .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices, hole_is_valid))
                 .collect::<Vec<_>>();
             (cached_input_data, inputs)
         }
@@ -114,23 +119,21 @@ impl LowerGraph {
             let node_type = &graph.types[&node.type_name];
 
             debug_assert_eq!(node_type.inputs.len(), node.inputs.len());
+            debug_assert_eq!(node_type.outputs.len(), node.default_outputs.len());
 
             let compute = node.compute;
-            let cached_output_data = RawData {
-                types: node_type.outputs.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
-                data: node_type.outputs.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
-                used_regions: node.inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
-            };
-            let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices);
+            let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices, false);
+            let (cached_output_data, default_outputs) = get_inputs(&node_type.outputs, node.default_outputs, &node_indices, true);
 
             Node {
                 compute,
                 inputs,
+                default_outputs,
                 cached_input_data,
                 cached_output_data
             }
         }).collect::<Vec<_>>();
-        let (cached_output_data, outputs) = get_inputs(&output_types, graph.outputs, &node_indices);
+        let (cached_output_data, outputs) = get_inputs(&output_types, graph.outputs, &node_indices, false);
 
         LowerGraph {
             input_types,
@@ -213,7 +216,7 @@ impl LowerGraph {
         unsafe fn handle_inputs(inputs: &[NodeInput], input_data: &mut [Box<[MaybeUninit<u8>]>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_sub_dag: &[Node]) {
             unsafe fn handle_input(input: &NodeInput, input_data: &mut [MaybeUninit<u8>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_sub_dag: &[Node]) {
                 match input {
-                    NodeInput::Const => {},
+                    NodeInput::Hole | NodeInput::Const => {},
                     NodeInput::Dep(dep) => {
                         let other_output = match dep {
                             NodeInputDep::OtherNodeOutput { node_idx, field_idx } => {
@@ -255,6 +258,8 @@ impl LowerGraph {
             let (node, compute_sub_dag) = self.compute_dag[..=index].split_last_mut().unwrap();
             // Copy input data to nodes (const data is already there), then compute to output data
             handle_inputs(&node.inputs, &mut node.cached_input_data.data, inputs.data(), &compute_sub_dag);
+            // Also copy default output data, which may be overridden by compute
+            handle_inputs(&node.default_outputs, &mut node.cached_output_data.data, inputs.data(), &compute_sub_dag);
             node.compute.run(ctx, RawInputs::from(&node.cached_input_data), RawOutputs::from(&mut node.cached_output_data))
         }
 

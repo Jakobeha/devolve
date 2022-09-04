@@ -65,6 +65,7 @@ pub enum NodeInputDep {
 pub struct Node {
     pub type_name: NodeTypeName,
     pub inputs: Vec<NodeInput>,
+    pub default_outputs: Vec<NodeInput>,
     pub compute: RawComputeFn,
     pub meta: NodeMetadata
 }

@@ -17,11 +17,6 @@ mod rust_value;
 
 pub(super) struct ForwardNode {
     pub(super) input_field_names: Option<Vec<String>>,
-    // Only has values up to the last Some.
-    // Could also use an int hashmap, or set all values to None,
-    // but in most cases this will be either completely empty or completely Some
-    // so this approach is probably most efficient and simple
-    pub(super) forward_inputs: Vec<Option<(NodeId, usize)>>
 }
 
 pub(super) struct GraphBuilder<'a> {
