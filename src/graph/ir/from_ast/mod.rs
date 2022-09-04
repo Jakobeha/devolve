@@ -16,14 +16,20 @@ mod rust_type;
 mod rust_value;
 
 pub(super) struct ForwardNode {
-    pub(super) input_field_names: Option<Vec<String>>
+    pub(super) input_field_names: Option<Vec<String>>,
+    // Only has values up to the last Some.
+    // Could also use an int hashmap, or set all values to None,
+    // but in most cases this will be either completely empty or completely Some
+    // so this approach is probably most efficient and simple
+    pub(super) forward_inputs: Vec<Option<(NodeId, usize)>>
 }
 
 pub(super) struct GraphBuilder<'a> {
     ctx: &'a ComptimeCtx,
     errors: &'a mut GraphFormErrors,
-    forward_resolved_rust_types: HashSet<String>,
+    forward_resolved_type_defs: HashSet<String>,
     forward_resolved_nodes: HashMap<String, (NodeId, ForwardNode)>,
+    node_names: Vec<String>,
     resolved_rust_types: HashMap<String, RustType>,
     resolved_node_types: HashMap<NodeTypeName, NodeTypeData>,
     resolved_nodes: HashMap<String, (NodeId, Node)>,
@@ -45,13 +51,14 @@ impl AstBodyOrInlineTuple {
 
 impl<'a> GraphBuilder<'a> {
     /// Note: the built graph's nodes are guaranteed to be topologically sorted as long as there are no cycles.
-    /// This is not the case for [MutableGraph] in general though.
+    /// This is not the case for [IrGraph] in general though.
     pub(super) fn build(graph: AstGraph, ctx: &'a ComptimeCtx, errors: &'a mut GraphFormErrors) -> IrGraph {
         GraphBuilder {
             errors,
             ctx,
-            forward_resolved_rust_types: HashSet::new(),
+            forward_resolved_type_defs: HashSet::new(),
             forward_resolved_nodes: HashMap::new(),
+            node_names: Vec::new(),
             resolved_rust_types: HashMap::new(),
             resolved_node_types: HashMap::new(),
             resolved_nodes: HashMap::new(),
@@ -66,25 +73,26 @@ impl<'a> GraphBuilder<'a> {
         sorted_nodes.sort_by_deps();
 
         // Get declared types and nodes so we can handle forward references
-        for (name, _) in &sorted_types {
-            self.forward_resolved_rust_types.insert(name.clone());
+        for (type_def_name, _) in &sorted_types {
+            self.forward_resolved_type_defs.insert(type_def_name.clone());
         }
-        for (idx, (name, node)) in sorted_nodes.iter().enumerate() {
+        for (idx, (node_name, node)) in sorted_nodes.iter().enumerate() {
             let node_id = NodeId(idx.wrapping_sub(1));
             let forward_node = self.forward_resolve_node(node);
-            self.forward_resolved_nodes.insert(name.clone(), (node_id, forward_node));
+            self.forward_resolved_nodes.insert(node_name.clone(), (node_id, forward_node));
+            self.node_names.push(node_name.clone());
         }
 
         // Resolve individual types and nodes, using backward and forward references via the above
-        for (name, type_def) in sorted_types {
-            let type_def = self.resolve_type_def(&name, type_def);
-            self.resolved_rust_types.insert(name, type_def);
+        for (type_def_name, type_def) in sorted_types {
+            let type_def = self.resolve_type_def(&type_def_name, type_def);
+            self.resolved_rust_types.insert(type_def_name, type_def);
         }
-        for (idx, (name, node)) in sorted_nodes.into_iter().enumerate() {
+        for (idx, (node_name, node)) in sorted_nodes.into_iter().enumerate() {
             let node_id = NodeId(idx.wrapping_sub(1));
-            let (node_type, node) = self.resolve_node(&name, node);
+            let (node_type, node) = self.resolve_node(&node_name, node_id, node);
             self.resolved_node_types.insert(node.type_name.clone(), node_type);
-            self.resolved_nodes.insert(name, (node_id, node));
+            self.resolved_nodes.insert(node_name, (node_id, node));
         }
 
 
@@ -140,7 +148,7 @@ impl<'a> GraphBuilder<'a> {
             }
         };
 
-        // build graph
+        // Put together and return
         let mut nodes = Slab::with_capacity(self.resolved_nodes.len());
         // Could remove this allocation but it would require exposing the internals of slab
         let mut sorted_resolved_nodes = self.resolved_nodes.into_values().collect::<Vec<_>>();

@@ -85,8 +85,20 @@ pub enum GraphFormError {
     InputHasInputs,
     #[display(fmt = "'Output' node has outputs")]
     OutputHasOutputs,
-    #[display(fmt = "outputs can't have values: in node {}, output {}", node_name, output_name)]
-    OutputHasValue {
+    #[display(fmt = "outputs can only be holes, references, or structures of references: in node {}, output {}", node_name, output_name)]
+    OutputHasConstant {
+        node_name: String,
+        output_name: String
+    },
+    #[display(fmt = "output refers to earlier node: {}: in node {}, output {}", referred_to_node_name, node_name, output_name)]
+    BackwardsOutputRef {
+        referred_to_node_name: String,
+        node_name: String,
+        output_name: String
+    },
+    // TODO part refs
+    #[display(fmt = "output value is invalid because input refs which are parts are not yet implemented: in node {}, output {}", node_name, output_name)]
+    TodoPartRefFromOutput {
         node_name: String,
         output_name: String
     },
@@ -122,6 +134,12 @@ pub enum GraphFormError {
     ForwardNodeRefOfTypedNode {
         node_name: String,
         referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "node has input value and another node references it in its output: referencing node: {}, target node {}, field name {}", referencing_node_name, target_node_name, input_name)]
+    NodeInputConflictsWithForwardRef {
+        referencing_node_name: String,
+        target_node_name: String,
+        input_name: String
     },
     #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
     NodeIsDataType {

@@ -3,10 +3,11 @@ use std::iter::zip;
 use std::mem::take;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::{ForwardNode, GraphBuilder};
-use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
+use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeInputDep, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
 use crate::raw::RawComputeFn;
+use crate::StaticStrs;
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
@@ -35,30 +36,57 @@ impl<'a> GraphBuilder<'a> {
         };
 
         ForwardNode {
-            input_field_names
+            input_field_names,
+            forward_inputs: Vec::new()
         }
     }
 
-    pub(super) fn resolve_node(&mut self, node_name: &str, node: AstNode) -> (NodeTypeData, Node) {
+    pub(super) fn resolve_node(&mut self, node_name: &str, node_id: NodeId, node: AstNode) -> (NodeTypeData, Node) {
+        let (node_id_, forward_node) = self.forward_resolved_nodes.remove(node_name).expect("node not forward resolved");
+        debug_assert!(node_id == node_id_, "sanity check failed");
+        let forward_inputs = forward_node.forward_inputs;
+
+        // Get input / output fields and metadata
         let mut pos = None;
         let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos, false);
         let (output_types, outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos, true);
 
+        // Get and resolve inherited type (includes computing type fn)
         let inherited_type = node.node_type.as_ref()
             .and_then(|node_type| self.resolve_node_type(node_type, node_name, &input_types, &output_types));
 
-        let output_idxs_with_values = outputs.iter().enumerate().filter(|(_, output_value)| !matches!(output_value, NodeInput::Hole)).map(|(idx, _)| idx).collect::<Vec<_>>();
-        for output_idx in output_idxs_with_values {
-            let output_name = output_types[output_idx].name.clone();
-            self.errors.push(GraphFormError::OutputHasValue {
-                node_name: node_name.to_string(),
-                output_name
-            });
+        // Forward node outputs...
+        for (output_idx, output) in outputs.iter().enumerate() {
+            let output_name = &output_types[output_idx].name;
+            self.resolve_node_output(output_idx, output_name, output, node_name, node_id);
         }
 
+        // ...handle node outputs which were forwarded, filling in inputs
+        for ((forwarded_input, input), input_type) in zip(zip(forward_inputs, &mut inputs), &input_types) {
+            if let Some((referencing_node_id, referencing_output_idx)) = forwarded_input {
+                let input_name = &input_type.name;
+
+                if !matches!(input, NodeInput::Hole) {
+                    let referencing_node_name = &self.node_name_for_id(referencing_node_id);
+                    self.errors.push(GraphFormError::NodeInputConflictsWithForwardRef {
+                        referencing_node_name: referencing_node_name.to_string(),
+                        target_node_name: node_name.to_string(),
+                        input_name: input_name.to_string()
+                    });
+                } else {
+                    *input = NodeInput::Dep(NodeInputDep::OtherNodeOutput {
+                        id: referencing_node_id,
+                        idx: referencing_output_idx
+                    });
+                }
+            }
+        }
+
+        // Get node type name and data, fill in more inputs with default values
+        // and reorder inputs and outputs if we have an inherited type with different order
         let (node_type_name, type_data, compute) = match inherited_type {
             None => {
-                // Use structural self-type
+                // Use structural self-type, no reordering or defaults necessary
                 let self_type_data = NodeTypeData {
                     inputs: input_types,
                     outputs: output_types
@@ -66,7 +94,7 @@ impl<'a> GraphBuilder<'a> {
                 (NodeTypeName::from(node_name.to_string()), self_type_data, RawComputeFn::panicking())
             },
             Some(inherited_type) => {
-                // Rearrange inputs and fill with holes, to match inherited type (there are no outputs)
+                // Reorder inputs and fill with holes, to match inherited type (there are no outputs)
                 let mut old_inputs = Vec::new();
                 old_inputs.append(&mut inputs);
                 for input_io_type in inherited_type.type_data.inputs.iter() {
@@ -94,6 +122,7 @@ impl<'a> GraphBuilder<'a> {
             }
         };
 
+        // Put together and return
         let meta = NodeMetadata {
             node_name: node_name.to_string(),
             pos,
@@ -218,4 +247,76 @@ impl<'a> GraphBuilder<'a> {
         (io_type, value)
     }
 
+    fn resolve_node_output(&mut self, output_idx: usize, output_name: &str, output: &NodeInput, node_name: &str, node_id: NodeId) {
+        match output {
+            NodeInput::Hole => {},
+            NodeInput::Const(_) => {
+                self.errors.push(GraphFormError::OutputHasConstant {
+                    node_name: node_name.to_string(),
+                    output_name: output_name.to_string(),
+                });
+            }
+            NodeInput::Dep(output_dep) => self.resolve_node_output_dep(output_idx, output_name, output_dep, node_name, node_id),
+            NodeInput::Array(_outputs) => {
+                self.errors.push(GraphFormError::TodoPartRefFromOutput {
+                    node_name: node_name.to_string(),
+                    output_name: output_name.to_string(),
+                });
+                // for output in outputs.iter() {
+                //     self.resolve_node_output(output_idx, output_name, output, node_name, node_id);
+                // }
+            }
+            NodeInput::Tuple(_outputs) => {
+                self.errors.push(GraphFormError::TodoPartRefFromOutput {
+                    node_name: node_name.to_string(),
+                    output_name: output_name.to_string(),
+                });
+                // for output in outputs.iter() {
+                //     self.resolve_node_output(output_idx, output_name, &output.input, node_name, node_id);
+                // }
+            }
+        }
+    }
+
+    fn resolve_node_output_dep(&mut self, output_idx: usize, output_name: &str, output_dep: &NodeInputDep, node_name: &str, node_id: NodeId) {
+        match output_dep {
+            NodeInputDep::GraphInput { .. } => {
+                self.errors.push(GraphFormError::BackwardsOutputRef {
+                    referred_to_node_name: StaticStrs::INPUT_NODE.to_string(),
+                    node_name: node_name.to_string(),
+                    output_name: output_name.to_string()
+                });
+            }
+            NodeInputDep::OtherNodeOutput { id: forward_node_id, idx: input_idx } => {
+                let forward_node_name = Self::_node_name_for_id(&self.node_names, *forward_node_id);
+                // We know it comes before if id is less
+                if forward_node_id.0 < node_id.0 {
+                    self.errors.push(GraphFormError::BackwardsOutputRef {
+                        referred_to_node_name: forward_node_name.to_string(),
+                        node_name: node_name.to_string(),
+                        output_name: output_name.to_string()
+                    });
+                } else {
+                    let (forward_node_id_, forward_node) = self.forward_resolved_nodes.get_mut(forward_node_name)
+                        // Add a message because this is guaranteed but not *too* trivial
+                        .expect("node id order is ok but forwarded node was removed");
+                    debug_assert!(*forward_node_id == *forward_node_id_, "sanity check failed");
+                    if forward_node.forward_inputs.len() < input_idx + 1 {
+                        forward_node.forward_inputs.resize(input_idx + 1, None);
+                    }
+                    forward_node.forward_inputs[*input_idx] = Some((node_id, output_idx));
+                }
+            }
+        }
+    }
+
+    fn node_name_for_id(&self, id: NodeId) -> &str {
+        Self::_node_name_for_id(&self.node_names, id)
+    }
+
+    // For partial borrows
+    fn _node_name_for_id(self_node_names: &[String], id: NodeId) -> &str {
+        let idx = id.0.wrapping_add(1);
+        &self_node_names[idx]
+    }
 }

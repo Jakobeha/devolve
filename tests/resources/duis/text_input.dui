@@ -2,7 +2,8 @@ Input
   ===
   placeholder: &str
   text: String
-  ok_enabled: bool = true
+  -- TODO: default values in inputs?
+  ok_enabled: bool
   -- events
   enter_key?: ()
 
