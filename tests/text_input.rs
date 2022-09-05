@@ -4,17 +4,20 @@
 mod misc;
 mod batch_file;
 
+use std::cell::RefCell;
 use std::error::Error;
 use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
-use dui_graph::raw::RawComputeFn;
+use dui_graph::lower::LowerGraph;
+use dui_graph::raw::{NullRegion, RawComputeFn, RawData, RawInputs, RawOutputs};
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
 use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
 use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_none, try_or_return};
+use ttmap::TypeBox;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 #[repr(transparent)]
@@ -37,7 +40,7 @@ fn test_parse_ast() {
                 RunTest {
                     test_name: "round-trip",
                     associated_files: &[],
-                    run: |errors, input, input_path, _associated_files| {
+                    run: |errors, input, input_path, _associated_files, _prior_tests| {
                         let input_string = input.to_string();
                         let input2 = try_or_return!(
                             AstGraph::parse_from_input(&input_string, input_path),
@@ -45,12 +48,14 @@ fn test_parse_ast() {
                         );
                         let input2_string = input2.to_string();
                         assert_eq_multiline!(input_string, input2_string, errors, "round trip failed");
+
+                        None
                     }
                 },
                 RunTest {
                     test_name: "ir",
                     associated_files: &[],
-                    run: |errors, input, input_path, _associated_files| {
+                    run: |errors, input, input_path, _associated_files, _prior_tests| {
                         let mut node_types = NodeTypes::new();
                         node_types.insert(String::from("Button"), NodeType {
                             compute: RawComputeFn::new(|ctx, inputs, outputs| {
@@ -61,24 +66,24 @@ fn test_parse_ast() {
                                     NodeIOType {
                                         name: "text".to_string(),
                                         rust_type: RustType::of::<&str>(),
-                                        rust_type_may_be_null: false
+                                        null_region: NullRegion::NonNull
                                     },
                                     NodeIOType {
                                         name: "is_enabled".to_string(),
                                         rust_type: RustType::of::<bool>(),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
                                         rust_type: RustType::of::<ViewId>(),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
                                         name: String::from("click"),
                                         rust_type: RustType::of::<()>(),
-                                        rust_type_may_be_null: true
+                                        null_region: NullRegion::Null
                                     }
                                 ]
                             },
@@ -100,34 +105,34 @@ fn test_parse_ast() {
                                     NodeIOType {
                                         name: "text".to_string(),
                                         rust_type: RustType::of::<&str>(),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
                                         name: "placeholder".to_string(),
                                         rust_type: RustType::of::<&str>(),
-                                        rust_type_may_be_null: true,
+                                        null_region: NullRegion::Null,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
                                         rust_type: RustType::of::<ViewId>(),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
                                         name: String::from("text"),
                                         rust_type: RustType::of::<&str>(),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
                                         rust_type: RustType::of::<CTuple2<CRange<usize>, &str>>(),
-                                        rust_type_may_be_null: true
+                                        null_region: NullRegion::Null
                                     },
                                     NodeIOType {
                                         name: String::from("enter_key"),
                                         rust_type: RustType::of::<()>(),
-                                        rust_type_may_be_null: true
+                                        null_region: NullRegion::Null
                                     }
                                 ]
                             },
@@ -151,24 +156,24 @@ fn test_parse_ast() {
                                     NodeIOType {
                                         name: "children".to_string(),
                                         rust_type: RustType::of_array::<ViewId>(ctx.input_types.get(0).and_then(|input_type| input_type.rust_type.structure.array_or_tuple_length()).unwrap_or(0)),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
                                         name: "width".to_string(),
                                         rust_type: RustType::of::<usize>(),
-                                        rust_type_may_be_null: true,
+                                        null_region: NullRegion::Null,
                                     },
                                     NodeIOType {
                                         name: "height".to_string(),
                                         rust_type: RustType::of::<usize>(),
-                                        rust_type_may_be_null: true,
+                                        null_region: NullRegion::Null,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
                                         rust_type: RustType::of::<ViewId>(),
-                                        rust_type_may_be_null: false,
+                                        null_region: NullRegion::NonNull,
                                     },
                                 ]
                             },
@@ -183,12 +188,78 @@ fn test_parse_ast() {
                         }));
 
                         let input = input.clone();
-                        let graph = try_or_none!(IrGraph::try_from((input, &ComptimeCtx {
-                            qualifiers: vec![],
-                            node_types
-                        })), errors, "graph to IR failed");
+                        let comptime_ctx = ComptimeCtx { qualifiers: vec![], node_types };
+                        try_or_none!(
+                            IrGraph::try_from((input, &comptime_ctx)),
+                            errors,
+                            "graph to IR failed"
+                        ).map(TypeBox::new)
                     }
-                }
+                },
+                RunTest {
+                    test_name: "lower",
+                    associated_files: &[],
+                    run: |errors, input, input_path, _associated_files, prior_tests| {
+                        let ir_graph = prior_tests.get::<IrGraph>()?;
+
+                        try_or_none!(
+                            LowerGraph::try_from(ir_graph.clone()),
+                            errors,
+                            "IR to lower graph failed"
+                        ).map(| graph| TypeBox::new(RefCell::new(graph)))
+                    }
+                },
+                RunTest {
+                    test_name: "run",
+                    associated_files: &[],
+                    run: |errors, input, input_path, _associated_files, prior_tests| {
+                        let lower_graph = prior_tests.get::<RefCell<LowerGraph>>()?.get_mut();
+
+                        let input_types = [
+                            RustType::of::<&str>(),
+                            RustType::of::<&str>(),
+                            RustType::of::<bool>(),
+                            RustType::of::<()>()
+                        ];
+                        let input_nullability = [
+                            NullRegion::NonNull,
+                            NullRegion::NonNull,
+                            NullRegion::NonNull,
+                            NullRegion::Null,
+                        ];
+                        let output_types = [
+                            RustType::of::<&str>(),
+                            RustType::of::<CTuple2<CRange<usize>, &str>>(),
+                            RustType::of::<()>(),
+                            RustType::of::<()>()
+                        ];
+                        let output_nullability = [
+                            NullRegion::NonNull,
+                            NullRegion::Null,
+                            NullRegion::Null,
+                            NullRegion::Null,
+                        ];
+                        let check_errors = lower_graph.check(&input_types, &output_types, &input_nullability, &output_nullability);
+                        if !check_errors.is_empty() {
+                            errors.push(format!("lower graph check failed: {:?}", check_errors));
+                            return None;
+                        }
+
+                        /* let inputs = RawData {
+                            types: input_types.to_vec(),
+                            null_regions: input_nullability.to_vec(),
+                            data: todo!()
+                        };
+                        let ctx = todo!();
+                        try_or_none!(
+                            lower_graph.compute(&mut ctx, RawInputs::from(&inputs), RawOutputs::from(&mut outputs)),
+                            errors,
+                            "failed to run graph"
+                        )?; */
+
+                        None
+                    }
+                },
             ]
         }.run(errors)
     })

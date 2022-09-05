@@ -2,21 +2,69 @@ use std::error::Error;
 use std::num::{ParseFloatError, ParseIntError, TryFromIntError};
 use std::path::PathBuf;
 
-use derive_more::{Display, Error, From, IntoIterator};
+use derive_more::{Display, Error};
 use snailquote::UnescapeError;
 //noinspection RsUnusedImport (IntelliJ fails to detect)
 use join_lazy_fmt::Join;
 
 use crate::graph::ir::NodeId;
 use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
+use crate::raw::NullRegion;
 
-#[derive(Debug, Display, Error, From, IntoIterator)]
-#[display(fmt = "parse errors:\n{}", "\"\\n\".join(_0)")]
-pub struct ParseErrors(#[error(not(source))] Vec<ParseError>);
+macro mk_Errors($Errors:ident, $Error:ident, $errors:literal) {
+#[derive(Debug)]
+pub struct $Errors(::std::vec::Vec<$Error>);
 
-#[derive(Debug, Display, Error, From, IntoIterator)]
-#[display(fmt = "IR errors:\n- {}", "\"\\n- \".join(_0)")]
-pub struct GraphFormErrors(#[error(not(source))] Vec<GraphFormError>);
+impl $Errors {
+    pub fn new() -> Self {
+        $Errors(::std::vec::Vec::new())
+    }
+
+    pub fn push(&mut self, error: $Error) {
+        self.0.push(error)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl ::std::fmt::Display for $Errors {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        write!(f, "{} errors:", $errors)?;
+        if self.0.is_empty() {
+            write!(f, " none")?;
+        } else {
+            for error in &self.0 {
+                write!(f, "\n{}", error)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Error for $Errors {}
+
+impl ::std::iter::FromIterator<$Error> for $Errors {
+    fn from_iter<T: ::std::iter::IntoIterator<Item = $Error>>(iter: T) -> Self {
+        $Errors(iter.into_iter().collect())
+    }
+}
+
+impl ::std::iter::IntoIterator for $Errors {
+    type Item = $Error;
+    type IntoIter = ::std::vec::IntoIter<$Error>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+}
+
+mk_Errors!(ParseErrors, ParseError, "parse");
+mk_Errors!(GraphFormErrors, GraphFormError, "IR");
+mk_Errors!(GraphValidationErrors, GraphValidationError, "validation");
+mk_Errors!(GraphIOCheckErrors, GraphIOCheckError, "input/output check");
 
 #[derive(Debug, Display, Error)]
 #[display(fmt = "- {}:{}:{}\n    {}", "path.display()", "line + 1", "column + 1", body)]
@@ -267,15 +315,11 @@ pub struct NodeNameFieldName {
     pub field_name: String
 }
 
-pub type GraphValidationErrors = Vec<GraphValidationError>;
-
 #[derive(Debug, Display, Error)]
 pub enum GraphValidationError {
     #[display(fmt = "node cycle: {}", _0)]
     Cycle(#[error(not(source))] NodeCycle)
 }
-
-pub type GraphIOCheckErrors = Vec<GraphIOCheckError>;
 
 #[derive(Debug, Display, Error)]
 pub enum GraphIOCheckError {
@@ -289,60 +333,44 @@ pub enum GraphIOCheckError {
         actual: usize,
         expected: usize
     },
-    #[display(fmt = "input type mismatch: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
+    #[display(fmt = "input type mismatch: in {}, {} not a subtype of {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     InputTypeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "input type can't be verified: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
+    #[display(fmt = "input type can't be verified: in {}, {} maybe not a subtype of {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     InputTypeMaybeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "output type mismatch: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
+    #[display(fmt = "input nullability mismatch in {}, {} not a subset of {}", field_name, actual, expected)]
+    InputNullabilityMismatch {
+        field_name: String,
+        expected: NullRegion,
+        actual: NullRegion
+    },
+    #[display(fmt = "output type mismatch: in {}, {} not a supertype of {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     OutputTypeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
     },
-    #[display(fmt = "output type can't be verified: in {}, got {} expected {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
+    #[display(fmt = "output type can't be verified: in {}, {} maybe not a supertype of {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     OutputTypeMaybeMismatch {
         field_name: String,
         expected: RustType,
         actual: RustType
+    },
+    #[display(fmt = "output nullability mismatch in {}, {} not a superset of {}", field_name, actual, expected)]
+    OutputNullabilityMismatch {
+        field_name: String,
+        expected: NullRegion,
+        actual: NullRegion
     },
 }
 
 #[derive(Debug, Display)]
 #[display(fmt = "[{}]", "\", \".join(_0)")]
 pub struct NodeCycle(pub Vec<NodeId>);
-
-impl ParseErrors {
-    pub fn new() -> Self {
-        ParseErrors(Vec::new())
-    }
-
-    pub fn push(&mut self, error: ParseError) {
-        self.0.push(error)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl GraphFormErrors {
-    pub fn new() -> Self {
-        GraphFormErrors(Vec::new())
-    }
-
-    pub fn push(&mut self, error: GraphFormError) {
-        self.0.push(error)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}

@@ -1,7 +1,7 @@
 Input
   ===
   placeholder: &str
-  text: String
+  text: &str
   ok_enabled: bool = true
   -- events
   enter_key?: ()
@@ -26,7 +26,7 @@ Root: Box
     `Text Input`
 
 Output
-  text: String = `Text Input`.text
+  text: &str = `Text Input`.text
   -- events
   text_modified?: (CRange<usize>, &str) = `Text Input`.text_modified
   enter_key?: () = `Text Input`.enter_key

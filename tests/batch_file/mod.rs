@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 use std::env;
 use std::error::Error;
@@ -8,6 +9,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use log::{info, warn};
+use ttmap::{TypeBox, TypeMap};
 
 use crate::misc::{ErrorNodes, try_or_return, error};
 
@@ -112,7 +114,7 @@ pub struct RunTest<T: 'static> {
     pub test_name: &'static str,
     /// Associated name and extension
     pub associated_files: &'static [(&'static str, &'static str)],
-    pub run: fn(&mut ErrorNodes, &T, &Path, Vec<AssociatedIOFile<String>>)
+    pub run: fn(&mut ErrorNodes, &T, &Path, Vec<AssociatedIOFile<String>>, &TypeMap) -> Option<TypeBox>
 }
 
 impl<T: 'static> RunTestsOnFiles<T> {
@@ -166,12 +168,16 @@ impl<T: 'static> RunTestsOnFiles<T> {
         match (self.try_parse)(input_string, input_path) {
             Err(error) => error!(errors, "couldn't parse: {}", error),
             Ok(input) => {
+                let mut prior_tests = TypeMap::new();
                 for test in self.tests {
                     errors.push_group(test.test_name, |errors| {
                         let associated_files = test.associated_files.iter().map(|(associated_name, extension)| {
                             self.load_associated(dir_path, base_name, associated_name, extension)
                         }).collect::<Vec<_>>();
-                        (test.run)(errors, &input, input_path, associated_files)
+                        let result = (test.run)(errors, &input, input_path, associated_files, &prior_tests);
+                        if let Some(result) = result {
+                            prior_tests.insert(result);
+                        }
                     });
                 }
             }

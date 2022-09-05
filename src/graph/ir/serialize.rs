@@ -11,6 +11,7 @@ use crate::graph::StaticStrs;
 use crate::ir::ComptimeCtx;
 use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 use crate::ast::types::AstLiteral;
+use crate::raw::NullRegion;
 
 pub struct GraphSerializer<'a> {
     /// Only actually needs some of the ctx, GraphBuilder needs more, but we use the same struct
@@ -118,7 +119,7 @@ impl<'a> GraphSerializer<'a> {
         AstField {
             name: field_type.name.to_string(),
             rust_type,
-            rust_type_may_be_null: field_type.rust_type_may_be_null,
+            rust_type_may_be_null: matches!(field_type.null_region, NullRegion::Null),
             value,
             value_children
         }

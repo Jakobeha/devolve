@@ -5,6 +5,7 @@ use slab::Slab;
 use structural_reflection::RustType;
 use crate::graph::raw::RawComputeFn;
 use crate::ast::types::{AstFieldHeader, AstNodePos};
+use crate::raw::NullRegion;
 
 /// Compound view graph.
 ///
@@ -12,6 +13,7 @@ use crate::ast::types::{AstFieldHeader, AstNodePos};
 /// It is loaded from a .dui file.
 ///
 /// This graph is well-formed but not validated.
+#[derive(Clone)]
 pub struct IrGraph {
     pub(in crate::graph) input_types: Vec<NodeIOType>,
     pub(in crate::graph) output_types: Vec<NodeIOType>,
@@ -31,8 +33,7 @@ pub struct NodeTypeData {
 pub struct NodeIOType {
     pub name: String,
     pub rust_type: RustType,
-    /// Means "can be null" ("is nullable") if an input, or "could be null" ("sometimes null") if an output.
-    pub rust_type_may_be_null: bool,
+    pub null_region: NullRegion,
 }
 
 #[derive(Clone)]
@@ -62,6 +63,7 @@ pub enum NodeInputDep {
     }
 }
 
+#[derive(Clone)]
 pub struct Node {
     pub type_name: NodeTypeName,
     pub inputs: Vec<NodeInput>,
@@ -71,6 +73,7 @@ pub struct Node {
 }
 
 /// Display info which is not used in actual computations
+#[derive(Clone)]
 pub struct NodeMetadata {
     pub node_name: String,
     pub pos: Option<AstNodePos>,
@@ -78,6 +81,7 @@ pub struct NodeMetadata {
     pub output_headers: Vec<FieldHeader>,
 }
 
+#[derive(Clone)]
 pub struct FieldHeader {
     /// Note that the index counts indices of previous headers,
     /// so unlike usual you *don't* want to add these in reverse.

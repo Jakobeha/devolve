@@ -1,7 +1,8 @@
+use std::fmt::{Display, Formatter};
 use std::ops::Index;
 use crate::graph::ir::NodeInput;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum NullRegion {
     /// Entire region is null
     Null,
@@ -34,6 +35,22 @@ impl Index<usize> for NullRegion {
             NullRegion::Null => &self,
             NullRegion::NonNull => &self,
             NullRegion::Partial(regions) => &regions[index]
+        }
+    }
+}
+
+impl Display for NullRegion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NullRegion::Null => write!(f, "?"),
+            NullRegion::NonNull => write!(f, "!"),
+            NullRegion::Partial(regions) => {
+                write!(f, "[")?;
+                for region in regions {
+                    write!(f, "{}", region)?;
+                }
+                write!(f, "]")
+            }
         }
     }
 }

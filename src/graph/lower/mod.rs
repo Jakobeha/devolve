@@ -108,7 +108,7 @@ impl LowerGraph {
             let mut cached_input_data = RawData {
                 types: input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
-                used_regions: inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
+                null_regions: inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
             };
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices, hole_is_valid))
@@ -144,8 +144,17 @@ impl LowerGraph {
         }
     }
 
-    pub fn check(&self, input_types: &[RustType], output_types: &[RustType]) -> GraphIOCheckErrors {
-        let mut errors = Vec::new();
+    pub fn check(
+        &self,
+        input_types: &[RustType],
+        output_types: &[RustType],
+        input_regions: &[NullRegion],
+        output_regions: &[NullRegion]
+    ) -> GraphIOCheckErrors {
+        debug_assert_eq!(input_types.len(), input_regions.len());
+        debug_assert_eq!(output_types.len(), output_regions.len());
+
+        let mut errors = GraphIOCheckErrors::new();
 
         if input_types.len() != self.input_types.len() {
             errors.push(GraphIOCheckError::InputsCountMismatch {
@@ -159,42 +168,56 @@ impl LowerGraph {
                 expected: self.output_types.len()
             });
         }
-        for (actual_type, expected_type) in zip(input_types.iter(), self.input_types.iter()) {
-            match actual_type.is_rough_subtype_of(&expected_type.rust_type) {
+        for ((actual_type, actual_region), NodeIOType { name, rust_type: expected_type, null_region: expected_region }) in zip(zip(input_types.iter(), input_regions.iter()), self.input_types.iter()) {
+            match actual_type.is_rough_subtype_of(expected_type) {
                 IsSubtypeOf::No => {
                     errors.push(GraphIOCheckError::InputTypeMismatch {
-                        field_name: expected_type.name.clone(),
-                        expected: expected_type.rust_type.clone(),
+                        field_name: name.clone(),
+                        expected: expected_type.clone(),
                         actual: actual_type.clone()
                     });
                 },
                 IsSubtypeOf::Unknown => {
                     errors.push(GraphIOCheckError::InputTypeMaybeMismatch {
-                        field_name: expected_type.name.clone(),
-                        expected: expected_type.rust_type.clone(),
+                        field_name: name.clone(),
+                        expected: expected_type.clone(),
                         actual: actual_type.clone()
                     })
                 },
                 IsSubtypeOf::Yes => {}
             }
+            if !actual_region.is_subset_of(expected_region) {
+                errors.push(GraphIOCheckError::InputNullabilityMismatch {
+                    field_name: name.clone(),
+                    expected: expected_region.clone(),
+                    actual: actual_region.clone()
+                });
+            }
         }
-        for (actual_type, expected_type) in zip(output_types.iter(), self.output_types.iter()) {
-            match actual_type.is_rough_subtype_of(&expected_type.rust_type) {
+        for ((actual_type, actual_region), NodeIOType { name, rust_type: expected_type, null_region: expected_region }) in zip(zip(output_types.iter(), output_regions.iter()), self.output_types.iter()) {
+            match expected_type.is_rough_subtype_of(actual_type) {
                 IsSubtypeOf::No => {
                     errors.push(GraphIOCheckError::OutputTypeMismatch {
-                        field_name: expected_type.name.clone(),
-                        expected: expected_type.rust_type.clone(),
+                        field_name: name.clone(),
+                        expected: expected_type.clone(),
                         actual: actual_type.clone()
                     });
                 },
                 IsSubtypeOf::Unknown => {
                     errors.push(GraphIOCheckError::OutputTypeMaybeMismatch {
-                        field_name: expected_type.name.clone(),
-                        expected: expected_type.rust_type.clone(),
-                        actual: actual_type.clone(),
+                        field_name: name.clone(),
+                        expected: expected_type.clone(),
+                        actual: actual_type.clone()
                     })
                 },
                 IsSubtypeOf::Yes => {}
+            }
+            if !expected_region.is_subset_of(actual_region) {
+                errors.push(GraphIOCheckError::OutputNullabilityMismatch {
+                    field_name: name.clone(),
+                    expected: expected_region.clone(),
+                    actual: actual_region.clone()
+                });
             }
         }
 
@@ -202,7 +225,7 @@ impl LowerGraph {
     }
 
     pub fn compute(&mut self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) -> Result<(), GraphIOCheckErrors> {
-        let errors = self.check(inputs.types(), outputs.types());
+        let errors = self.check(inputs.types(), outputs.types(), inputs.nonnull_regions(), outputs.nonnull_regions());
         if errors.is_empty() {
             Ok(unsafe { self.compute_unchecked(ctx, inputs, outputs) })
         } else {
