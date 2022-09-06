@@ -176,7 +176,7 @@ impl<T: 'static> RunTestsOnFiles<T> {
                         }).collect::<Vec<_>>();
                         let result = (test.run)(errors, &input, input_path, associated_files, &prior_tests);
                         if let Some(result) = result {
-                            prior_tests.insert(result);
+                            prior_tests.insert_box(result);
                         }
                     });
                 }

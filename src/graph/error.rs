@@ -11,7 +11,8 @@ use crate::graph::ir::NodeId;
 use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
 use crate::raw::NullRegion;
 
-macro mk_Errors($Errors:ident, $Error:ident, $errors:literal) {
+macro_rules! mk_errors {
+    ($Errors:ident, $Error:ident, $errors:literal) => {
 #[derive(Debug)]
 pub struct $Errors(::std::vec::Vec<$Error>);
 
@@ -59,12 +60,13 @@ impl ::std::iter::IntoIterator for $Errors {
         self.0.into_iter()
     }
 }
+    }
 }
 
-mk_Errors!(ParseErrors, ParseError, "parse");
-mk_Errors!(GraphFormErrors, GraphFormError, "IR");
-mk_Errors!(GraphValidationErrors, GraphValidationError, "validation");
-mk_Errors!(GraphIOCheckErrors, GraphIOCheckError, "input/output check");
+mk_errors!(ParseErrors, ParseError, "parse");
+mk_errors!(GraphFormErrors, GraphFormError, "IR");
+mk_errors!(GraphValidationErrors, GraphValidationError, "validation");
+mk_errors!(GraphIOCheckErrors, GraphIOCheckError, "input/output check");
 
 #[derive(Debug, Display, Error)]
 #[display(fmt = "- {}:{}:{}\n    {}", "path.display()", "line + 1", "column + 1", body)]

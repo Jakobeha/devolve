@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::iter::zip;
 use std::ops::Index;
 use crate::graph::ir::NodeInput;
 
@@ -21,6 +22,29 @@ impl NullRegion {
             NodeInput::Const(_) => NullRegion::NonNull,
             NodeInput::Array(elems) => NullRegion::Partial(elems.iter().map(|elem| NullRegion::of(elem)).collect()),
             NodeInput::Tuple(elems) => NullRegion::Partial(elems.iter().map(|elem| NullRegion::of(&elem.input)).collect())
+        }
+    }
+
+    /// Whether the region's nullability is a subset of the other region:
+    ///
+    /// - `Null` is bottom (superset of everything)
+    /// - `NonNull` is top (subset of everything)
+    /// - **panics** if the regions are partial with different lengths
+    /// - otherwise, evaluates `a[i] <= b[i]` for each element
+    pub fn is_subset_of(&self, other: &Self) -> bool {
+        match (self, other) {
+            (NullRegion::Null, NullRegion::Null) => true,
+            (NullRegion::Null, NullRegion::NonNull) => false,
+            (NullRegion::Null, NullRegion::Partial(other_elems)) => other_elems.iter().all(|other_elem| NullRegion::Null.is_subset_of(other_elem)),
+            (NullRegion::NonNull, NullRegion::Null) => true,
+            (NullRegion::NonNull, NullRegion::Partial(_)) => true,
+            (NullRegion::NonNull, NullRegion::NonNull) => true,
+            (NullRegion::Partial(_), NullRegion::Null) => true,
+            (NullRegion::Partial(elems), NullRegion::NonNull) => elems.iter().all(|elem| elem.is_subset_of(&NullRegion::NonNull)),
+            (NullRegion::Partial(elems), NullRegion::Partial(other_elems)) => {
+                assert_eq!(elems.len(), other_elems.len(), "tried to compare null regions of different shapes");
+                zip(elems, other_elems).all(|(elem, other_elem)| elem.is_subset_of(other_elem))
+            }
         }
     }
 }

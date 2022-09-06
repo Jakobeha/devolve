@@ -4,8 +4,8 @@
 mod misc;
 mod batch_file;
 
-use std::cell::RefCell;
 use std::error::Error;
+use std::sync::Mutex;
 use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
@@ -31,7 +31,7 @@ pub struct CRange<Idx> {
 }
 
 #[test]
-fn test_parse_ast() {
+fn tests_on_files() {
     ErrorNodes::log_errors_and_panic(|errors| {
         RunTestsOnFiles {
             dir_name: "duis",
@@ -42,10 +42,10 @@ fn test_parse_ast() {
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, _prior_tests| {
                         let input_string = input.to_string();
-                        let input2 = try_or_return!(
+                        let input2 = try_or_none!(
                             AstGraph::parse_from_input(&input_string, input_path),
                             errors, "couldn't re-parse input:\n{}", input_string
-                        );
+                        )?;
                         let input2_string = input2.to_string();
                         assert_eq_multiline!(input_string, input2_string, errors, "round trip failed");
 
@@ -206,14 +206,14 @@ fn test_parse_ast() {
                             LowerGraph::try_from(ir_graph.clone()),
                             errors,
                             "IR to lower graph failed"
-                        ).map(| graph| TypeBox::new(RefCell::new(graph)))
+                        ).map(| graph| TypeBox::new(Mutex::new(graph)))
                     }
                 },
                 RunTest {
                     test_name: "run",
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, prior_tests| {
-                        let lower_graph = prior_tests.get::<RefCell<LowerGraph>>()?.get_mut();
+                        let lower_graph = prior_tests.get::<Mutex<LowerGraph>>()?.lock().unwrap();
 
                         let input_types = [
                             RustType::of::<&str>(),
