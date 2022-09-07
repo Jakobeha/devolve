@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle};
 use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep};
 use structural_reflection::RustType;
+use crate::StaticStrs;
 
 impl IrGraph {
     pub fn insert_node(&mut self, node: Node) -> NodeId {
@@ -20,6 +21,17 @@ impl IrGraph {
         if let Err(cycle) = self.check_cycle() {
             errors.push(GraphValidationError::Cycle(cycle))
         }
+
+        // Check compute
+        for (_, node) in self.iter_nodes() {
+            if node.compute.is_none() {
+                errors.push(GraphValidationError::NoCompute {
+                    node: node.clone()
+                });
+            }
+        }
+
+        let input_node = self.iter_nodes().find(|(node_id, node)| node.type_name.as_ref() == StaticStrs::INPUT_NODE);
 
         todo!("\
         Check that input and output types match\

@@ -61,7 +61,7 @@ impl<'a> GraphBuilder<'a> {
                     inputs: input_types,
                     outputs: output_types
                 };
-                (NodeTypeName::from(node_name.to_string()), self_type_data, RawComputeFn::panicking())
+                (NodeTypeName::from(node_name.to_string()), self_type_data, None)
             },
             Some(inherited_type) => {
                 // Reorder inputs and outputs to match inherited type, then add defaults which were not overridden
@@ -71,7 +71,7 @@ impl<'a> GraphBuilder<'a> {
                 // Use inherited type
                 let inherited_type_name = NodeTypeName::from(node.node_type.unwrap());
                 let inherited_type_data = inherited_type.type_data.clone();
-                (inherited_type_name, inherited_type_data, inherited_type.compute.clone())
+                (inherited_type_name, inherited_type_data, Some(inherited_type.compute.clone()))
             }
         };
 

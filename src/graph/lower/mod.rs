@@ -121,7 +121,7 @@ impl LowerGraph {
             debug_assert_eq!(node_type.inputs.len(), node.inputs.len());
             debug_assert_eq!(node_type.outputs.len(), node.default_outputs.len());
 
-            let compute = node.compute;
+            let compute = node.compute.expect("graph should've been validated, but there is a node without compute");
             let (cached_input_data, inputs) = get_inputs(&node_type.inputs, node.inputs, &node_indices, false);
             let (cached_output_data, default_outputs) = get_inputs(&node_type.outputs, node.default_outputs, &node_indices, true);
 
