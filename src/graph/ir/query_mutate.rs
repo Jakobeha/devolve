@@ -31,6 +31,7 @@ impl IrGraph {
             }
         }
 
+        // TODO check input and output types of each node, and nullability (counting nullable with default values as not nullable)
         let input_node = self.iter_nodes().find(|(node_id, node)| node.type_name.as_ref() == StaticStrs::INPUT_NODE);
 
         todo!("\
