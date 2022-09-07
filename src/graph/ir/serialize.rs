@@ -8,7 +8,7 @@ use log::{error, warn};
 use crate::graph::ir::{FieldHeader, IrGraph, Node, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData};
 use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
 use crate::graph::StaticStrs;
-use crate::ir::ComptimeCtx;
+use crate::ir::{ComptimeCtx, NodeTypeName};
 use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 use crate::ast::types::AstLiteral;
 use crate::raw::NullRegion;
@@ -56,6 +56,7 @@ impl<'a> GraphSerializer<'a> {
         self.rust_type_names.extend(graph.iter_rust_types().flat_map(|rust_type| rust_type.type_name.iter_simple_names()));
         self.input_names.extend(graph.input_types.iter().map(|input_type| input_type.name.clone()));
 
+        // Get node names and output names (part of setup data)
         self.node_names_and_output_names.reserve(graph.nodes.capacity());
         for (node_id, node) in &graph.nodes {
             while self.node_names_and_output_names.len() < node_id {
@@ -68,12 +69,36 @@ impl<'a> GraphSerializer<'a> {
             self.node_names_and_output_names.push(Some((node_name, output_names)))
         }
 
+        // Add input node
+        self.serialize_node(Node {
+            type_name: NodeTypeName::from(StaticStrs::INPUT_NODE.to_string()),
+            inputs: vec![],
+            default_outputs: graph.default_inputs,
+            compute: None,
+            meta: graph.input_metadata
+        }, &NodeTypeData {
+            inputs: vec![],
+            outputs: graph.input_types
+        });
+
         // Add nodes
         // Types will be inferred from the nodes
         for (_, node) in graph.nodes.into_iter() {
             let node_type = &graph.types[&node.type_name];
             self.serialize_node(node, &node_type);
         }
+
+        // Add output node
+        self.serialize_node(Node {
+            type_name: NodeTypeName::from(StaticStrs::OUTPUT_NODE.to_string()),
+            inputs: graph.outputs,
+            default_outputs: vec![],
+            compute: None,
+            meta: graph.output_metadata
+        }, &NodeTypeData {
+            inputs: graph.output_types,
+            outputs: vec![]
+        });
     }
 
     fn serialize_node(&mut self, node: Node, node_type: &NodeTypeData) {
@@ -90,9 +115,9 @@ impl<'a> GraphSerializer<'a> {
             let ast_field = self.serialize_field(input_type, input);
             ast_node.input_fields.push(AstFieldElem::Field { field: ast_field });
         }
-        for output_type in &node_type.outputs {
+        for (output_type, default_output) in zip(&node_type.outputs, &node.default_outputs) {
             // There are no output values
-            let ast_field = self.serialize_field(output_type, &NodeInput::Hole);
+            let ast_field = self.serialize_field(output_type, default_output);
             ast_node.output_fields.push(AstFieldElem::Field { field: ast_field });
         }
 

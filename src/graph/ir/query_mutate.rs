@@ -74,8 +74,15 @@ impl IrGraph {
                     NodeInputDep::GraphInput { idx} => &self.input_types[*idx],
                     NodeInputDep::OtherNodeOutput { id, idx } => &self.types[&self.nodes[id.0].type_name].outputs[*idx]
                 };
-                let NodeIOType { name: _, rust_type: output_rust_type, null_region: output_null_region } = output_type;
-                self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, output_null_region)
+                let default_output = match dep {
+                    NodeInputDep::GraphInput { idx} => &self.default_inputs[*idx],
+                    NodeInputDep::OtherNodeOutput { id, idx } => &self.nodes[id.0].default_outputs[*idx]
+                };
+                let NodeIOType { name: _, rust_type: output_rust_type, null_region: output_type_null_region } = output_type;
+                let mut output_null_region = NullRegion::of(default_output);
+                output_null_region.intersect(output_type_null_region);
+
+                self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, &output_null_region)
             }
             NodeInput::Const(_) => {
                 // Nullability is ok (not nullable)

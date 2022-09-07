@@ -7,7 +7,7 @@ use crate::graph::ir::{IrGraph, Node, NodeId, NodeTypeData, NodeTypeName};
 use crate::graph::ast::topological_sort::SortByDeps;
 use crate::graph::ast::types::{AstBody, AstGraph, AstValueHead};
 use crate::graph::StaticStrs;
-use crate::ir::ComptimeCtx;
+use crate::ir::{ComptimeCtx, NodeMetadata};
 use structural_reflection::{RustType, TypeStructureBodyForm};
 
 mod type_def;
@@ -92,33 +92,37 @@ impl<'a> GraphBuilder<'a> {
 
 
         // get inputs and outputs
-        let input_types = match self.resolved_nodes.remove(StaticStrs::INPUT_NODE) {
+        let (input_types, default_inputs, input_metadata) = match self.resolved_nodes.remove(StaticStrs::INPUT_NODE) {
             None => {
                 self.errors.push(GraphFormError::NoInput);
-                Vec::new()
+                (Vec::new(), Vec::new(), NodeMetadata::empty(StaticStrs::INPUT_NODE.to_string()))
             },
             Some((input_id, input_node)) => {
                 debug_assert!(input_id == NodeId(usize::MAX), "input id is wrong, should be guaranteed to be first (-1)");
-                if !input_node.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
-                    self.errors.push(GraphFormError::InputHasInputs);
-                }
-                if input_node.type_name.as_ref() != StaticStrs::INPUT_NODE {
+                let input_types = if input_node.type_name.as_ref() != StaticStrs::INPUT_NODE {
                     self.errors.push(GraphFormError::InputHasCompute);
                     // Best failure, we have to clone because this may be used somewhere else
                     let input_type_data = self.resolved_node_types.get(&input_node.type_name).unwrap();
+                    if !input_node.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
+                        self.errors.push(GraphFormError::InputHasInputs);
+                    }
                     input_type_data.outputs.clone()
                 } else {
                     // Remove input self-type
                     let input_type_data = self.resolved_node_types.remove(&input_node.type_name).unwrap();
                     debug_assert!(input_type_data.inputs.len() == input_node.inputs.len(), "basic sanity check failed");
+                    if !input_node.inputs.is_empty() { // == !input_types.is_empty() as they have the same length
+                        self.errors.push(GraphFormError::InputHasInputs);
+                    }
                     input_type_data.outputs
-                }
+                };
+                (input_types, input_node.default_outputs, input_node.meta)
             }
         };
-        let (output_types, outputs) = match self.resolved_nodes.remove(StaticStrs::OUTPUT_NODE) {
+        let (output_types, outputs, output_metadata) = match self.resolved_nodes.remove(StaticStrs::OUTPUT_NODE) {
             None => {
                 self.errors.push(GraphFormError::NoOutput);
-                (Vec::new(), Vec::new())
+                (Vec::new(), Vec::new(), NodeMetadata::empty(StaticStrs::OUTPUT_NODE.to_string()))
             },
             Some((output_id, output_node)) => {
                 debug_assert!(output_id == NodeId(self.resolved_nodes.len()), "output id is wrong, should be guaranteed to be last (resolved_nodes.len())");
@@ -139,7 +143,7 @@ impl<'a> GraphBuilder<'a> {
                     }
                     output_type_data.inputs
                 };
-                (output_types, output_node.inputs)
+                (output_types, output_node.inputs, output_node.meta)
             }
         };
 
@@ -157,9 +161,12 @@ impl<'a> GraphBuilder<'a> {
         IrGraph {
             input_types,
             output_types,
+            default_inputs,
             types: self.resolved_node_types,
             nodes,
-            outputs
+            outputs,
+            input_metadata,
+            output_metadata
         }
     }
 }

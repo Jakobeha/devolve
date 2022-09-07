@@ -14,7 +14,7 @@ use dui_graph::raw::{NullRegion, RawComputeFn, RawData, RawInputs, RawOutputs};
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
-use dui_graph::StaticStrs;
+use dui_graph::{CompoundViewCtx, StaticStrs};
 use crate::batch_file::{RunTest, RunTestsOnFiles};
 use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_none};
 use ttmap::ValueBox;
@@ -213,7 +213,7 @@ fn tests_on_files() {
                     test_name: "run",
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, prior_tests| {
-                        let lower_graph = prior_tests.get::<Mutex<LowerGraph>>()?.lock().unwrap();
+                        let mut lower_graph = prior_tests.get::<Mutex<LowerGraph>>()?.lock().unwrap();
 
                         let input_types = [
                             RustType::of::<&str>(),
@@ -247,17 +247,26 @@ fn tests_on_files() {
                             return None;
                         }
 
-                        /* let inputs = RawData {
+                        /*
+                        let input_data = input_types.iter().map(|x| Box::new_uninit_slice(x.size)).collect::<Vec<_>>();
+                        let output_data = output_types.iter().map(|x| Box::new_uninit_slice(x.size)).collect::<Vec<_>>();
+                        let inputs = RawData {
                             types: input_types.to_vec(),
                             null_regions: input_nullability.to_vec(),
-                            data: todo!()
+                            data: input_data
                         };
-                        let ctx = todo!();
-                        try_or_none!(
-                            lower_graph.compute(&mut ctx, RawInputs::from(&inputs), RawOutputs::from(&mut outputs)),
-                            errors,
-                            "failed to run graph"
-                        )?; */
+                        let mut outputs = RawData {
+                            types: output_types.to_vec(),
+                            null_regions: output_nullability.to_vec(),
+                            data: output_data
+                        };
+
+                        // TODO: run inputs and check outputs with some sets of data
+
+                        let mut ctx = CompoundViewCtx;
+                        // compute does the exact same as compute_unchecked, but runs check first
+                        unsafe { lower_graph.compute_unchecked(&mut ctx, RawInputs::from(&inputs), RawOutputs::from(&mut outputs)) };
+                        */
 
                         None
                     }

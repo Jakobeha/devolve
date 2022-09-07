@@ -29,10 +29,13 @@ use crate::raw::NullRegion;
 #[derive(Clone)]
 pub struct IrGraph {
     pub(in crate::graph) input_types: Vec<NodeIOType>,
+    pub(in crate::graph) default_inputs: Vec<NodeInput>,
     pub(in crate::graph) output_types: Vec<NodeIOType>,
     pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
     pub(in crate::graph) nodes: Slab<Node>,
-    pub(in crate::graph) outputs: Vec<NodeInput>
+    pub(in crate::graph) outputs: Vec<NodeInput>,
+    pub(in crate::graph) input_metadata: NodeMetadata,
+    pub(in crate::graph) output_metadata: NodeMetadata,
 }
 
 #[derive(Clone)]
@@ -128,6 +131,17 @@ impl NodeInput {
 impl Default for NodeInput {
     fn default() -> Self {
         NodeInput::Hole
+    }
+}
+
+impl NodeMetadata {
+    pub fn empty(node_name: String) -> Self {
+        Self {
+            node_name,
+            pos: None,
+            input_headers: Vec::new(),
+            output_headers: Vec::new(),
+        }
     }
 }
 

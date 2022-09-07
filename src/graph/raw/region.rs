@@ -15,6 +15,7 @@ pub enum NullRegion {
 
 impl NullRegion {
     /// Returns `Null` if a `Hole`, and `Partial` if an array or tuple
+    // TODO: remove deprecated when we know we're not keeping null when default is provided
     #[deprecated]
     pub fn of(input: &NodeInput) -> Self {
         match input {
@@ -23,6 +24,26 @@ impl NullRegion {
             NodeInput::Const(_) => NullRegion::NonNull,
             NodeInput::Array(elems) => NullRegion::Partial(elems.iter().map(|elem| NullRegion::of(elem)).collect()),
             NodeInput::Tuple(elems) => NullRegion::Partial(elems.iter().map(|elem| NullRegion::of(&elem.input)).collect())
+        }
+    }
+
+    /// Intersects nullability. **panics** if the null regions are partial and have different lengths
+    pub fn intersect(&mut self, rhs: &NullRegion) {
+        match (self, rhs) {
+            (NullRegion::Null, NullRegion::Null) => {},
+            (this @ NullRegion::Null, NullRegion::NonNull) => *this = NullRegion::NonNull,
+            (this @ NullRegion::Null, NullRegion::Partial(other_elems)) => *this = NullRegion::Partial(other_elems.clone()),
+            (NullRegion::NonNull, NullRegion::Null) => {},
+            (NullRegion::NonNull, NullRegion::Partial(_)) => {},
+            (NullRegion::NonNull, NullRegion::NonNull) => {},
+            (NullRegion::Partial(_), NullRegion::Null) => {},
+            (this @ NullRegion::Partial(_), NullRegion::NonNull) => *this = NullRegion::NonNull,
+            (NullRegion::Partial(elems), NullRegion::Partial(other_elems)) => {
+                assert_eq!(elems.len(), other_elems.len(), "tried to compare null regions of different shapes");
+                for (elem, other_elem) in zip(elems, other_elems) {
+                    elem.intersect(other_elem);
+                }
+            }
         }
     }
 
