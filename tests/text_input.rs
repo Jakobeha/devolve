@@ -231,6 +231,7 @@ fn tests_on_files() {
                             RustType::of::<&str>(),
                             RustType::of::<CTuple2<CRange<usize>, &str>>(),
                             RustType::of::<()>(),
+                            RustType::of::<()>(),
                             RustType::of::<()>()
                         ];
                         let output_nullability = [
@@ -238,10 +239,11 @@ fn tests_on_files() {
                             NullRegion::Null,
                             NullRegion::Null,
                             NullRegion::Null,
+                            NullRegion::Null,
                         ];
                         let check_errors = lower_graph.check(&input_types, &output_types, &input_nullability, &output_nullability);
                         if !check_errors.is_empty() {
-                            errors.push(format!("lower graph check failed: {:?}", check_errors));
+                            errors.push(format!("lower graph check failed: {}", check_errors));
                             return None;
                         }
 
