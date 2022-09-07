@@ -8,13 +8,10 @@ use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNod
 use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, NullRegion};
 use structural_reflection::{IsSubtypeOf, RustType};
 
-/// Compound view graph.
+/// Built (lowered) compound view graph, loaded from a `.dui` file.
 ///
-/// A compound view is a graph of nodes which may be subviews, input/output, or computations.
-/// It is loaded from a .dui file.
-///
-/// This graph is internally validated: as long as any given inputs and outputs are valid,
-/// a computation can be run unchecked.
+/// This graph is completely valid. However, in order to run it, you must check the inputs and
+/// outputs, as they may still be incompatible with the graph.
 pub struct LowerGraph {
     input_types: Vec<NodeIOType>,
     output_types: Vec<NodeIOType>,

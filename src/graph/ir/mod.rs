@@ -2,6 +2,7 @@ use std::iter::empty;
 use std::ops::{Index, IndexMut};
 
 pub use ctx::*;
+pub use display::*;
 pub use types::*;
 
 use crate::graph::error::GraphFormErrors;
@@ -13,6 +14,7 @@ use structural_reflection::TypeStructure;
 
 mod query_mutate;
 mod types;
+mod display;
 mod ctx;
 mod from_ast;
 mod serialize;

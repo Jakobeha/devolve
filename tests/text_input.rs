@@ -16,8 +16,8 @@ use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
 use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
-use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_none, try_or_return};
-use ttmap::TypeBox;
+use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_none};
+use ttmap::ValueBox;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 #[repr(transparent)]
@@ -193,7 +193,7 @@ fn tests_on_files() {
                             IrGraph::try_from((input, &comptime_ctx)),
                             errors,
                             "graph to IR failed"
-                        ).map(TypeBox::new)
+                        ).map(|x| Box::new(x) as ValueBox)
                     }
                 },
                 RunTest {
@@ -206,7 +206,7 @@ fn tests_on_files() {
                             LowerGraph::try_from(ir_graph.clone()),
                             errors,
                             "IR to lower graph failed"
-                        ).map(| graph| TypeBox::new(Mutex::new(graph)))
+                        ).map(| graph| Box::new(Mutex::new(graph)) as ValueBox)
                     }
                 },
                 RunTest {

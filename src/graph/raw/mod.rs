@@ -115,7 +115,7 @@ impl RawComputeFnTrait for PanickingComputeFn {
     }
 
     fn run(&self, _: &mut CompoundViewCtx, _: RawInputs<'_>, _: RawOutputs<'_>) {
-        panic!("RawComputeFn::panicking() (dummy compute function, should've never been called)");
+        panic!("RawComputeFn::panicking()");
     }
 }
 

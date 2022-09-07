@@ -1,45 +1,148 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::iter::zip;
 
-use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle};
-use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep};
-use structural_reflection::RustType;
-use crate::StaticStrs;
+use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle, NodeDisplayInputName};
+use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep, NodeIOType};
+use structural_reflection::{IsSubtypeOf, RustType};
+use crate::raw::NullRegion;
 
 impl IrGraph {
-    pub fn insert_node(&mut self, node: Node) -> NodeId {
-        NodeId(self.nodes.insert(node))
-    }
-
-    pub fn delete_node(&mut self, id: NodeId) {
-        self.nodes.remove(id.0);
-    }
-
     pub fn validate(&self) -> GraphValidationErrors {
-        let mut errors = Vec::new();
+        let mut errors = GraphValidationErrors::new();
 
         if let Err(cycle) = self.check_cycle() {
             errors.push(GraphValidationError::Cycle(cycle))
         }
 
         // Check compute
-        for (_, node) in self.iter_nodes() {
+        for (node_id, node) in self.iter_nodes() {
             if node.compute.is_none() {
                 errors.push(GraphValidationError::NoCompute {
-                    node: node.clone()
+                    node: node.display(node_id)
                 });
             }
         }
 
-        // TODO check input and output types of each node, and nullability (counting nullable with default values as not nullable)
-        let input_node = self.iter_nodes().find(|(node_id, node)| node.type_name.as_ref() == StaticStrs::INPUT_NODE);
+        // check input and output types of each node, and nullability (counting nullable with default values as not nullable)
+        for (node_id, node) in self.iter_nodes() {
+            let node_type = &self.types[&node.type_name];
+            let inputs = &node.inputs;
+            let input_types = &node_type.inputs;
+            let default_outputs = &node.default_outputs;
+            let output_types = &node_type.outputs;
 
-        todo!("\
-        Check that input and output types match\
-        Also check that there are no partially-filled inputs in required regions or output\
-        ")
+            assert_eq!(inputs.len(), input_types.len(), "input count mismatch");
+            assert_eq!(default_outputs.len(), output_types.len(), "output count mismatch");
 
-        // errors
+            for (input, NodeIOType { name: input_name, rust_type: input_rust_type, null_region: input_null_region }) in zip(inputs, input_types) {
+                self.check_type(&mut errors, node_id, node, input, input_name, input_rust_type, input_null_region);
+            }
+            for (default_output, NodeIOType { name: output_name, rust_type: output_rust_type, null_region: _ }) in zip(default_outputs, output_types) {
+                // input null_region is null because the default output is never required, even if the actual type is non-null
+                self.check_type(&mut errors, node_id, node, default_output, output_name, output_rust_type, &NullRegion::Null);
+            }
+        }
+
+        errors
+    }
+
+    fn check_type(
+        &self,
+        errors: &mut GraphValidationErrors,
+        node_id: NodeId,
+        node: &Node,
+        input: &NodeInput,
+        input_name: &str,
+        input_rust_type: &RustType,
+        input_null_region: &NullRegion,
+    ) {
+        match input {
+            NodeInput::Hole => if !NullRegion::Null.is_subset_of(input_null_region) {
+                errors.push(GraphValidationError::IONullabilityMismatch {
+                    output_nullability: NullRegion::Null,
+                    input_nullability: input_null_region.clone(),
+                    referenced_from: NodeDisplayInputName {
+                        node: node.display(node_id),
+                        input_name: input_name.to_string()
+                    }
+                });
+                // Type is ok (bottom)
+            },
+            NodeInput::Dep(dep) => {
+                let output_type = match dep {
+                    NodeInputDep::GraphInput { idx} => &self.input_types[*idx],
+                    NodeInputDep::OtherNodeOutput { id, idx } => &self.types[&self.nodes[id.0].type_name].outputs[*idx]
+                };
+                let NodeIOType { name: _, rust_type: output_rust_type, null_region: output_null_region } = output_type;
+                self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, output_null_region)
+            }
+            NodeInput::Const(_) => {
+                // Nullability is ok (not nullable)
+                // Type is ok (invariant)
+            }
+            NodeInput::Array(elems) => {
+                let (elem_input_type, len) = input_rust_type.structure.array_elem_type_and_length().expect("broken invariant: node input is array but type isn't array");
+                assert_eq!(elems.len(), len, "broken invariant: node input / type array length mismatch");
+                let elem_input_nullability = input_null_region;
+                for elem in elems {
+                    self.check_type(errors, node_id, node, elem, input_name, elem_input_type, elem_input_nullability);
+                }
+            }
+            NodeInput::Tuple(elems) => {
+                let elem_input_types = input_rust_type.structure.general_compound_elem_types().expect("broken invariant: node input is tuple but type isn't tuple");
+                let elem_input_nullabilities = input_null_region.subdivide();
+                for (elem, (elem_input_type, elem_input_nullability)) in zip(elems, zip(elem_input_types, elem_input_nullabilities)) {
+                    self.check_type(errors, node_id, node, &elem.input, input_name, elem_input_type, elem_input_nullability);
+                }
+            }
+        }
+    }
+
+    fn check_type2(
+        &self,
+        errors: &mut GraphValidationErrors,
+        node_id: NodeId,
+        node: &Node,
+        input_name: &str,
+        input_rust_type: &RustType,
+        input_null_region: &NullRegion,
+        output_rust_type: &RustType,
+        output_null_region: &NullRegion,
+    ) {
+        match output_rust_type.is_rough_subtype_of(input_rust_type) {
+            IsSubtypeOf::No => {
+                errors.push(GraphValidationError::IOTypeMismatch {
+                    output_type: input_rust_type.clone(),
+                    input_type: output_rust_type.clone(),
+                    referenced_from: NodeDisplayInputName {
+                        node: node.display(node_id),
+                        input_name: input_name.to_string()
+                    }
+                });
+            },
+            IsSubtypeOf::Unknown => {
+                errors.push(GraphValidationError::IOTypeMaybeMismatch {
+                    output_type: input_rust_type.clone(),
+                    input_type: output_rust_type.clone(),
+                    referenced_from: NodeDisplayInputName {
+                        node: node.display(node_id),
+                        input_name: input_name.to_string()
+                    }
+                });
+            }
+            IsSubtypeOf::Yes => {}
+        }
+        if !output_null_region.is_subset_of(input_null_region) {
+            errors.push(GraphValidationError::IONullabilityMismatch {
+                output_nullability: input_null_region.clone(),
+                input_nullability: output_null_region.clone(),
+                referenced_from: NodeDisplayInputName {
+                    node: node.display(node_id),
+                    input_name: input_name.to_string()
+                }
+            });
+        }
     }
 
     pub fn iter_node_ids(&self) -> impl Iterator<Item=NodeId> + '_ {

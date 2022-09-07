@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::borrow::Cow;
 use std::env;
 use std::error::Error;
@@ -9,7 +8,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use log::{info, warn};
-use ttmap::{TypeBox, TypeMap};
+use ttmap::{ValueBox, TypeMap};
 
 use crate::misc::{ErrorNodes, try_or_return, error};
 
@@ -114,7 +113,7 @@ pub struct RunTest<T: 'static> {
     pub test_name: &'static str,
     /// Associated name and extension
     pub associated_files: &'static [(&'static str, &'static str)],
-    pub run: fn(&mut ErrorNodes, &T, &Path, Vec<AssociatedIOFile<String>>, &TypeMap) -> Option<TypeBox>
+    pub run: fn(&mut ErrorNodes, &T, &Path, Vec<AssociatedIOFile<String>>, &TypeMap) -> Option<ValueBox>
 }
 
 impl<T: 'static> RunTestsOnFiles<T> {
@@ -176,7 +175,7 @@ impl<T: 'static> RunTestsOnFiles<T> {
                         }).collect::<Vec<_>>();
                         let result = (test.run)(errors, &input, input_path, associated_files, &prior_tests);
                         if let Some(result) = result {
-                            prior_tests.insert_box(result);
+                            prior_tests.insert_raw(result);
                         }
                     });
                 }

@@ -1,5 +1,5 @@
 use std::fmt::{Display, Formatter};
-use std::iter::zip;
+use std::iter::{repeat, zip};
 use std::ops::Index;
 use crate::graph::ir::NodeInput;
 
@@ -15,6 +15,7 @@ pub enum NullRegion {
 
 impl NullRegion {
     /// Returns `Null` if a `Hole`, and `Partial` if an array or tuple
+    #[deprecated]
     pub fn of(input: &NodeInput) -> Self {
         match input {
             NodeInput::Hole => NullRegion::Null,
@@ -45,6 +46,33 @@ impl NullRegion {
                 assert_eq!(elems.len(), other_elems.len(), "tried to compare null regions of different shapes");
                 zip(elems, other_elems).all(|(elem, other_elem)| elem.is_subset_of(other_elem))
             }
+        }
+    }
+
+    /// - `Null` = iterator of infinite `Null`
+    /// - `NonNull` = iterator of infinite `NonNull`
+    /// - `Partial` = iterator of elems
+    pub fn subdivide(&self) -> impl Iterator<Item=&NullRegion> {
+        match self {
+            NullRegion::Null => SubdivideIter::Repeat(repeat(&NullRegion::Null)),
+            NullRegion::NonNull => SubdivideIter::Repeat(repeat(&NullRegion::NonNull)),
+            NullRegion::Partial(elems) => SubdivideIter::Slice(elems.iter())
+        }
+    }
+}
+
+enum SubdivideIter<'a> {
+    Repeat(std::iter::Repeat<&'a NullRegion>),
+    Slice(std::slice::Iter<'a, NullRegion>),
+}
+
+impl<'a> Iterator for SubdivideIter<'a> {
+    type Item = &'a NullRegion;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            SubdivideIter::Slice(iter) => iter.next(),
+            SubdivideIter::Repeat(iter) => iter.next()
         }
     }
 }

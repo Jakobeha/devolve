@@ -1,18 +1,31 @@
 use std::collections::HashMap;
 use std::mem::{MaybeUninit, size_of};
-use derive_more::Display;
 use slab::Slab;
 use structural_reflection::RustType;
 use crate::graph::raw::RawComputeFn;
 use crate::ast::types::{AstFieldHeader, AstNodePos};
 use crate::raw::NullRegion;
 
-/// Compound view graph.
+/// Compound view graph intermediate-representation loaded from a .dui file.
+/// The graph is valid to an extent, see below.
 ///
-/// A compound view is a graph of nodes which may be subviews, input/output, or computations.
-/// It is loaded from a .dui file.
+/// Invariants:
+/// - Nodes have types within the [IrGraph]
+/// - The # of node inputs and outputs is the same as the # of input and output types,
+///   and each input and output corresponds to the type at the same index
+/// - All constant inputs are of the right form, all array or tuple inputs are for arrays or compounds
+///   with the same length. That is, all inputs have the correct type and nullability *unless* they
+///   are dependency inputs, in which case this isn't guaranteed
 ///
-/// This graph is well-formed but not validated.
+/// Not invariants:
+/// - Nodes may have cycles
+/// - Nodes are not necessarily sorted in topological order even if there are cycles,
+///   *unless* this was directly created from [AstGraph]
+/// - Nodes may not have compute
+/// - Dependency inputs may have the incorrect type
+///
+/// If [IrGraph::validate] checks the "not invariants". If it returns no errors, than all of those are held
+/// and you can safely unsafely convert to [LowerGraph](crate::lower::LowerGraph).
 #[derive(Clone)]
 pub struct IrGraph {
     pub(in crate::graph) input_types: Vec<NodeIOType>,
@@ -89,12 +102,12 @@ pub struct FieldHeader {
     pub header: AstFieldHeader
 }
 
-#[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct NodeTypeName(String);
 
 /// Note that ids in the graph aren't guaranteed ordered, which is why NodeId is not Ord
-#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct NodeId(pub usize);
 

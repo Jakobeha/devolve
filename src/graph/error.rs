@@ -9,6 +9,7 @@ use join_lazy_fmt::Join;
 
 use crate::graph::ir::NodeId;
 use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
+use crate::ir::NodeDisplay;
 use crate::raw::NullRegion;
 
 macro_rules! mk_errors {
@@ -320,7 +321,36 @@ pub struct NodeNameFieldName {
 #[derive(Debug, Display, Error)]
 pub enum GraphValidationError {
     #[display(fmt = "node cycle: {}", _0)]
-    Cycle(#[error(not(source))] NodeCycle)
+    Cycle(#[error(not(source))] NodeCycle),
+    #[display(fmt = "node has no compute function: {}", node)]
+    NoCompute {
+        node: NodeDisplay
+    },
+    #[display(fmt = "I/O nullability mismatch: {} -> {} (in {})", output_nullability, input_nullability, referenced_from)]
+    IONullabilityMismatch {
+        output_nullability: NullRegion,
+        input_nullability: NullRegion,
+        referenced_from: NodeDisplayInputName
+    },
+    #[display(fmt = "I/O type mismatch: {} -> {} (in {})", "output_type.type_name.unqualified()", "input_type.type_name.unqualified()", referenced_from)]
+    IOTypeMismatch {
+        output_type: RustType,
+        input_type: RustType,
+        referenced_from: NodeDisplayInputName
+    },
+    #[display(fmt = "I/O type maybe mismatch: {} -> {} (in {})", "output_type.type_name.unqualified()", "input_type.type_name.unqualified()", referenced_from)]
+    IOTypeMaybeMismatch {
+        output_type: RustType,
+        input_type: RustType,
+        referenced_from: NodeDisplayInputName
+    }
+}
+
+#[derive(Debug, Clone, Display)]
+#[display(fmt = "node {} input {}", node, input_name)]
+pub struct NodeDisplayInputName {
+    pub node: NodeDisplay,
+    pub input_name: String
 }
 
 #[derive(Debug, Display, Error)]

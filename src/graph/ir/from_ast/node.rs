@@ -6,7 +6,7 @@ use crate::ir::from_ast::{ForwardNode, GraphBuilder};
 use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
-use crate::raw::{NullRegion, RawComputeFn};
+use crate::raw::NullRegion;
 
 impl<'a> GraphBuilder<'a> {
     pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
