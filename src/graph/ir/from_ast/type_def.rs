@@ -3,7 +3,7 @@ use crate::ir::from_ast::GraphBuilder;
 use crate::ast::types::{AstEnumTypeDef, AstEnumVariantTypeDef, AstFieldTypeDef, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstBody};
 use structural_reflection::{RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
-impl<'a> GraphBuilder<'a> {
+impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_type_def(&mut self, type_def_name: &str, type_def: AstTypeDef) -> RustType {
         match type_def {
             AstTypeDef::Struct(struct_type) => self.resolve_struct_type_def(type_def_name, struct_type),

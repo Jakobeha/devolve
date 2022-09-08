@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::iter::{repeat, zip};
 use std::ops::Index;
-use crate::graph::ir::NodeInput;
 
 #[derive(Debug, Clone)]
 pub enum NullRegion {

@@ -19,15 +19,15 @@ pub(super) struct ForwardNode {
     pub(super) input_field_names: Option<Vec<String>>,
 }
 
-pub(super) struct GraphBuilder<'a> {
-    ctx: &'a ComptimeCtx,
+pub(super) struct GraphBuilder<'a, RuntimeCtx: 'static + ?Sized> {
+    ctx: &'a ComptimeCtx<RuntimeCtx>,
     errors: &'a mut GraphFormErrors,
     forward_resolved_type_defs: HashSet<String>,
     forward_resolved_nodes: HashMap<String, (NodeId, ForwardNode)>,
     node_names: Vec<String>,
     resolved_rust_types: HashMap<String, RustType>,
     resolved_node_types: HashMap<NodeTypeName, NodeTypeData>,
-    resolved_nodes: HashMap<String, (NodeId, Node)>,
+    resolved_nodes: HashMap<String, (NodeId, Node<RuntimeCtx>)>,
 }
 
 enum AstBodyOrInlineTuple {
@@ -44,10 +44,10 @@ impl AstBodyOrInlineTuple {
     }
 }
 
-impl<'a> GraphBuilder<'a> {
+impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     /// Note: the built graph's nodes are guaranteed to be topologically sorted as long as there are no cycles.
     /// This is not the case for [IrGraph] in general though.
-    pub(super) fn build(graph: AstGraph, ctx: &'a ComptimeCtx, errors: &'a mut GraphFormErrors) -> IrGraph {
+    pub(super) fn build(graph: AstGraph, ctx: &'a ComptimeCtx<RuntimeCtx>, errors: &'a mut GraphFormErrors) -> IrGraph<RuntimeCtx> {
         GraphBuilder {
             errors,
             ctx,
@@ -60,7 +60,7 @@ impl<'a> GraphBuilder<'a> {
         }._build(graph)
     }
 
-    fn _build(mut self, graph: AstGraph) -> IrGraph {
+    fn _build(mut self, graph: AstGraph) -> IrGraph<RuntimeCtx> {
         // sort by DAG so we can handle backward references
         let mut sorted_types = graph.rust_types.into_iter().collect::<Vec<_>>();
         sorted_types.sort_by_deps();

@@ -2,9 +2,9 @@ use std::iter::zip;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::GraphBuilder;
 use crate::ast::types::{AstBody, AstLiteral, AstRustType, AstValueHead};
-use structural_reflection::{infer_array_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
+use structural_reflection::{infer_slice_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
-impl<'a> GraphBuilder<'a> {
+impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_type(
         &mut self,
         ast_type: Option<AstRustType>,
@@ -166,7 +166,7 @@ impl<'a> GraphBuilder<'a> {
                 let num_elements = elements.len();
                 let element_type = self.merge_resolved_types(elements);
                 let size = infer_array_size(&element_type, num_elements);
-                let align = infer_array_align(&element_type);
+                let align = infer_slice_align(&element_type);
                 let structure = TypeStructure::Array {
                     elem: Box::new(element_type),
                     length: num_elements

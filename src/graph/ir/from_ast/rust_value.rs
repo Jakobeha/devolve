@@ -7,7 +7,7 @@ use crate::ir::{NodeId, NodeInput, NodeInputDep, NodeInputWithLayout};
 use crate::ast::types::{AstBody, AstField, AstLiteral, AstRustType, AstValueHead};
 use structural_reflection::{IsSubtypeOf, RustType, RustTypeName, TypeStructureBody, TypeStructure};
 
-impl<'a> GraphBuilder<'a> {
+impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_value(
         &mut self,
         (value, value_children): (Option<AstValueHead>, AstBody),

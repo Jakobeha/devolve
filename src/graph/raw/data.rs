@@ -1,8 +1,8 @@
 use std::iter::zip;
 use std::mem::MaybeUninit;
-use std::ptr::copy_nonoverlapping;
+use std::ptr::{copy_nonoverlapping, slice_from_raw_parts_mut};
 use structural_reflection::{infer_c_tuple_elem_offsets, infer_c_tuple_size, RustType};
-use crate::raw::{NullRegion, IODataType};
+use crate::raw::{NullRegion, IODataTypes};
 
 /// Input data holder for a node-graph.
 ///
@@ -28,11 +28,11 @@ pub struct IOData {
 pub type RawData = [MaybeUninit<u8>];
 
 impl InputData {
-    pub fn new<Values: IODataType>(values: Values::OfOptionals) -> InputData where Values::StaticId: Sized {
+    pub fn new<Values: IODataTypes>(values: Values::OfOptionals) -> InputData {
         InputData(IOData::new(
             Values::iter_rust_types().collect(),
             Values::iter_is_some(&values).map(|is_some| if is_some { NullRegion::NonNull } else { NullRegion::Null }).collect(),
-            Values::iter_raw_data(&values).collect()
+            Values::iter_raw_data(&values)
         ))
     }
 
@@ -87,10 +87,12 @@ impl IOData {
     ) -> IOData {
         assert_eq!(rust_types.len(), null_regions.len(), "# of types must be the same as # of null regions");
 
-        let mut offsets = infer_c_tuple_elem_offsets(&rust_types).collect::<Vec<_>>();
+        let offsets = infer_c_tuple_elem_offsets(&rust_types).collect::<Vec<_>>();
         let mut raw = Box::new_uninit_slice(infer_c_tuple_size(&rust_types));
         for ((rust_type, offset), raw_elem) in zip(zip(&rust_types, &offsets), raw_elems) {
-            unsafe { copy_nonoverlapping(raw_elem, raw.as_mut_ptr().add(*offset), rust_type.size); }
+            if !raw_elem.is_null() {
+                unsafe { copy_nonoverlapping(raw_elem as *mut MaybeUninit<u8>, raw.as_mut_ptr().add(*offset), rust_type.size); }
+            }
         }
 
         IOData {
@@ -102,11 +104,11 @@ impl IOData {
     }
 
     pub unsafe fn as_input(&self) -> &InputData {
-        &*(raw as *const Self as *const InputData)
+        &*(self as *const Self as *const InputData)
     }
 
     pub unsafe fn as_output(&mut self) -> &mut OutputData {
-        &mut *(raw as *mut Self as *mut OutputData)
+        &mut *(self as *mut Self as *mut OutputData)
     }
 
     pub fn rust_types(&self) -> &[RustType] {
@@ -124,15 +126,40 @@ impl IOData {
 
     pub fn data(&self, idx: usize) -> &RawData {
         let (offset, size) = self.offset_size(idx);
-        &*self.raw[offset..offset + size]
+        &self.raw[offset..offset + size]
     }
 
     pub fn data_mut(&mut self, idx: usize) -> &mut RawData {
         let (offset, size) = self.offset_size(idx);
-        &mut *self.raw[offset..offset + size]
+        &mut self.raw[offset..offset + size]
+    }
+
+    unsafe fn data_mut_ptr(rust_types: &[RustType], offsets: &[usize], raw: *mut MaybeUninit<u8>, idx: usize) -> *mut RawData {
+        let (offset, size) = Self::offset_size_ptr(rust_types, offsets, idx);
+        slice_from_raw_parts_mut(raw.add(offset), size)
+    }
+
+    pub fn iter_data(&self) -> impl Iterator<Item=&RawData> {
+        (0..self.len()).map(move |idx| self.data(idx))
+    }
+
+    pub fn iter_data_mut(&mut self) -> impl Iterator<Item=&mut RawData> {
+        let rust_types = &self.rust_types;
+        let offsets = &self.offsets;
+        let raw = self.raw.as_mut_ptr();
+        (0..self.len()).map(move |idx| unsafe { &mut *Self::data_mut_ptr(rust_types, offsets, raw, idx) })
+    }
+
+    pub fn copy_data_into(&self, dest: &mut Self) {
+        debug_assert_eq!(self.raw.len(), dest.raw.len());
+        unsafe { copy_nonoverlapping(self.raw.as_ptr(), dest.raw.as_mut_ptr(), self.raw.len()); }
     }
 
     fn offset_size(&self, idx: usize) -> (usize, usize) {
         (self.offsets[idx], self.rust_types[idx].size)
+    }
+
+    fn offset_size_ptr(rust_types: &[RustType], offsets: &[usize], idx: usize) -> (usize, usize) {
+        (offsets[idx], rust_types[idx].size)
     }
 }

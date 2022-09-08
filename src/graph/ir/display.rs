@@ -7,7 +7,7 @@ pub struct NodeDisplay {
     pub type_name: NodeTypeName,
 }
 
-impl<RuntimeCtx> Node<RuntimeCtx> {
+impl<RuntimeCtx: 'static + ?Sized> Node<RuntimeCtx> {
     pub fn display(&self, my_id: NodeId) -> NodeDisplay {
         NodeDisplay {
             node_id: my_id,

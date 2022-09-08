@@ -10,11 +10,11 @@ use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
-use dui_graph::raw::{NullRegion, ComputeFn, IOData, InputData, OutputData};
+use dui_graph::raw::{NullRegion, ComputeFn};
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
-use dui_graph::{CompoundViewCtx, StaticStrs};
+use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
 use crate::misc::{assert_eq_multiline, ErrorNodes, try_or_none};
 use ttmap::ValueBox;
@@ -60,7 +60,7 @@ fn tests_on_files() {
                     test_name: "ir",
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, _prior_tests| {
-                        let mut node_types = NodeTypes::new();
+                        let mut node_types = NodeTypes::<TestRuntimeCtx>::new();
                         node_types.insert(String::from("Button"), NodeType {
                             compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Button");
@@ -204,7 +204,7 @@ fn tests_on_files() {
                     test_name: "lower",
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, prior_tests| {
-                        let ir_graph = prior_tests.get::<IrGraph>()?;
+                        let ir_graph = prior_tests.get::<IrGraph<TestRuntimeCtx>>()?;
 
                         try_or_none!(
                             LowerGraph::try_from(ir_graph.clone()),
@@ -217,7 +217,7 @@ fn tests_on_files() {
                     test_name: "run",
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, prior_tests| {
-                        let mut lower_graph = prior_tests.get::<Mutex<LowerGraph>>()?.lock().unwrap();
+                        let mut lower_graph = prior_tests.get::<Mutex<LowerGraph<TestRuntimeCtx>>>()?.lock().unwrap();
 
                         let input_types = [
                             RustType::of::<&str>(),

@@ -13,25 +13,25 @@ use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, Rust
 use crate::ast::types::AstLiteral;
 use crate::raw::NullRegion;
 
-pub struct GraphSerializer<'a> {
+pub struct GraphSerializer<'a, RuntimeCtx: 'static + ?Sized> {
     /// Only actually needs some of the ctx, GraphBuilder needs more, but we use the same struct
     /// because they are close enough and we'll have the data
-    ctx: &'a ComptimeCtx,
+    ctx: &'a ComptimeCtx<RuntimeCtx>,
     result: AstGraph,
     rust_type_names: DuplicateNamesInScope,
     input_names: Vec<String>,
     node_names_and_output_names: Vec<Option<(String, Vec<String>)>>,
 }
 
-impl<'a> GraphSerializer<'a> {
-    pub fn serialize<RuntimeCtx>(graph: IrGraph<RuntimeCtx>, ctx: &'a ComptimeCtx, additional_type_defs: impl Iterator<Item=&'a (String, TypeStructure)>) -> AstGraph {
+impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
+    pub fn serialize(graph: IrGraph<RuntimeCtx>, ctx: &'a ComptimeCtx<RuntimeCtx>, additional_type_defs: impl Iterator<Item=&'a (String, TypeStructure)>) -> AstGraph {
         let mut serializer = GraphSerializer::new(ctx);
         serializer.add_type_defs(additional_type_defs);
         serializer._serialize(graph);
         serializer.result
     }
 
-    fn new(ctx: &'a ComptimeCtx) -> Self {
+    fn new(ctx: &'a ComptimeCtx<RuntimeCtx>) -> Self {
         GraphSerializer {
             ctx,
             result: AstGraph::new(),
@@ -101,7 +101,7 @@ impl<'a> GraphSerializer<'a> {
         });
     }
 
-    fn serialize_node<RuntimeCtx>(&mut self, node: Node<RuntimeCtx>, node_type: &NodeTypeData) {
+    fn serialize_node(&mut self, node: Node<RuntimeCtx>, node_type: &NodeTypeData) {
         let ast_node_type = if node.type_name.as_ref() == node.meta.node_name.as_str() {
             None
         } else {

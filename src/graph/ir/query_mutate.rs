@@ -7,7 +7,7 @@ use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep, NodeIOType};
 use structural_reflection::{IsSubtypeOf, RustType};
 use crate::raw::NullRegion;
 
-impl<RuntimeCtx> IrGraph<RuntimeCtx> {
+impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
     pub fn validate(&self) -> GraphValidationErrors {
         let mut errors = GraphValidationErrors::new();
 
@@ -209,7 +209,7 @@ impl<RuntimeCtx> IrGraph<RuntimeCtx> {
     }
 }
 
-impl<RuntimeCtx> Node<RuntimeCtx> {
+impl<RuntimeCtx: 'static + ?Sized> Node<RuntimeCtx> {
     pub fn depends_on(&self, other_id: NodeId) -> bool {
         self.iter_dep_nodes().any(|dep| dep == other_id)
     }
@@ -253,7 +253,7 @@ impl NodeInput {
         })
     }
 
-    fn null_region<RuntimeCtx>(&self, graph: &IrGraph<RuntimeCtx>) -> NullRegion {
+    fn null_region<RuntimeCtx: 'static + ?Sized>(&self, graph: &IrGraph<RuntimeCtx>) -> NullRegion {
         match &self {
             NodeInput::Hole => NullRegion::Null,
             NodeInput::Const(_) => NullRegion::NonNull,

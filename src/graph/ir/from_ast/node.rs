@@ -8,7 +8,7 @@ use crate::node_types::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
 use crate::raw::NullRegion;
 
-impl<'a> GraphBuilder<'a> {
+impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
         self.forward_resolved_nodes.get(node_name).map(|(id, node)| (*id, node))
     }
@@ -19,7 +19,7 @@ impl<'a> GraphBuilder<'a> {
         })
     }
 
-    pub(super) fn resolved_node_and_type(&self, node_name: &str) -> Option<(NodeId, &NodeTypeData, &Node)> {
+    pub(super) fn resolved_node_and_type(&self, node_name: &str) -> Option<(NodeId, &NodeTypeData, &Node<RuntimeCtx>)> {
         self.resolved_nodes.get(node_name).map(|(node_id, node)| {
             let node_type = self.resolved_node_types.get(&node.type_name).expect("resolved node missing its type");
             (*node_id, node_type, node)
@@ -39,7 +39,7 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    pub(super) fn resolve_node(&mut self, node_name: &str, node_id: NodeId, node: AstNode) -> (NodeTypeData, Node) {
+    pub(super) fn resolve_node(&mut self, node_name: &str, node_id: NodeId, node: AstNode) -> (NodeTypeData, Node<RuntimeCtx>) {
         let (node_id_, _) = self.forward_resolved_nodes.remove(node_name).expect("node not forward resolved");
         debug_assert!(node_id == node_id_, "sanity check failed");
 
@@ -94,7 +94,7 @@ impl<'a> GraphBuilder<'a> {
         (type_data, node)
     }
 
-    fn resolve_node_type(&mut self, type_name: &str, node_name: &str, input_types: &[NodeIOType], output_types: &[NodeIOType]) -> Option<NodeType> {
+    fn resolve_node_type(&mut self, type_name: &str, node_name: &str, input_types: &[NodeIOType], output_types: &[NodeIOType]) -> Option<NodeType<RuntimeCtx>> {
         if let Some((fn_name, fn_arg)) = type_name.split_once('(') {
             let fn_arg = fn_arg.strip_suffix(')').unwrap_or_else(|| {
                 self.errors.push(GraphFormError::NodeTypeFunctionMissingRParen { node_name: node_name.to_string() });
@@ -106,7 +106,7 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    fn _resolve_node_type(&mut self, type_name: &str, fn_arg: &str, node_name: &str,  input_types: &[NodeIOType], output_types: &[NodeIOType]) -> Option<NodeType> {
+    fn _resolve_node_type(&mut self, type_name: &str, fn_arg: &str, node_name: &str,  input_types: &[NodeIOType], output_types: &[NodeIOType]) -> Option<NodeType<RuntimeCtx>> {
         match self.resolved_rust_types.get(type_name) {
             None => match self.ctx.node_types.get_and_call(type_name, fn_arg, self.node_type_fn_ctx(input_types, output_types)) {
                 None => {

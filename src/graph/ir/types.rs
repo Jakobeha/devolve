@@ -26,8 +26,7 @@ use crate::raw::NullRegion;
 ///
 /// If [IrGraph::validate] checks the "not invariants". If it returns no errors, than all of those are held
 /// and you can safely unsafely convert to [LowerGraph](crate::lower::LowerGraph).
-#[derive(Clone)]
-pub struct IrGraph<RuntimeCtx> {
+pub struct IrGraph<RuntimeCtx: 'static + ?Sized> {
     pub(in crate::graph) input_types: Vec<NodeIOType>,
     pub(in crate::graph) default_inputs: Vec<NodeInput>,
     pub(in crate::graph) output_types: Vec<NodeIOType>,
@@ -79,8 +78,7 @@ pub enum NodeInputDep {
     }
 }
 
-#[derive(Clone)]
-pub struct Node<RuntimeCtx> {
+pub struct Node<RuntimeCtx: 'static + ?Sized> {
     pub type_name: NodeTypeName,
     pub inputs: Vec<NodeInput>,
     pub default_outputs: Vec<NodeInput>,
@@ -160,5 +158,33 @@ impl Into<String> for NodeTypeName {
 impl AsRef<str> for NodeTypeName {
     fn as_ref(&self) -> &str {
         self.0.as_ref()
+    }
+}
+
+
+impl<RuntimeCtx: 'static + ?Sized> Clone for IrGraph<RuntimeCtx> {
+    fn clone(&self) -> Self {
+        Self {
+            input_types: self.input_types.clone(),
+            default_inputs: self.default_inputs.clone(),
+            output_types: self.output_types.clone(),
+            types: self.types.clone(),
+            nodes: self.nodes.clone(),
+            outputs: self.outputs.clone(),
+            input_metadata: self.input_metadata.clone(),
+            output_metadata: self.output_metadata.clone(),
+        }
+    }
+}
+
+impl<RuntimeCtx: 'static + ?Sized> Clone for Node<RuntimeCtx> {
+    fn clone(&self) -> Self {
+        Self {
+            type_name: self.type_name.clone(),
+            inputs: self.inputs.clone(),
+            default_outputs: self.default_outputs.clone(),
+            compute: self.compute.clone(),
+            meta: self.meta.clone(),
+        }
     }
 }
