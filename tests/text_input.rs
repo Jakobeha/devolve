@@ -10,7 +10,7 @@ use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
-use dui_graph::raw::{NullRegion, RawComputeFn, RawData, RawInputs, RawOutputs};
+use dui_graph::raw::{NullRegion, ComputeFn, IOData, InputData, OutputData};
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
@@ -62,7 +62,7 @@ fn tests_on_files() {
                     run: |errors, input, input_path, _associated_files, _prior_tests| {
                         let mut node_types = NodeTypes::new();
                         node_types.insert(String::from("Button"), NodeType {
-                            compute: RawComputeFn::new(|ctx, inputs, outputs| {
+                            compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Button");
                             }),
                             type_data: NodeTypeData {
@@ -101,7 +101,7 @@ fn tests_on_files() {
                             ]
                         });
                         node_types.insert(String::from("TextField"), NodeType {
-                            compute: RawComputeFn::new(|ctx, inputs, outputs| {
+                            compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO TextField");
                             }),
                             type_data: NodeTypeData {
@@ -152,7 +152,7 @@ fn tests_on_files() {
                             ]
                         });
                         node_types.insert_fn0(String::from("Box"), |ctx| Ok(NodeType {
-                            compute: RawComputeFn::new(|ctx, inputs, outputs| {
+                            compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Box");
                             }),
                             type_data: NodeTypeData {

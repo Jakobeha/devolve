@@ -1,31 +1,32 @@
 use std::collections::HashMap;
-use std::iter::zip;
+use std::iter::{repeat, zip};
 use std::mem::{MaybeUninit, transmute};
-use std::ptr::copy_nonoverlapping;
+use std::ptr::{copy_nonoverlapping, null};
 use crate::CompoundViewCtx;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
-use crate::graph::raw::{RawComputeFn, RawData, RawInputs, RawOutputs, NullRegion};
+use crate::graph::raw::{ComputeFn, IOData, InputData, OutputData, NullRegion};
 use structural_reflection::{IsSubtypeOf, RustType};
+use crate::raw::RawData;
 
 /// Built (lowered) compound view graph, loaded from a `.dui` file.
 ///
 /// This graph is completely valid. However, in order to run it, you must check the inputs and
 /// outputs, as they may still be incompatible with the graph.
-pub struct LowerGraph {
+pub struct LowerGraph<RuntimeCtx> {
     input_types: Vec<NodeIOType>,
     output_types: Vec<NodeIOType>,
-    compute_dag: Vec<Node>,
+    compute_dag: Vec<Node<RuntimeCtx>>,
     outputs: Vec<NodeInput>,
-    const_output_data: RawData
+    const_output_data: IOData
 }
 
-struct Node {
-    compute: RawComputeFn,
+struct Node<RuntimeCtx> {
+    compute: ComputeFn<RuntimeCtx>,
     inputs: Vec<NodeInput>,
     default_outputs: Vec<NodeInput>,
-    cached_input_data: RawData,
-    cached_output_data: RawData
+    cached_input_data: IOData,
+    cached_output_data: IOData
 }
 
 enum NodeInput {
@@ -54,7 +55,7 @@ enum NodeInputDep {
     }
 }
 
-impl LowerGraph {
+impl<RuntimeCtx> LowerGraph<RuntimeCtx> {
     pub unsafe fn try_from_but_assume_sorted_if_there_are_no_cycles(graph: IrGraph) -> Result<Self, GraphValidationErrors> {
         let errors = graph.validate();
         if errors.is_empty() {
@@ -101,12 +102,13 @@ impl LowerGraph {
                 GraphNodeInput::Tuple(inputs_with_layouts) => NodeInput::Tuple(inputs_with_layouts.into_iter().map(|GraphNodeInputWithLayout { input, size, align }| NodeInputWithLayout { input: get_input(input, cached_input_data, node_indices, hole_is_valid), size, align }).collect())
             }
         }
-        unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> (RawData, Vec<NodeInput>) {
-            let mut cached_input_data = RawData {
-                types: input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
-                data: input_types.iter().map(|input| Box::new_uninit_slice(input.rust_type.size)).collect::<Vec<_>>(),
-                null_regions: inputs.iter().map(|input| NullRegion::of(input)).collect::<Vec<_>>()
-            };
+        unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> (IOData, Vec<NodeInput>) {
+            debug_assert!(input_types.len() == inputs.len());
+            let mut cached_input_data = IOData::new(
+                input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
+                input_types.iter().map(|input| input.null_region.clone()).collect::<Vec<_>>(),
+                repeat(null()).take(inputs.len())
+            );
             let inputs = zip(inputs.into_iter(), cached_input_data.data.iter_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices, hole_is_valid))
                 .collect::<Vec<_>>();
@@ -221,8 +223,8 @@ impl LowerGraph {
         errors
     }
 
-    pub fn compute(&mut self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>) -> Result<(), GraphIOCheckErrors> {
-        let errors = self.check(inputs.types(), outputs.types(), inputs.nonnull_regions(), outputs.nonnull_regions());
+    pub fn compute(&mut self, ctx: &mut CompoundViewCtx, inputs: &InputData, outputs: &mut OutputData) -> Result<(), GraphIOCheckErrors> {
+        let errors = self.check(inputs.rust_types(), outputs.rust_types(), inputs.nonnull_regions(), outputs.nonnull_regions());
         if errors.is_empty() {
             Ok(unsafe { self.compute_unchecked(ctx, inputs, outputs) })
         } else {
@@ -230,20 +232,20 @@ impl LowerGraph {
         }
     }
 
-    pub unsafe fn compute_unchecked(&mut self, ctx: &mut CompoundViewCtx, inputs: RawInputs, mut outputs: RawOutputs<'_>) {
+    pub unsafe fn compute_unchecked(&mut self, ctx: &mut CompoundViewCtx, inputs: &InputData, outputs: &mut OutputData) {
         debug_assert!(inputs.len() == self.input_types.len() && outputs.len() == self.output_types.len());
 
-        unsafe fn handle_inputs(inputs: &[NodeInput], input_data: &mut [Box<[MaybeUninit<u8>]>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_sub_dag: &[Node]) {
-            unsafe fn handle_input(input: &NodeInput, input_data: &mut [MaybeUninit<u8>], graph_input_data: &[Box<[MaybeUninit<u8>]>], compute_sub_dag: &[Node]) {
+        unsafe fn handle_inputs(inputs: &[NodeInput], inputs_data: &mut IOData, graph_inputs: &InputData, compute_sub_dag: &[Node<RuntimeCtx>]) {
+            unsafe fn handle_input(input: &NodeInput, input_data: &mut RawData, graph_inputs: &InputData, compute_sub_dag: &[Node<RuntimeCtx>]) {
                 match input {
                     NodeInput::Hole | NodeInput::Const => {},
                     NodeInput::Dep(dep) => {
                         let other_output = match dep {
                             NodeInputDep::OtherNodeOutput { node_idx, field_idx } => {
                                 let other_node = &compute_sub_dag[*node_idx];
-                                &other_node.cached_output_data.data[*field_idx]
+                                &other_node.cached_output_data.data(*field_idx)
                             }
-                            NodeInputDep::GraphInput { field_idx } => &graph_input_data[*field_idx]
+                            NodeInputDep::GraphInput { field_idx } => &graph_inputs.data(*field_idx)
                         };
                         debug_assert!(other_output.len() == input_data.len());
                         input_data.copy_from_slice(other_output);
@@ -252,7 +254,7 @@ impl LowerGraph {
                     NodeInput::Array(inputs) => {
                         let input_datas = input_data.chunks_mut(inputs.len());
                         for (input, input_data) in zip(inputs, input_datas) {
-                            handle_input(input, input_data, graph_input_data, compute_sub_dag);
+                            handle_input(input, input_data, graph_inputs, compute_sub_dag);
                         }
                     }
                     NodeInput::Tuple(inputs) => {
@@ -262,29 +264,29 @@ impl LowerGraph {
                                 offset += align - offset % align;
                             }
                             let input_data = &mut input_data[offset..offset + size];
-                            handle_input(input, input_data, graph_input_data, compute_sub_dag);
+                            handle_input(input, input_data, graph_inputs, compute_sub_dag);
                             offset += size;
                         }
                     }
                 }
             }
 
-            for (input, input_data) in zip(inputs, input_data) {
-                handle_input(&input, input_data.as_mut(), graph_input_data, compute_sub_dag);
+            for (idx, input) in inputs.enumerate() {
+                let input_data = inputs_data.data_mut(idx);
+                handle_input(&input, input_data, graph_inputs, compute_sub_dag);
             }
         }
 
         for index in 0..self.compute_dag.len() {
             let (node, compute_sub_dag) = self.compute_dag[..=index].split_last_mut().unwrap();
             // Copy input data to nodes (const data is already there), then compute to output data
-            handle_inputs(&node.inputs, &mut node.cached_input_data.data, inputs.data(), &compute_sub_dag);
+            handle_inputs(&node.inputs, &mut node.cached_input_data, inputs, &compute_sub_dag);
             // Also copy default output data, which may be overridden by compute
-            handle_inputs(&node.default_outputs, &mut node.cached_output_data.data, inputs.data(), &compute_sub_dag);
-            node.compute.run(ctx, RawInputs::from(&node.cached_input_data), RawOutputs::from(&mut node.cached_output_data))
+            handle_inputs(&node.default_outputs, &mut node.cached_output_data, inputs, &compute_sub_dag);
+            node.compute.run(ctx, node.cached_input_data.as_input(), node.cached_output_data.as_output())
         }
 
         // Copy const data, then write the rest
-        let output_data = outputs.data();
         // const data
         debug_assert!(self.const_output_data.data.len() == output_data.len());
         for (const_data, output_data) in zip(self.const_output_data.data.iter(), output_data.iter_mut()) {
@@ -292,11 +294,11 @@ impl LowerGraph {
             copy_nonoverlapping(const_data.as_ptr(), output_data.as_mut_ptr(), const_data.len());
         }
         // the rest
-        handle_inputs(&self.outputs, output_data, inputs.data(), &self.compute_dag);
+        handle_inputs(&self.outputs, outputs.as_raw(), inputs, &self.compute_dag);
     }
 }
 
-impl TryFrom<IrGraph> for LowerGraph {
+impl<RuntimeCtx> TryFrom<IrGraph<RuntimeCtx>> for LowerGraph<RuntimeCtx> {
     type Error = GraphValidationErrors;
 
     fn try_from(value: IrGraph) -> Result<Self, Self::Error> {

@@ -24,7 +24,7 @@ pub struct GraphSerializer<'a> {
 }
 
 impl<'a> GraphSerializer<'a> {
-    pub fn serialize(graph: IrGraph, ctx: &'a ComptimeCtx, additional_type_defs: impl Iterator<Item=&'a (String, TypeStructure)>) -> AstGraph {
+    pub fn serialize<RuntimeCtx>(graph: IrGraph<RuntimeCtx>, ctx: &'a ComptimeCtx, additional_type_defs: impl Iterator<Item=&'a (String, TypeStructure)>) -> AstGraph {
         let mut serializer = GraphSerializer::new(ctx);
         serializer.add_type_defs(additional_type_defs);
         serializer._serialize(graph);
@@ -50,7 +50,7 @@ impl<'a> GraphSerializer<'a> {
         }
     }
 
-    fn _serialize(&mut self, graph: IrGraph) {
+    fn _serialize(&mut self, graph: IrGraph<RuntimeCtx>) {
         // Setup data
         // Don't need to iterate nested rust types or structures, because any type names are only in the surface types
         self.rust_type_names.extend(graph.iter_rust_types().flat_map(|rust_type| rust_type.type_name.iter_simple_names()));
@@ -101,7 +101,7 @@ impl<'a> GraphSerializer<'a> {
         });
     }
 
-    fn serialize_node(&mut self, node: Node, node_type: &NodeTypeData) {
+    fn serialize_node<RuntimeCtx>(&mut self, node: Node<RuntimeCtx>, node_type: &NodeTypeData) {
         let ast_node_type = if node.type_name.as_ref() == node.meta.node_name.as_str() {
             None
         } else {

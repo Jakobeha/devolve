@@ -20,7 +20,7 @@ mod from_ast;
 mod serialize;
 
 // region serialization / deserialization
-impl<'a> TryFrom<(AstGraph, &'a ComptimeCtx)> for IrGraph {
+impl<'a, RuntimeCtx> TryFrom<(AstGraph, &'a ComptimeCtx)> for IrGraph<RuntimeCtx> {
     type Error = GraphFormErrors;
 
     fn try_from((graph, ctx): (AstGraph, &'a ComptimeCtx)) -> Result<Self, Self::Error> {
@@ -35,13 +35,13 @@ impl<'a> TryFrom<(AstGraph, &'a ComptimeCtx)> for IrGraph {
     }
 }
 
-impl<'a> Into<AstGraph> for (IrGraph, &'a ComptimeCtx) {
+impl<'a, RuntimeCtx> Into<AstGraph> for (IrGraph<RuntimeCtx>, &'a ComptimeCtx) {
     fn into(self) -> AstGraph {
         GraphSerializer::serialize(self.0, self.1, empty())
     }
 }
 
-impl<'a> Into<AstGraph> for (IrGraph, &'a ComptimeCtx, &'a [(String, TypeStructure)]) {
+impl<'a, RuntimeCtx> Into<AstGraph> for (IrGraph<RuntimeCtx>, &'a ComptimeCtx, &'a [(String, TypeStructure)]) {
     fn into(self) -> AstGraph {
         GraphSerializer::serialize(self.0, self.1, self.2.into_iter())
     }
@@ -49,35 +49,35 @@ impl<'a> Into<AstGraph> for (IrGraph, &'a ComptimeCtx, &'a [(String, TypeStructu
 // endregion
 
 // region index boilerplate
-impl TryIndex<NodeId> for IrGraph {
-    type Output = Node;
+impl<RuntimeCtx> TryIndex<NodeId> for IrGraph<RuntimeCtx> {
+    type Output = Node<RuntimeCtx>;
 
     fn try_index(&self, index: NodeId) -> Result<&Self::Output, NotFound<NodeId>> {
         self.nodes.get(index.0).ok_or(NotFound { index })
     }
 }
 
-impl TryIndexMut<NodeId> for IrGraph {
+impl<RuntimeCtx> TryIndexMut<NodeId> for IrGraph<RuntimeCtx> {
     fn try_index_mut(&mut self, index: NodeId) -> Result<&mut Self::Output, NotFound<NodeId>> {
         self.nodes.get_mut(index.0).ok_or(NotFound { index })
     }
 }
 
-impl Index<NodeId> for IrGraph {
-    type Output = Node;
+impl<RuntimeCtx> Index<NodeId> for IrGraph<RuntimeCtx> {
+    type Output = Node<RuntimeCtx>;
 
     fn index(&self, index: NodeId) -> &Self::Output {
         self.nodes.index(index.0)
     }
 }
 
-impl IndexMut<NodeId> for IrGraph {
+impl<RuntimeCtx> IndexMut<NodeId> for IrGraph<RuntimeCtx> {
     fn index_mut(&mut self, index: NodeId) -> &mut Self::Output {
         self.nodes.index_mut(index.0)
     }
 }
 
-impl<'a> TryIndex<&'a NodeTypeName> for IrGraph {
+impl<'a, RuntimeCtx> TryIndex<&'a NodeTypeName> for IrGraph<RuntimeCtx> {
     type Output = NodeTypeData;
 
     fn try_index(&self, index: &'a NodeTypeName) -> Result<&Self::Output, NotFound<&'a NodeTypeName>> {
@@ -85,13 +85,13 @@ impl<'a> TryIndex<&'a NodeTypeName> for IrGraph {
     }
 }
 
-impl<'a> TryIndexMut<&'a NodeTypeName> for IrGraph {
+impl<'a, RuntimeCtx> TryIndexMut<&'a NodeTypeName> for IrGraph<RuntimeCtx> {
     fn try_index_mut(&mut self, index: &'a NodeTypeName) -> Result<&mut Self::Output, NotFound<&'a NodeTypeName>> {
         self.types.try_index_mut(index)
     }
 }
 
-impl<'a> Index<&'a NodeTypeName> for IrGraph {
+impl<'a, RuntimeCtx> Index<&'a NodeTypeName> for IrGraph<RuntimeCtx> {
     type Output = NodeTypeData;
 
     fn index(&self, index: &'a NodeTypeName) -> &Self::Output {
@@ -99,7 +99,7 @@ impl<'a> Index<&'a NodeTypeName> for IrGraph {
     }
 }
 
-impl<'a> IndexMut<&'a NodeTypeName> for IrGraph {
+impl<'a, RuntimeCtx> IndexMut<&'a NodeTypeName> for IrGraph<RuntimeCtx> {
     fn index_mut(&mut self, index: &'a NodeTypeName) -> &mut Self::Output {
         self.types.get_mut(index).expect("index_mut: key not found")
     }

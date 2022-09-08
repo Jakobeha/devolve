@@ -7,7 +7,7 @@ use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep, NodeIOType};
 use structural_reflection::{IsSubtypeOf, RustType};
 use crate::raw::NullRegion;
 
-impl IrGraph {
+impl<RuntimeCtx> IrGraph<RuntimeCtx> {
     pub fn validate(&self) -> GraphValidationErrors {
         let mut errors = GraphValidationErrors::new();
 
@@ -51,7 +51,7 @@ impl IrGraph {
         &self,
         errors: &mut GraphValidationErrors,
         node_id: NodeId,
-        node: &Node,
+        node: &Node<RuntimeCtx>,
         input: &NodeInput,
         input_name: &str,
         input_rust_type: &RustType,
@@ -79,7 +79,7 @@ impl IrGraph {
                     NodeInputDep::OtherNodeOutput { id, idx } => &self.nodes[id.0].default_outputs[*idx]
                 };
                 let NodeIOType { name: _, rust_type: output_rust_type, null_region: output_type_null_region } = output_type;
-                let mut output_null_region = NullRegion::of(default_output);
+                let mut output_null_region = default_output.null_region(self);
                 output_null_region.intersect(output_type_null_region);
 
                 self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, &output_null_region)
@@ -110,7 +110,7 @@ impl IrGraph {
         &self,
         errors: &mut GraphValidationErrors,
         node_id: NodeId,
-        node: &Node,
+        node: &Node<RuntimeCtx>,
         input_name: &str,
         input_rust_type: &RustType,
         input_null_region: &NullRegion,
@@ -156,11 +156,11 @@ impl IrGraph {
         self.nodes.iter().map(|(id, _)| NodeId(id))
     }
 
-    pub fn iter_nodes(&self) -> impl Iterator<Item=(NodeId, &Node)> {
+    pub fn iter_nodes(&self) -> impl Iterator<Item=(NodeId, &Node<RuntimeCtx>)> {
         self.nodes.iter().map(|(id, node)| (NodeId(id), node))
     }
 
-    pub fn iter_mut_nodes(&mut self) -> impl Iterator<Item=(NodeId, &mut Node)> {
+    pub fn iter_mut_nodes(&mut self) -> impl Iterator<Item=(NodeId, &mut Node<RuntimeCtx>)> {
         self.nodes.iter_mut().map(|(id, node)| (NodeId(id), node))
     }
 
@@ -209,7 +209,7 @@ impl IrGraph {
     }
 }
 
-impl Node {
+impl<RuntimeCtx> Node<RuntimeCtx> {
     pub fn depends_on(&self, other_id: NodeId) -> bool {
         self.iter_dep_nodes().any(|dep| dep == other_id)
     }
@@ -251,5 +251,27 @@ impl NodeInput {
             NodeInputDep::GraphInput { idx: _ } => None,
             NodeInputDep::OtherNodeOutput { id, idx: _ } => Some(id)
         })
+    }
+
+    fn null_region<RuntimeCtx>(&self, graph: &IrGraph<RuntimeCtx>) -> NullRegion {
+        match &self {
+            NodeInput::Hole => NullRegion::Null,
+            NodeInput::Const(_) => NullRegion::NonNull,
+            NodeInput::Dep(dep) => {
+                let output_type = match dep {
+                    NodeInputDep::GraphInput { idx} => &graph.input_types[*idx],
+                    NodeInputDep::OtherNodeOutput { id, idx } => &graph.types[&graph.nodes[id.0].type_name].outputs[*idx]
+                };
+                let default_output = match dep {
+                    NodeInputDep::GraphInput { idx} => &graph.default_inputs[*idx],
+                    NodeInputDep::OtherNodeOutput { id, idx } => &graph.nodes[id.0].default_outputs[*idx]
+                };
+                let mut output_null_region = default_output.null_region(graph);
+                output_null_region.intersect(&output_type.null_region);
+                output_null_region
+            },
+            NodeInput::Array(inputs) => NullRegion::Partial(inputs.iter().map(|input| input.null_region(graph)).collect()),
+            NodeInput::Tuple(inputs_with_layouts) => NullRegion::Partial(inputs_with_layouts.iter().map(|input_with_layout| input_with_layout.input.null_region(graph)).collect())
+        }
     }
 }

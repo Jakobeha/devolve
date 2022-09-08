@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::mem::{MaybeUninit, size_of};
 use slab::Slab;
 use structural_reflection::RustType;
-use crate::graph::raw::RawComputeFn;
+use crate::graph::raw::ComputeFn;
 use crate::ast::types::{AstFieldHeader, AstNodePos};
 use crate::raw::NullRegion;
 
@@ -27,12 +27,12 @@ use crate::raw::NullRegion;
 /// If [IrGraph::validate] checks the "not invariants". If it returns no errors, than all of those are held
 /// and you can safely unsafely convert to [LowerGraph](crate::lower::LowerGraph).
 #[derive(Clone)]
-pub struct IrGraph {
+pub struct IrGraph<RuntimeCtx> {
     pub(in crate::graph) input_types: Vec<NodeIOType>,
     pub(in crate::graph) default_inputs: Vec<NodeInput>,
     pub(in crate::graph) output_types: Vec<NodeIOType>,
     pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
-    pub(in crate::graph) nodes: Slab<Node>,
+    pub(in crate::graph) nodes: Slab<Node<RuntimeCtx>>,
     pub(in crate::graph) outputs: Vec<NodeInput>,
     pub(in crate::graph) input_metadata: NodeMetadata,
     pub(in crate::graph) output_metadata: NodeMetadata,
@@ -80,11 +80,11 @@ pub enum NodeInputDep {
 }
 
 #[derive(Clone)]
-pub struct Node {
+pub struct Node<RuntimeCtx> {
     pub type_name: NodeTypeName,
     pub inputs: Vec<NodeInput>,
     pub default_outputs: Vec<NodeInput>,
-    pub compute: Option<RawComputeFn>,
+    pub compute: Option<ComputeFn<RuntimeCtx>>,
     pub meta: NodeMetadata
 }
 

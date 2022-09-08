@@ -7,7 +7,7 @@ pub struct NodeDisplay {
     pub type_name: NodeTypeName,
 }
 
-impl Node {
+impl<RuntimeCtx> Node<RuntimeCtx> {
     pub fn display(&self, my_id: NodeId) -> NodeDisplay {
         NodeDisplay {
             node_id: my_id,

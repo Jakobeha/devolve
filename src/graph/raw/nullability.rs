@@ -14,21 +14,8 @@ pub enum NullRegion {
 }
 
 impl NullRegion {
-    /// Returns `Null` if a `Hole`, and `Partial` if an array or tuple
-    // TODO: remove deprecated when we know we're not keeping null when default is provided
-    #[deprecated]
-    pub fn of(input: &NodeInput) -> Self {
-        match input {
-            NodeInput::Hole => NullRegion::Null,
-            NodeInput::Dep(_) => NullRegion::NonNull,
-            NodeInput::Const(_) => NullRegion::NonNull,
-            NodeInput::Array(elems) => NullRegion::Partial(elems.iter().map(|elem| NullRegion::of(elem)).collect()),
-            NodeInput::Tuple(elems) => NullRegion::Partial(elems.iter().map(|elem| NullRegion::of(&elem.input)).collect())
-        }
-    }
-
     /// Intersects nullability. **panics** if the null regions are partial and have different lengths
-    pub fn intersect(&mut self, rhs: &NullRegion) {
+    pub fn intersect(&mut self, rhs: &Self) {
         match (self, rhs) {
             (NullRegion::Null, NullRegion::Null) => {},
             (this @ NullRegion::Null, NullRegion::NonNull) => *this = NullRegion::NonNull,
@@ -73,7 +60,7 @@ impl NullRegion {
     /// - `Null` = iterator of infinite `Null`
     /// - `NonNull` = iterator of infinite `NonNull`
     /// - `Partial` = iterator of elems
-    pub fn subdivide(&self) -> impl Iterator<Item=&NullRegion> {
+    pub fn subdivide(&self) -> impl Iterator<Item=&Self> {
         match self {
             NullRegion::Null => SubdivideIter::Repeat(repeat(&NullRegion::Null)),
             NullRegion::NonNull => SubdivideIter::Repeat(repeat(&NullRegion::NonNull)),
@@ -101,7 +88,7 @@ impl<'a> Iterator for SubdivideIter<'a> {
 /// Index into this region = get whether the part at index is null:
 /// if this is `Partial`, indexes into the region. Otherwise returns `this`.
 impl Index<usize> for NullRegion {
-    type Output = NullRegion;
+    type Output = Self;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {

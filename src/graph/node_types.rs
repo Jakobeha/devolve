@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::error::Error;
 use log::error;
 use crate::graph::ir::{NodeInput, NodeTypeData};
-use crate::graph::raw::RawComputeFn;
+use crate::graph::raw::ComputeFn;
 use crate::ir::NodeIOType;
 use structural_reflection::RustType;
 use derive_more::{Display, Error};
@@ -15,7 +15,7 @@ pub struct NodeTypes {
 
 #[derive(Clone)]
 pub struct NodeType {
-    pub compute: RawComputeFn,
+    pub compute: ComputeFn,
     pub type_data: NodeTypeData,
     pub default_inputs: Vec<NodeInput>,
     pub default_default_outputs: Vec<NodeInput>,
