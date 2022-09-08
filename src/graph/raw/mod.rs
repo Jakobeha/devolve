@@ -1,11 +1,12 @@
 use std::mem::MaybeUninit;
-use crate::CompoundViewCtx;
-use structural_reflection::RustType;
-pub use region::*;
+use structural_reflection::{HasStructure, RustType};
+pub use nullability::*;
+pub use tuple_of_has_structure::*;
 
-mod region;
+mod nullability;
+mod tuple_of_has_structure;
 
-pub struct RawComputeFn(Box<dyn RawComputeFnTrait>);
+pub struct RawComputeFn<RuntimeCtx>(Box<dyn RawComputeFnTrait<RuntimeCtx>>);
 
 // TODO: Ensure we can only put in copyable data and references somehow,
 //   as data in the graph is freely copied and destroyed
@@ -25,15 +26,23 @@ pub struct RawData {
 struct PanickingComputeFn;
 
 #[derive(Clone)]
-struct StaticComputeFn(fn(&mut CompoundViewCtx, RawInputs<'_>, RawOutputs<'_>));
+struct StaticComputeFn<RuntimeCtx>(fn(&mut RuntimeCtx, RawInputs<'_>, RawOutputs<'_>));
 
-pub trait RawComputeFnTrait: Send + Sync + 'static {
-    fn box_clone(&self) -> Box<dyn RawComputeFnTrait>;
+pub trait RawComputeFnTrait<RuntimeCtx>: Send + Sync + 'static {
+    fn box_clone(&self) -> Box<dyn RawComputeFnTrait<RuntimeCtx>>;
 
-    fn run(&self, ctx: &mut CompoundViewCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>);
+    fn run(&self, ctx: &mut RuntimeCtx, inputs: RawInputs<'_>, outputs: RawOutputs<'_>);
 }
 
 impl<'a> RawInputs<'a> {
+    pub fn new<Values: TupleOfHasStructure>(values: Values::OfOptionals) -> RawInputs<'a> where Values::StaticId: Sized {
+        RawInputs(RawData {
+            types: values.iter_rust_types().collect(),
+            null_regions: Values::iter_is_some(values).map(|is_some| if is_some { NullRegion::NonNull } else { NullRegion::Null }).collect(),
+            data: values.iter().map(|value| value.into_boxed_slice()).collect()
+        })
+    }
+
     pub fn types(&self) -> &[RustType] {
         &self.0.types
     }

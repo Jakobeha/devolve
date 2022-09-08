@@ -30,6 +30,10 @@ pub struct CRange<Idx> {
     pub end: Idx
 }
 
+struct TestRuntimeCtx {
+
+}
+
 #[test]
 fn tests_on_files() {
     ErrorNodes::log_errors_and_panic(|errors| {
@@ -263,7 +267,7 @@ fn tests_on_files() {
 
                         // TODO: run inputs and check outputs with some sets of data
 
-                        let mut ctx = CompoundViewCtx;
+                        let mut ctx = TestRuntimeCtx {};
                         // compute does the exact same as compute_unchecked, but runs check first
                         unsafe { lower_graph.compute_unchecked(&mut ctx, RawInputs::from(&inputs), RawOutputs::from(&mut outputs)) };
                         */
