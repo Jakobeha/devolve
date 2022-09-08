@@ -35,4 +35,4 @@ log = "0.4.17"
 test-log = "0.2.11"
 env_logger = "0.9.0"
 # Rust patterns
-ttmap = { path = "../type-map" }
+ttmap = "0.2.1"
