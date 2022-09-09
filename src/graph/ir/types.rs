@@ -4,7 +4,8 @@ use slab::Slab;
 use structural_reflection::RustType;
 use crate::graph::raw::ComputeFn;
 use crate::ast::types::{AstFieldHeader, AstNodePos};
-use crate::raw::NullRegion;
+use crate::misc::inline_ptr::InlinePtr;
+use crate::raw::{ConstantPool, NullRegion};
 
 /// Compound view graph intermediate-representation loaded from a .dui file.
 /// The graph is valid to an extent, see below.
@@ -33,6 +34,7 @@ pub struct IrGraph<RuntimeCtx: 'static + ?Sized> {
     pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
     pub(in crate::graph) nodes: Slab<Node<RuntimeCtx>>,
     pub(in crate::graph) outputs: Vec<NodeInput>,
+    pub(in crate::graph) constant_pool: ConstantPool,
     pub(in crate::graph) input_metadata: NodeMetadata,
     pub(in crate::graph) output_metadata: NodeMetadata,
 }
@@ -44,32 +46,33 @@ pub struct NodeTypeData {
 }
 
 /// Input type or output type
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct NodeIOType {
     pub name: String,
     pub rust_type: RustType,
     pub null_region: NullRegion,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum NodeInput {
     Hole,
     Dep(NodeInputDep),
-    Const(Box<[u8]>),
+    ConstInline(Box<[u8]>),
+    ConstRef(InlinePtr),
     Array(Vec<NodeInput>),
     // Different-sized elems means we need to know the layout
     // (technically we could workaround storing here and it's redundant, but in practice this is easier)
     Tuple(Vec<NodeInputWithLayout>)
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct NodeInputWithLayout {
     pub input: NodeInput,
     pub size: usize,
     pub align: usize
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum NodeInputDep {
     GraphInput { idx: usize },
     OtherNodeOutput {
@@ -122,7 +125,7 @@ impl NodeInput {
             );
             bytes.assume_init()
         };
-        NodeInput::Const(bytes)
+        NodeInput::ConstInline(bytes)
     }
 }
 
@@ -171,6 +174,7 @@ impl<RuntimeCtx: 'static + ?Sized> Clone for IrGraph<RuntimeCtx> {
             types: self.types.clone(),
             nodes: self.nodes.clone(),
             outputs: self.outputs.clone(),
+            constant_pool: self.constant_pool.clone(),
             input_metadata: self.input_metadata.clone(),
             output_metadata: self.output_metadata.clone(),
         }

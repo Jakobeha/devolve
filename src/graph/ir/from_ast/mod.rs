@@ -7,6 +7,7 @@ use crate::graph::ir::{IrGraph, Node, NodeId, NodeTypeData, NodeTypeName};
 use crate::graph::ast::topological_sort::SortByDeps;
 use crate::graph::ast::types::{AstBody, AstGraph, AstValueHead};
 use crate::graph::StaticStrs;
+use crate::raw::ConstantPool;
 use crate::ir::{ComptimeCtx, NodeMetadata};
 use structural_reflection::{RustType, TypeStructureBodyForm};
 
@@ -22,6 +23,7 @@ pub(super) struct ForwardNode {
 pub(super) struct GraphBuilder<'a, RuntimeCtx: 'static + ?Sized> {
     ctx: &'a ComptimeCtx<RuntimeCtx>,
     errors: &'a mut GraphFormErrors,
+    constant_pool: ConstantPool,
     forward_resolved_type_defs: HashSet<String>,
     forward_resolved_nodes: HashMap<String, (NodeId, ForwardNode)>,
     node_names: Vec<String>,
@@ -51,6 +53,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         GraphBuilder {
             errors,
             ctx,
+            constant_pool: ConstantPool::new(),
             forward_resolved_type_defs: HashSet::new(),
             forward_resolved_nodes: HashMap::new(),
             node_names: Vec::new(),
@@ -165,6 +168,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             types: self.resolved_node_types,
             nodes,
             outputs,
+            constant_pool: self.constant_pool,
             input_metadata,
             output_metadata
         }

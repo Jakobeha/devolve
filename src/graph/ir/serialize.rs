@@ -11,6 +11,7 @@ use crate::graph::StaticStrs;
 use crate::ir::{ComptimeCtx, NodeTypeName};
 use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 use crate::ast::types::AstLiteral;
+use crate::misc::inline_ptr::InlinePtr;
 use crate::raw::NullRegion;
 
 pub struct GraphSerializer<'a, RuntimeCtx: 'static + ?Sized> {
@@ -99,6 +100,9 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
             inputs: graph.output_types,
             outputs: vec![]
         });
+
+        // Drop constant pool. This ensures that the constant pool is retained while serializing constants.
+        drop(graph.constant_pool);
     }
 
     fn serialize_node(&mut self, node: Node<RuntimeCtx>, node_type: &NodeTypeData) {
@@ -402,8 +406,11 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 };
                 (Some(AstValueHead::Ref { node_name, field_name }), AstBody::None)
             },
-            NodeInput::Const(constant_data) => {
-                self.serialize_constant(constant_data, rust_type)
+            NodeInput::ConstInline(constant_data) => {
+                self.serialize_constant_inline(constant_data, rust_type)
+            }
+            NodeInput::ConstRef(constant_ptr) => {
+                self.serialize_constant_ref(*constant_ptr, rust_type)
             }
             NodeInput::Array(elems) => {
                 let array_elem_type = rust_type.structure.array_elem_type_and_length().map(|(array_elem_type, length)| {
@@ -464,28 +471,14 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }
     }
 
-    fn serialize_constant(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<AstValueHead>, AstBody) {
+    fn serialize_constant_inline(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<AstValueHead>, AstBody) {
         let size = rust_type.size;
         if size != constant_data.len() {
             error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.type_name.unqualified(), size);
             return (None, AstBody::None)
         }
 
-        // Literals which aren't primitives
-        match rust_type.type_id {
-            Some(type_id) if type_id == TypeId::of::<String>() => {
-                let string = match String::from_utf8(constant_data.to_vec()) {
-                    Err(error) => {
-                        error!("deserialized string is not valid utf8: {}", error);
-                        return (None, AstBody::None)
-                    },
-                    Ok(string) => string
-                };
-                return (Some(AstValueHead::Literal(AstLiteral::String(string))), AstBody::None);
-            }
-            _ => {}
-        }
-
+        // No inline literals which aren't primitives
         match &rust_type.structure {
             TypeStructure::Primitive(primitive) => (Some(AstValueHead::Literal(match primitive {
                 PrimitiveType::I64 => {
@@ -533,7 +526,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 (None, AstBody::None)
             }
             TypeStructure::Pointer { .. } => {
-                error!("deserialized constant data is of pointer type, which can't be represented in serial data");
+                error!("deserialized (inline?) constant data is of pointer type, which can't be represented in serial data");
                 (None, AstBody::None)
             }
             TypeStructure::CTuple { elements} => {
@@ -546,6 +539,27 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 (None, self.serialize_constant_slice(constant_data, &elem))
             }
         }
+    }
+
+    fn serialize_constant_ref(&mut self, constant_ptr: InlinePtr, rust_type: &RustType) -> (Option<AstValueHead>, AstBody) {
+        // Literals which aren't primitives
+        match rust_type.type_id {
+            Some(type_id) if type_id == TypeId::of::<String>() => {
+                let constant_data = unsafe { &*constant_ptr.as_u8_slice_ptr() };
+                let string = match String::from_utf8(constant_data.to_vec()) {
+                    Err(error) => {
+                        error!("deserialized string is not valid utf8: {}", error);
+                        return (None, AstBody::None)
+                    },
+                    Ok(string) => string
+                };
+                return (Some(AstValueHead::Literal(AstLiteral::String(string))), AstBody::None);
+            }
+            _ => {}
+        }
+
+        error!("deserialized constant data is of unknown pointer type, which can't be represented in serial data");
+        (None, AstBody::None)
     }
 
     fn serialize_constant_tuple(&mut self, constant_data: &[u8], item_types: &[RustType]) -> AstBody {
@@ -627,7 +641,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 current_size += elem_align - current_size % elem_align;
             }
             let constant_slice = &constant_data[current_size..current_size + elem_size];
-            let (elem_value, elem_value_children) = self.serialize_constant(constant_slice, elem_type);
+            let (elem_value, elem_value_children) = self.serialize_constant_inline(constant_slice, elem_type);
             current_size += elem_size;
 
             let elem_rust_type = self.serialize_rust_type(elem_type);

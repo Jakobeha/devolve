@@ -4,6 +4,7 @@
 #![feature(const_type_name)]
 #![feature(new_uninit)]
 #![feature(drain_filter)]
+#![feature(hash_set_entry)]
 
 pub use graph::*;
 

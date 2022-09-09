@@ -6,6 +6,7 @@ use crate::ir::from_ast::{GraphBuilder, AstBodyOrInlineTuple};
 use crate::ir::{NodeId, NodeInput, NodeInputDep, NodeInputWithLayout};
 use crate::ast::types::{AstBody, AstField, AstLiteral, AstRustType, AstValueHead};
 use structural_reflection::{IsSubtypeOf, RustType, RustTypeName, TypeStructureBody, TypeStructure};
+use crate::misc::inline_ptr::InlinePtr;
 
 impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_value(
@@ -47,12 +48,16 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         field_name: &str
     ) -> NodeInput {
         match value {
-            AstValueHead::Literal(literal) => NodeInput::Const(match literal {
-                AstLiteral::Bool(bool) => Box::new([if bool { 1u8 } else { 0u8 }]),
-                AstLiteral::Integer(int) => Box::new(int.to_ne_bytes()),
-                AstLiteral::Float(float) => Box::new(float.to_ne_bytes()),
-                AstLiteral::String(string) => string.into_boxed_str().into_boxed_bytes()
-            }),
+            AstValueHead::Literal(literal) => match literal {
+                AstLiteral::Bool(bool) => NodeInput::ConstInline(Box::new([if bool { 1u8 } else { 0u8 }])),
+                AstLiteral::Integer(int) => NodeInput::ConstInline(Box::new(int.to_ne_bytes())),
+                AstLiteral::Float(float) => NodeInput::ConstInline(Box::new(float.to_ne_bytes())),
+                // SAFETY: String pool is stored with the ir-graph and lower-graph so it is guaranteed to retain the string pointer
+                AstLiteral::String(string) => {
+                    let ptr = self.constant_pool.get_or_insert(string);
+                    NodeInput::ConstRef(InlinePtr::new(ptr as *const str))
+                }
+            },
             AstValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name } => {
                 self.resolve_ref(refd_node_name, refd_field_name, node_name, field_name)
             }

@@ -84,7 +84,7 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
 
                 self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, &output_null_region)
             }
-            NodeInput::Const(_) => {
+            NodeInput::ConstInline(_) | NodeInput::ConstRef(_) => {
                 // Nullability is ok (not nullable)
                 // Type is ok (invariant)
             }
@@ -239,7 +239,7 @@ impl NodeInput {
 
     pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
         match &self {
-            NodeInput::Hole | NodeInput::Const(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeInputDep>>,
+            NodeInput::Hole | NodeInput::ConstInline(_) | NodeInput::ConstRef(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeInputDep>>,
             NodeInput::Dep(dep) => Box::new(std::iter::once(*dep)) as Box<dyn Iterator<Item=NodeInputDep>>,
             NodeInput::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>,
             NodeInput::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>
@@ -256,7 +256,7 @@ impl NodeInput {
     fn null_region<RuntimeCtx: 'static + ?Sized>(&self, graph: &IrGraph<RuntimeCtx>) -> NullRegion {
         match &self {
             NodeInput::Hole => NullRegion::Null,
-            NodeInput::Const(_) => NullRegion::NonNull,
+            NodeInput::ConstInline(_) | NodeInput::ConstRef(_) => NullRegion::NonNull,
             NodeInput::Dep(dep) => {
                 let output_type = match dep {
                     NodeInputDep::GraphInput { idx} => &graph.input_types[*idx],

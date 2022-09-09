@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 use std::iter::{repeat, zip};
-use std::mem::MaybeUninit;
+use std::mem::{MaybeUninit, size_of};
 use std::ptr::{copy_nonoverlapping, null};
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
-use crate::graph::raw::{ComputeFn, IOData, InputData, OutputData, NullRegion};
+use crate::raw::{ComputeFn, IOData, InputData, OutputData, NullRegion, RawData, ConstantPool};
 use structural_reflection::{IsSubtypeOf, RustType};
-use crate::raw::RawData;
 
 /// Built (lowered) compound view graph, loaded from a `.dui` file.
 ///
@@ -17,6 +16,9 @@ pub struct LowerGraph<RuntimeCtx: 'static + ?Sized> {
     output_types: Vec<NodeIOType>,
     compute_dag: Vec<Node<RuntimeCtx>>,
     outputs: Vec<NodeInput>,
+    // This must be alive as there are retained raw pointers, even though this isn't used
+    #[allow(dead_code)]
+    constant_pool: ConstantPool,
     const_output_data: IOData
 }
 
@@ -94,9 +96,15 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                     NodeInput::Hole
                 },
                 GraphNodeInput::Dep(dep) => NodeInput::Dep(get_input_dep(dep, node_indices)),
-                GraphNodeInput::Const(const_) => {
+                GraphNodeInput::ConstInline(const_) => {
                     debug_assert_eq!(const_.len(), cached_input_data.len());
                     copy_nonoverlapping(const_.as_ptr() as *const MaybeUninit<u8>, cached_input_data.as_mut_ptr(), cached_input_data.len());
+                    NodeInput::Const
+                },
+                GraphNodeInput::ConstRef(ptr) => {
+                    // We don't know pointer size, all we know is that it's at least as large as a thin pointer
+                    debug_assert!(size_of::<*const ()>() <= cached_input_data.len());
+                    copy_nonoverlapping(ptr.ptr_to_pointer_data() as *const MaybeUninit<u8>, cached_input_data.as_mut_ptr(), cached_input_data.len());
                     NodeInput::Const
                 },
                 GraphNodeInput::Array(inputs) => NodeInput::Array(inputs.into_iter().map(|input| get_input(input, cached_input_data, node_indices, hole_is_valid)).collect()),
@@ -141,6 +149,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
             output_types,
             compute_dag,
             outputs,
+            constant_pool: graph.constant_pool,
             const_output_data: cached_output_data
         }
     }

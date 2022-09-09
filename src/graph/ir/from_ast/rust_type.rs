@@ -1,4 +1,5 @@
 use std::iter::zip;
+use std::mem::size_of;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::GraphBuilder;
 use crate::ast::types::{AstBody, AstLiteral, AstRustType, AstValueHead};
@@ -96,6 +97,16 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             AstRustType::Anonymous { .. } => TypeStructure::Opaque,
             AstRustType::Pointer { ptr_kind, refd } => TypeStructure::Pointer {
                 ptr_kind: *ptr_kind,
+                ptr_size: match RustType::lookup(refd) {
+                    // May happen for custom types, which are always thin pointers
+                    None => size_of::<*const ()>(),
+                    // We assume every non-custom type is registered (otherwise would raise an unresolved type error)
+                    // Could use known_type.size but we do a sanity check here, as the type must be a pointer
+                    Some(known_type) => match known_type.structure {
+                        TypeStructure::Pointer { ptr_size, .. } => ptr_size,
+                        _ => panic!("pointer type is not a pointer: {}", refd.qualified())
+                    }
+                },
                 refd_id: refd.lookup_back(),
                 refd_name: refd.as_ref().clone()
             },
