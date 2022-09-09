@@ -10,7 +10,7 @@ use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
-use dui_graph::raw::{NullRegion, ComputeFn};
+use dui_graph::raw::{ComputeFn, NullRegion, InputData, OutputData};
 use structural_reflection::c_tuple::CTuple2;
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
@@ -251,26 +251,25 @@ fn tests_on_files() {
                             return None;
                         }
 
-                        /*
-                        let input_data = input_types.iter().map(|x| Box::new_uninit_slice(x.size)).collect::<Vec<_>>();
-                        let output_data = output_types.iter().map(|x| Box::new_uninit_slice(x.size)).collect::<Vec<_>>();
-                        let inputs = RawData {
-                            types: input_types.to_vec(),
-                            null_regions: input_nullability.to_vec(),
-                            data: input_data
-                        };
-                        let mut outputs = RawData {
-                            types: output_types.to_vec(),
-                            null_regions: output_nullability.to_vec(),
-                            data: output_data
-                        };
-
                         // TODO: run inputs and check outputs with some sets of data
 
-                        let mut ctx = TestRuntimeCtx {};
-                        // compute does the exact same as compute_unchecked, but runs check first
-                        unsafe { lower_graph.compute_unchecked(&mut ctx, RawInputs::from(&inputs), RawOutputs::from(&mut outputs)) };
-                        */
+                        let inputs = InputData::new((
+                            "Text",
+                            "Placeholder",
+                            Some(true),
+                            None
+                        ));
+                        let outputs = OutputData::with::<(
+                            &str,
+                            Option<CTuple2<CRange<usize>, &str>>,
+                            Option<()>,
+                            Option<()>,
+                            Option<()>
+                        )>(|outputs| {
+                            let mut ctx = TestRuntimeCtx {};
+                            // compute does the exact same as compute_unchecked, but runs check first
+                            unsafe { lower_graph.compute_unchecked(&mut ctx, &inputs, &mut outputs) };
+                        });
 
                         None
                     }
