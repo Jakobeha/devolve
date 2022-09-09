@@ -97,7 +97,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             AstRustType::Anonymous { .. } => TypeStructure::Opaque,
             AstRustType::Pointer { ptr_kind, refd } => TypeStructure::Pointer {
                 ptr_kind: *ptr_kind,
-                ptr_size: match RustType::lookup(refd) {
+                // Wasteful clone but idk how to do it better
+                ptr_size: match RustType::lookup(&RustTypeName::Pointer { ptr_kind: *ptr_kind, refd: refd.clone() }) {
                     // May happen for custom types, which are always thin pointers
                     None => size_of::<*const ()>(),
                     // We assume every non-custom type is registered (otherwise would raise an unresolved type error)
@@ -148,7 +149,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                 AstLiteral::Bool(_) => PrimitiveType::Bool.rust_type(),
                 AstLiteral::Integer(_) => PrimitiveType::I64.rust_type(),
                 AstLiteral::Float(_) => PrimitiveType::F64.rust_type(),
-                AstLiteral::String(_) => RustType::of::<String>()
+                AstLiteral::String(_) => RustType::of::<&str>()
             }
             Some(AstValueHead::Ref { node_name: refd_node_name, field_name: refd_field_name }) => match self.resolved_node_type(refd_node_name) {
                 // Error will show up later
