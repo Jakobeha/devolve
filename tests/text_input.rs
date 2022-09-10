@@ -10,8 +10,8 @@ use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
-use dui_graph::raw::{ComputeFn, NullRegion, InputData, OutputData};
-use structural_reflection::c_tuple::CTuple2;
+use dui_graph::raw::{ComputeFn, NullRegion, InputData, OutputData, NonNull, Nullable};
+use structural_reflection::c_tuple::{c_tuple, CTuple, CTuple2};
 use structural_reflection::RustType;
 use structural_reflection::derive::{HasTypeName, HasStructure};
 use dui_graph::StaticStrs;
@@ -253,13 +253,13 @@ fn tests_on_files() {
 
                         // TODO: run inputs and check outputs with some sets of data
 
-                        let inputs = InputData::new((
-                            "Text",
-                            "Placeholder",
-                            Some(true),
-                            None
+                        let inputs = InputData::new(c_tuple!(
+                            NonNull("Text"),
+                            NonNull("Placeholder"),
+                            Nullable::Some(true),
+                            Nullable::None
                         ));
-                        let outputs = OutputData::with::<(
+                        let outputs = OutputData::with::<CTuple!(
                             &str,
                             Option<CTuple2<CRange<usize>, &str>>,
                             Option<()>,

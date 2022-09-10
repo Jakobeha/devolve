@@ -235,7 +235,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
     }
 
     pub fn compute(&mut self, ctx: &mut RuntimeCtx, inputs: &InputData, outputs: &mut OutputData) -> Result<(), GraphIOCheckErrors> {
-        let errors = self.check(inputs.rust_types(), outputs.rust_types(), inputs.nonnull_regions(), outputs.nonnull_regions());
+        let errors = self.check(inputs.rust_types(), outputs.rust_types(), inputs.null_regions(), outputs.null_regions());
         if errors.is_empty() {
             Ok(unsafe { self.compute_unchecked(ctx, inputs, outputs) })
         } else {
