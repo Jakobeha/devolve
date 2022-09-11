@@ -1,8 +1,7 @@
-use std::iter::zip;
 use std::mem::{MaybeUninit, size_of};
 use std::ptr::{copy_nonoverlapping, slice_from_raw_parts_mut};
-use structural_reflection::{infer_c_tuple_elem_offsets, infer_c_tuple_size, RustType};
-use crate::raw::{NullRegion, IODataTypes, RawDataPtrs};
+use structural_reflection::{HasTypeName, infer_c_tuple_elem_offsets, infer_c_tuple_size, RustType};
+use crate::raw::{NullRegion, IODataTypes};
 
 /// Input data holder for a node-graph.
 ///
@@ -28,7 +27,7 @@ pub struct IOData {
 pub type RawData = [MaybeUninit<u8>];
 
 impl InputData {
-    pub fn new<Values: IODataTypes>(values: Values) -> InputData {
+    pub fn new<Values: IODataTypes>(values: Values) -> InputData where <Values::Inner as HasTypeName>::StaticId: Sized {
         let (raw_data, null_regions) = values.split();
         InputData(IOData::new(
             Values::iter_rust_types().collect(),
@@ -59,7 +58,7 @@ impl InputData {
 }
 
 impl OutputData {
-    pub fn new<Values: IODataTypes>() -> OutputData {
+    pub fn new<Values: IODataTypes>() -> OutputData where <Values::Inner as HasTypeName>::StaticId: Sized {
         OutputData(IOData::new(
             Values::iter_rust_types().collect(),
             Values::iter_max_null_regions().collect(),
@@ -67,18 +66,18 @@ impl OutputData {
         ))
     }
 
-    pub fn load<Values: IODataTypes>(&self) -> Values {
+    pub unsafe fn load<Values: IODataTypes>(&self) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
         // TODO: Set nullability in output?
         let inner = *self.0.all_data::<Values::Inner>();
-        Values::from_inner(inner, self.null_regions().to_vec())
+        Values::new(inner, self.null_regions().to_vec())
     }
 
-    pub fn store<Values: IODataTypes>(&mut self, values: Values) {
+    pub unsafe fn store<Values: IODataTypes>(&mut self, values: Values) where <Values::Inner as HasTypeName>::StaticId: Sized {
         let (data, _) = values.split();
         *self.0.all_data_mut::<Values::Inner>() = data;
     }
 
-    pub fn with<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values {
+    pub fn with<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
         let mut output = OutputData::new::<Values>();
         fun(&mut output);
         unsafe { output.load() }
@@ -112,13 +111,23 @@ impl IOData {
         raw_data: MaybeUninit<T>
     ) -> IOData {
         assert_eq!(size_of::<T>(), infer_c_tuple_size(&rust_types), "size of actual type must equal inferred size of rust_types");
+        let mut this = Self::new_uninit(rust_types, null_regions);
+
+        unsafe {
+            copy_nonoverlapping(&raw_data as *const _ as *const u8, this.raw.as_mut_ptr() as *mut u8, size_of::<T>());
+        }
+
+        this
+    }
+
+    pub fn new_uninit(
+        rust_types: Vec<RustType>,
+        null_regions: Vec<NullRegion>,
+    ) -> IOData {
         assert_eq!(rust_types.len(), null_regions.len(), "# of types must be the same as # of null regions");
 
         let offsets = infer_c_tuple_elem_offsets(&rust_types).collect::<Vec<_>>();
-        let mut raw = Box::new_uninit_slice(size_of::<T>());
-        unsafe {
-            copy_nonoverlapping(&raw_data as *const _ as *const u8, raw.as_mut_ptr() as *mut u8, size_of::<T>());
-        }
+        let raw = Box::new_uninit_slice(infer_c_tuple_size(&rust_types));
 
         IOData {
             rust_types,
@@ -128,14 +137,14 @@ impl IOData {
         }
     }
 
-    pub fn all_data<T>(&self) -> &MaybeUninit<T> {
+    pub unsafe fn all_data<T>(&self) -> &MaybeUninit<T> {
         assert_eq!(size_of::<T>(), infer_c_tuple_size(&self.rust_types), "size of actual type must equal inferred size of rust_types");
-        unsafe { &*(self.raw.as_ptr() as *const MaybeUninit<T>) }
+        &*(self.raw.as_ptr() as *const MaybeUninit<T>)
     }
 
-    pub fn all_data_mut<T>(&mut self) -> &mut MaybeUninit<T> {
+    pub unsafe fn all_data_mut<T>(&mut self) -> &mut MaybeUninit<T> {
         assert_eq!(size_of::<T>(), infer_c_tuple_size(&self.rust_types), "size of actual type must equal inferred size of rust_types");
-        unsafe { &mut *(self.raw.as_mut_ptr() as *mut MaybeUninit<T>) }
+        &mut *(self.raw.as_mut_ptr() as *mut MaybeUninit<T>)
     }
 
     pub unsafe fn as_input(&self) -> &InputData {

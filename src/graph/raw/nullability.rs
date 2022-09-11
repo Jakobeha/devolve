@@ -66,11 +66,27 @@ impl NullRegion {
             NullRegion::Partial(elems) => SubdivideIter::Slice(elems.iter())
         }
     }
+
+    /// - `Null` = iterator of infinite `Null`
+    /// - `NonNull` = iterator of infinite `NonNull`
+    /// - `Partial` = iterator of elems
+    pub fn into_subdivide(self) -> impl Iterator<Item=Self> {
+        match self {
+            NullRegion::Null => SubdivideIntoIter::Repeat(repeat(NullRegion::Null)),
+            NullRegion::NonNull => SubdivideIntoIter::Repeat(repeat(NullRegion::NonNull)),
+            NullRegion::Partial(elems) => SubdivideIntoIter::Slice(elems.into_iter())
+        }
+    }
 }
 
 enum SubdivideIter<'a> {
     Repeat(std::iter::Repeat<&'a NullRegion>),
     Slice(std::slice::Iter<'a, NullRegion>),
+}
+
+enum SubdivideIntoIter {
+    Repeat(std::iter::Repeat<NullRegion>),
+    Slice(std::vec::IntoIter<NullRegion>),
 }
 
 impl<'a> Iterator for SubdivideIter<'a> {
@@ -80,6 +96,17 @@ impl<'a> Iterator for SubdivideIter<'a> {
         match self {
             SubdivideIter::Slice(iter) => iter.next(),
             SubdivideIter::Repeat(iter) => iter.next()
+        }
+    }
+}
+
+impl Iterator for SubdivideIntoIter {
+    type Item = NullRegion;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            SubdivideIntoIter::Slice(iter) => iter.next(),
+            SubdivideIntoIter::Repeat(iter) => iter.next()
         }
     }
 }

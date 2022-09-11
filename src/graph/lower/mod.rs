@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::iter::{repeat, zip};
+use std::iter::zip;
 use std::mem::{MaybeUninit, size_of};
-use std::ptr::{copy_nonoverlapping, null};
+use std::ptr::copy_nonoverlapping;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::raw::{ComputeFn, IOData, InputData, OutputData, NullRegion, RawData, ConstantPool};
@@ -114,10 +114,9 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
         #[inline]
         unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> (IOData, Vec<NodeInput>) {
             debug_assert!(input_types.len() == inputs.len());
-            let mut cached_input_data = IOData::new(
+            let mut cached_input_data = IOData::new_uninit(
                 input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
-                input_types.iter().map(|input| input.null_region.clone()).collect::<Vec<_>>(),
-                repeat(null()).take(inputs.len())
+                input_types.iter().map(|input| input.null_region.clone()).collect::<Vec<_>>()
             );
             let inputs = zip(inputs.into_iter(), cached_input_data.iter_data_mut())
                 .map(|(input, cached_input_data)| get_input(input, cached_input_data, node_indices, hole_is_valid))

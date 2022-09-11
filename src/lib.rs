@@ -5,6 +5,7 @@
 #![feature(new_uninit)]
 #![feature(drain_filter)]
 #![feature(hash_set_entry)]
+#![feature(assert_matches)]
 
 pub use graph::*;
 

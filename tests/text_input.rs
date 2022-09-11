@@ -257,18 +257,18 @@ fn tests_on_files() {
                             NonNull("Text"),
                             NonNull("Placeholder"),
                             Nullable::Some(true),
-                            Nullable::None
+                            Nullable::<()>::None
                         ));
                         let outputs = OutputData::with::<CTuple!(
-                            &str,
-                            Option<CTuple2<CRange<usize>, &str>>,
-                            Option<()>,
-                            Option<()>,
-                            Option<()>
+                            NonNull<&str>,
+                            Nullable<CTuple2<CRange<usize>, &str>>,
+                            Nullable<()>,
+                            Nullable<()>,
+                            Nullable<()>
                         )>(|outputs| {
                             let mut ctx = TestRuntimeCtx {};
                             // compute does the exact same as compute_unchecked, but runs check first
-                            unsafe { lower_graph.compute_unchecked(&mut ctx, &inputs, &mut outputs) };
+                            unsafe { lower_graph.compute_unchecked(&mut ctx, &inputs, outputs) };
                         });
 
                         None
