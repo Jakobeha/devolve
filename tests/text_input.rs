@@ -159,7 +159,10 @@ fn tests_on_files() {
                                 inputs: vec![
                                     NodeIOType {
                                         name: "children".to_string(),
-                                        rust_type: RustType::of_array::<ViewId>(ctx.input_types.get(0).and_then(|input_type| input_type.rust_type.structure.array_or_tuple_length()).unwrap_or(0)),
+                                        rust_type: RustType::of_array::<ViewId>(ctx.input_types.iter()
+                                            .find(|input_type| input_type.name == "children")
+                                            .and_then(|input_type| input_type.rust_type.structure.general_compound_length())
+                                            .unwrap_or(0)),
                                         null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
