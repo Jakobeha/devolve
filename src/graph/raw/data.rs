@@ -1,3 +1,4 @@
+use std::iter::zip;
 use std::mem::{MaybeUninit, size_of};
 use std::ptr::{copy_nonoverlapping, slice_from_raw_parts_mut};
 use structural_reflection::{HasTypeName, infer_c_tuple_elem_offsets, infer_c_tuple_size, RustType};
@@ -66,21 +67,10 @@ impl OutputData {
         ))
     }
 
-    pub unsafe fn load<Values: IODataTypes>(&self) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
-        // TODO: Set nullability in output?
-        let inner = *self.0.all_data::<Values::Inner>();
-        Values::new(inner, self.null_regions().to_vec())
-    }
-
-    pub unsafe fn store<Values: IODataTypes>(&mut self, values: Values) where <Values::Inner as HasTypeName>::StaticId: Sized {
-        let (data, _) = values.split();
-        *self.0.all_data_mut::<Values::Inner>() = data;
-    }
-
     pub fn with<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
         let mut output = OutputData::new::<Values>();
         fun(&mut output);
-        unsafe { output.load() }
+        unsafe { output.as_raw().load() }
     }
 
     pub unsafe fn as_raw(&mut self) -> &mut IOData {
@@ -146,6 +136,38 @@ impl IOData {
         assert_eq!(size_of::<T>(), infer_c_tuple_size(&self.rust_types), "size of actual type must equal inferred size of rust_types");
         &mut *(self.raw.as_mut_ptr() as *mut MaybeUninit<T>)
     }
+
+    pub fn check<Values: IODataTypes>(&self) {
+        assert_eq!(self.len(), Values::len(), "number of values must match");
+        for (actual_rust_type, expected_rust_type) in zip(self.rust_types(), Values::iter_rust_types()) {
+            assert_eq!(actual_rust_type, expected_rust_type, "rust type must match");
+        }
+        for (actual_null_region, expected_null_region) in zip(self.null_regions(), Values::iter_max_null_regions()) {
+            assert_eq!(actual_null_region, expected_null_region, "null region must match");
+        }
+    }
+
+    pub fn load_checked<Values: IODataTypes>(&self) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
+        self.check::<Values>();
+        unsafe { self.load() }
+    }
+
+    pub fn store_checked<Values: IODataTypes>(&mut self, values: Values) where <Values::Inner as HasTypeName>::StaticId: Sized {
+        self.check::<Values>();
+        unsafe { self.store(values) }
+    }
+
+    pub unsafe fn load<Values: IODataTypes>(&self) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
+        // TODO: Set nullability in output?
+        let inner = *self.all_data::<Values::Inner>();
+        Values::new(inner, self.null_regions().to_vec())
+    }
+
+    pub unsafe fn store<Values: IODataTypes>(&mut self, values: Values) where <Values::Inner as HasTypeName>::StaticId: Sized {
+        let (data, _) = values.split();
+        *self.all_data_mut::<Values::Inner>() = data;
+    }
+
 
     pub unsafe fn as_input(&self) -> &InputData {
         &*(self as *const Self as *const InputData)

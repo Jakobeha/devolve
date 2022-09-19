@@ -7,6 +7,26 @@ use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNod
 use crate::raw::{ComputeFn, IOData, InputData, OutputData, NullRegion, RawData, ConstantPool};
 use structural_reflection::{IsSubtypeOf, RustType};
 
+/// Lower graph with its own input and output data.
+/// By default it is not self-contained because that is an extra copy.
+pub struct SelfContainedLowerGraph<RuntimeCtx: 'static + ?Sized> {
+    pub graph: LowerGraph<RuntimeCtx>,
+    pub input_data: IOData,
+    pub output_data: IOData,
+}
+
+impl<RuntimeCtx: 'static + ?Sized> SelfContainedLowerGraph<RuntimeCtx> {
+    pub fn new(graph: LowerGraph<RuntimeCtx>) -> Self {
+        let input_data = graph.mk_uninit_input_data();
+        let output_data = graph.mk_uninit_output_data();
+        SelfContainedLowerGraph {
+            graph,
+            input_data,
+            output_data,
+        }
+    }
+}
+
 /// Built (lowered) compound view graph, loaded from a `.dui` file.
 ///
 /// This graph is completely valid. However, in order to run it, you must check the inputs and
@@ -231,6 +251,22 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
         }
 
         errors
+    }
+
+    /// Creates a buffer of uninitialized data of the type required for this graph's input
+    pub fn mk_uninit_input_data(&self) -> IOData {
+        IOData::new_uninit(
+            self.input_types.iter().map(|input_type| input_type.rust_type.clone()).collect(),
+            self.input_types.iter().map(|input_type| input_type.null_region.clone()).collect()
+        )
+    }
+
+    /// Creates a buffer of uninitialized data of the type required for this graph's output
+    pub fn mk_uninit_output_data(&self) -> IOData {
+        IOData::new_uninit(
+            self.output_types.iter().map(|output_type| output_type.rust_type.clone()).collect(),
+            self.output_types.iter().map(|output_type| output_type.null_region.clone()).collect()
+        )
     }
 
     pub fn compute(&mut self, ctx: &mut RuntimeCtx, inputs: &InputData, outputs: &mut OutputData) -> Result<(), GraphIOCheckErrors> {

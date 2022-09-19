@@ -1,0 +1,25 @@
+[package]
+name = "dui-graph-macros"
+version = "0.1.0"
+authors = ["jakobeha <jakobeha@fastmail.com>"]
+description = "proc macros to define node types and graph functions"
+repository = "https://github.com/jakobeha/dui-graph"
+license = "Apache-2.0"
+keywords = ["proc-macro"]
+categories = []
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "1.0.98"
+quote = "1.0.20"
+proc-macro2 = "1.0.42"
+
+[dev-dependencies]
+dui-graph = { path = ".." }
+structural-reflection = { path = "../../structural-reflection", features = ["derive"] }
+# Logging
+test-log = "0.2.11"
+env_logger = "0.9.0"

@@ -2,7 +2,7 @@
 name = "dui-graph"
 version = "0.1.0"
 authors = ["jakobeha <jakobeha@fastmail.com>"]
-description = "compound view graph for devolve-ui"
+description = "function from node graph DSL"
 repository = "https://github.com/jakobeha/dui-graph"
 license = "Apache-2.0"
 keywords = ["devolve-ui", "ui"]
@@ -12,8 +12,12 @@ edition = "2021"
 [lib]
 crate-type = ["lib"]
 
+[features]
+macros = ["dui-graph-macros"]
+
 [dependencies]
 # Ours
+dui-graph-macros = { path = "./macros", optional = true }
 structural-reflection = { path = "../structural-reflection", features = ["derive"] }
 # Parse
 logos = "0.12.1"
