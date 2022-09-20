@@ -14,7 +14,8 @@ mod graph_macro;
 ///
 /// - If the output is a result, any error will be a
 /// - `#[node_type(no_ctx)]`: The function does not take a `&mut RuntimeCtx` as its first argument.
-/// - `#[node_type(default)]` or `#[node_type(default = "expression")]` on attribute: Give the attribute `Default::default()` or `expression` as the default value.
+/// - `#[node_type(default)]` or `#[node_type(default = "expression")]` on non-ctx argument: Give the argument `Default::default()` or `expression` as the default value.
+/// - `#[node_type(name = "name")]` on argument, return value, or item if return value is a tuple: Name the argument `name`.
 /// - `#[node_type(validator)]` on a nested function: Calls the function with compile-time info and fails before compiling if it returns `Err`
 ///
 /// # Example
@@ -37,7 +38,7 @@ mod graph_macro;
 ///     ctx: &mut MyRuntimeCtx,
 ///     vectors: &[Vector3<f32>],
 ///     #[node_type(default = "DistanceType::Euclidean")] distance_type: DistanceType
-/// ) -> f32 {
+/// ) -> #[node_type(name = "float")] f32 {
 ///     #[node_type(validator)]
 ///     fn validate_inputs(
 ///         vectors: &[RustType],

@@ -26,7 +26,7 @@ struct CtxArg {
 
 struct InputArg {
     pub attr: ArgAttr,
-    pub name: Ident,
+    pub name: String,
     pub type_: InputArgType
 }
 
@@ -37,6 +37,7 @@ enum InputArgType {
 
 #[derive(Default)]
 struct ArgAttr {
+    pub name: Option<String>,
     pub default: Option<(Option<syn::Token![=]>, Expr)>
 }
 
@@ -85,17 +86,13 @@ impl CtxArg {
             FnArg::Typed(arg) => arg,
         };
 
-        let name = &match &arg.pat {
-            syn::Pat::Ident(name) => name,
-            _ => return Err(syn::Error::new(arg.pat.span(), "only named context argument is supported, no patterns")),
-        }.ident;
-
-        if name != "ctx" && name != "_ctx" {
-            Diagnostic::spanned(name.span(), Level::Warning, syn::Error::new(name.span(), "context argument should be named `ctx`"))
+        match &arg.pat {
+            syn::Pat::Ident(name) if name.ident == "ctx" || name.ident == "_ctx" => {},
+            pat => Diagnostic::spanned(pat.span(), Level::Warning, syn::Error::new(pat.span(), "context argument should be named `ctx`"))
                 .help("add the no_ctx attribute to the function if you don't intend to have a ctx argument")
                 .help("rename the argument to `ctx`")
-                .emit();
-        }
+                .emit()
+        };
 
         let type_ = match &*arg.ty {
             Type::Reference(type_) => type_.clone(),
@@ -113,15 +110,19 @@ impl InputArg {
             FnArg::Typed(arg) => arg,
         };
 
-        let name = match &arg.pat {
-            syn::Pat::Ident(name) => name,
-            _ => return Err(syn::Error::new(arg.pat.span(), "only named arguments are supported, no patterns")),
-        }.ident.clone();
-
         let attr = arg.attrs.iter()
             .find(|attr| attr.path.is_ident("node_type"))
             .map(|attr| attr.parse_args::<ArgAttr>())
             .unwrap_or(Ok(ArgAttr::default()))?;
+
+        let name = match attr.name {
+            None => match &arg.pat {
+                syn::Pat::Ident(name) => name,
+                _ => return Err(syn::Error::new(arg.pat.span(), "argument can't be patterns without #[node_type(name = \"...\")]")),
+            }.ident.to_string(),
+            Some(name) => name
+        };
+
         let type_ = match arg.ty.as_ref() {
             Type::Reference(Type::Slice(slice_ty)) => InputArgType::VarLenArray { elem: slice_ty.elem.as_ref().clone() },
             arg_ty => InputArgType::Type(arg_ty.clone()),
@@ -153,6 +154,10 @@ impl Parse for ArgAttr {
         while !input.is_empty() {
             let ident = input.parse::<syn::Ident>()?;
             match ident.to_string().as_str() {
+                "name" => {
+                    input.parse::<syn::Token![=]>()?;
+                    this.name = Some(input.parse::<syn::LitStr>()?.value());
+                }
                 "default" => {
                     this.default = Some(if input.peek(syn::Token![=]) {
                         (
