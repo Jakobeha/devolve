@@ -1,5 +1,7 @@
 #![feature(iterator_try_collect)]
 #![feature(decl_macro)]
+#![feature(drain_filter)]
+#![feature(proc_macro_diagnostic)]
 
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
