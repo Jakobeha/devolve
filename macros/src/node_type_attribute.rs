@@ -115,12 +115,12 @@ impl InputArg {
             .map(|attr| attr.parse_args::<ArgAttr>())
             .unwrap_or(Ok(ArgAttr::default()))?;
 
-        let name = match attr.name {
+        let name = match &attr.name {
             None => match &arg.pat {
                 syn::Pat::Ident(name) => name,
                 _ => return Err(syn::Error::new(arg.pat.span(), "argument can't be patterns without #[node_type(name = \"...\")]")),
             }.ident.to_string(),
-            Some(name) => name
+            Some(name) => name.clone()
         };
 
         let type_ = match arg.ty.as_ref() {
@@ -135,7 +135,7 @@ impl Parse for HeadAttr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut this = Self::default();
         while !input.is_empty() {
-            let ident = input.parse::<syn::Ident>()?;
+            let ident = input.parse::<Ident>()?;
             match ident.to_string().as_str() {
                 "no_ctx" => this.no_ctx = true,
                 _ => return Err(syn::Error::new(ident.span(), "unknown #[node_type] attribute"))
@@ -152,7 +152,7 @@ impl Parse for ArgAttr {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut this = Self::default();
         while !input.is_empty() {
-            let ident = input.parse::<syn::Ident>()?;
+            let ident = input.parse::<Ident>()?;
             match ident.to_string().as_str() {
                 "name" => {
                     input.parse::<syn::Token![=]>()?;
@@ -187,34 +187,67 @@ impl NodeTypeFn {
         let fun_name = &self.fun.sig.ident;
         let node_type_name = self.node_type_name();
         let ctx_ty = &self.ctx_arg.type_.elem;
+        let arg_names = self.input_args.iter().map(|arg|
+            arg.attr.name.as_ref().unwrap_or(&arg.name)
+        );
+        let arg_tys = self.input_args.iter().map(|arg| match &arg.type_ {
+            InputArgType::VarLenArray { elem: _ } => todo!("support var-len arrays"),
+            InputArgType::Type(type_) => type_
+        });
+        let arg_nullabilitys = self.input_args.iter().map(|_|
+            quote!(dui_graph::raw::nullability::NullRegion::NonNull)
+        );
+        let arg_nullabilitys2 = self.input_args.iter().map(|_|
+            quote!(dui_graph::raw::data::NonNull)
+        );
+        let out_names = self.outs.iter().map(|out|
+            out.attr.name.as_ref().unwrap_or(&out.name)
+        );
+        let out_tys = self.outs.iter().map(|out| &out.type_);
+        let out_nullabilitys = self.outs.iter().map(|_|
+            quote!(dui_graph::raw::nullability::NullRegion::NonNull)
+        );
+        let out_nullabilitys2 = self.outs.iter().map(|_|
+            quote!(dui_graph::raw::data::NonNull)
+        );
         quote! {
             // Must match the signature of NodeTypeFn
             pub fn #node_type_name(arg: &str, fn_ctx: ::dui_graph::node_types::NodeTypeFnCtx<'_>) -> Result<::dui_graph::node_types::NodeType<#ctx_ty>, Box<dyn ::std::error::Error>> + Send + Sync> {
-                ::dui_graph::node_type::NodeType {
-                    compute: |ctx, input_data, output_data| {
+                use structural_reflection::c_tuple::*;
 
-                    },
+                ::dui_graph::node_type::NodeType {
+                    compute: ComputeFn::new(|ctx, input_data, output_data| {
+                        let input_data = unsafe { input_data.as_raw() };
+                        let output_data = unsafe { output_data.as_raw() };
+                        let args = unsafe { input_data.load::<CTuple!(
+                            #(#arg_nullabilitys2<#arg_tys>),*
+                        )>() }.into_trailing((#(#arg_defaults),*));
+                        let output = Fn::call(#fun_name(), args);
+                        unsafe { output_data.store(IODataTypes::from_reg(output, #(#arg_defaults),*) as CTuple!(
+                            #(#out_nullabilitys2<#out_tys>),*
+                        )) }
+                    }),
                     type_data: ::dui_graph::ir::NodeTypeData {
                         inputs: vec![
-                            NodeIOType {
-                                name:
-                                rust_type:
-                                null_region:
-                            }
+                            #(NodeIOType {
+                                name: #arg_names,
+                                rust_type: #arg_tys,
+                                null_region: #arg_nullabilitys
+                            }),*
                         ]
                         outputs: vec![
-                            NodeIOType {
-                                name:
-                                rust_type:
-                                null_region:
-                            }
+                            #(NodeIOType {
+                                name: #out_names,
+                                rust_type: #out_tys,
+                                null_region: #out_nullabilitys
+                            }),*
                         ]
                     },
                     default_inputs: vec![
-
+                        #(arg_defaults),*
                     ],
                     default_default_outputs: vec![
-
+                        #(out_defaults),*
                     ]
                 }
             }

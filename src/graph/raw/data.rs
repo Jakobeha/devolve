@@ -67,10 +67,16 @@ impl OutputData {
         ))
     }
 
-    pub fn with<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
+    pub fn with_checkedd<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
         let mut output = OutputData::new::<Values>();
         fun(&mut output);
-        unsafe { output.as_raw().load() }
+        unsafe { output.as_raw() }.load_checked()
+    }
+
+    pub unsafe fn with<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
+        let mut output = OutputData::new::<Values>();
+        fun(&mut output);
+        output.as_raw().load()
     }
 
     pub unsafe fn as_raw(&mut self) -> &mut IOData {
