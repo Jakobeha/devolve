@@ -1,5 +1,5 @@
 #![feature(decl_macro)]
-#![feature(is_some_with)]
+#![feature(is_some_and)]
 
 mod misc;
 mod batch_file;
@@ -262,7 +262,7 @@ fn tests_on_files() {
                             Nullable::Some(true),
                             Nullable::<()>::None
                         ));
-                        let outputs = OutputData::with::<CTuple!(
+                        let outputs = OutputData::with_checked::<CTuple!(
                             NonNull<&str>,
                             Nullable<CTuple2<CRange<usize>, &str>>,
                             Nullable<()>,

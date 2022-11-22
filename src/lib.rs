@@ -6,7 +6,6 @@
 #![feature(drain_filter)]
 #![feature(hash_set_entry)]
 #![feature(assert_matches)]
-#![feature(generic_associated_types)]
 #![feature(associated_type_defaults)]
 
 pub use graph::*;

@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::{repeat, zip};
 use std::ops::Index;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NullRegion {
     /// Entire region is null
     Null,

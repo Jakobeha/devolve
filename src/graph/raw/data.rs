@@ -67,7 +67,7 @@ impl OutputData {
         ))
     }
 
-    pub fn with_checkedd<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
+    pub fn with_checked<Values: IODataTypes>(fun: impl FnOnce(&mut OutputData)) -> Values where <Values::Inner as HasTypeName>::StaticId: Sized {
         let mut output = OutputData::new::<Values>();
         fun(&mut output);
         unsafe { output.as_raw() }.load_checked()
@@ -143,13 +143,13 @@ impl IOData {
         &mut *(self.raw.as_mut_ptr() as *mut MaybeUninit<T>)
     }
 
-    pub fn check<Values: IODataTypes>(&self) {
+    pub fn check<Values: IODataTypes>(&self) where <Values::Inner as HasTypeName>::StaticId: Sized {
         assert_eq!(self.len(), Values::len(), "number of values must match");
         for (actual_rust_type, expected_rust_type) in zip(self.rust_types(), Values::iter_rust_types()) {
-            assert_eq!(actual_rust_type, expected_rust_type, "rust type must match");
+            assert_eq!(actual_rust_type, &expected_rust_type, "rust type must match");
         }
         for (actual_null_region, expected_null_region) in zip(self.null_regions(), Values::iter_max_null_regions()) {
-            assert_eq!(actual_null_region, expected_null_region, "null region must match");
+            assert_eq!(actual_null_region, &expected_null_region, "null region must match");
         }
     }
 

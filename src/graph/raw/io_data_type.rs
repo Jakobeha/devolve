@@ -146,9 +146,11 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
         #[allow(unused_mut)]
         let mut null_regions = std::vec::Vec::with_capacity(Self::len());
         let mut offsets = structural_reflection::infer_c_tuple_elem_offsets(rust_types.iter());
+        #[allow(unused_parens, non_snake_case)]
+        let ($($name),*) = structural_reflection::c_tuple::CTuple::into_reg(self);
         $({
             let offset = offsets.next().unwrap();
-            let (elem_value, elem_nullability) = __impl_io_data_types__index!(self.$name).split();
+            let (elem_value, elem_nullability) = $name.split();
             unsafe {
                 value.as_mut_ptr().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().write(elem_value);
             }
@@ -176,7 +178,7 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
     };
 }
 
-impl_io_data_types!();
+// impl_io_data_types!();
 impl_io_data_types!(A);
 impl_io_data_types!(A, B);
 impl_io_data_types!(A, B, C);
