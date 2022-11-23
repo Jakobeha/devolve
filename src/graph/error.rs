@@ -111,9 +111,11 @@ pub enum ParseErrorBody {
     #[display(fmt = "negative array length")]
     BadArrayLength(#[error(source)] TryFromIntError),
     #[display(fmt = "integer is too large")]
-    BadInt32(#[error(source)] TryFromIntError),
+    BadIntSize(#[error(source)] TryFromIntError),
     #[display(fmt = "bad escape in string: {}", _0)]
     BadEscape(#[error(source)] UnescapeError),
+    #[display(fmt = "bad header: {}", _0)]
+    BadHeader(#[error(not(source))] String),
     #[display(fmt = "unopened '{}'", _0)]
     Unopened(#[error(not(source))] char),
     #[display(fmt = "unopened '{}'", _0)]
@@ -169,6 +171,14 @@ pub enum GraphFormError {
     CyclicReference {
         node_name: String,
         referenced_from: NodeNameFieldName
+    },
+    #[display(fmt = "node has multiple position metadatas: {}", node_name)]
+    NodeMetaMultiplePos {
+        node_name: String
+    },
+    #[display(fmt = "node has multiple color metadatas: {}", node_name)]
+    NodeMetaMultipleColor {
+        node_name: String
     },
     #[display(fmt = "this is not a node type, it's a data type: type name {}, node name {}", type_name, node_name)]
     NodeIsDataType {
