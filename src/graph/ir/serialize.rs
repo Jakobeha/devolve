@@ -157,7 +157,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
     fn serialize_rust_type(&mut self, rust_type: &RustType) -> Option<AstRustType> {
         if rust_type.type_id.is_some() {
             // Known
-            // Still need to remove qualifiers on generic args
+            // Still need to remove qualifier on generic args
             Some(self.serialize_rust_type_name(rust_type.type_name.clone()))
         } else if rust_type.type_name.is_anonymous() {
             // Anonymous
@@ -171,9 +171,9 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
 
     fn add_if_type_def(&mut self, rust_type: &RustType) -> bool {
         match &rust_type.type_name {
-            RustTypeName::Ident { qualifiers, simple_name, generic_args }
+            RustTypeName::Ident { qualifier, simple_name, generic_args }
             // Generic args are only supported for builtins.
-            if qualifiers == &self.ctx.qualifiers && generic_args.is_empty() => {
+            if qualifier == &self.ctx.qualifier && generic_args.is_empty() => {
                 self.add_if_type_def2(simple_name, &rust_type.structure)
             }
             _ => false
@@ -201,7 +201,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
 
     // Don't use &mut even though we can to simulate converting types
     fn serialize_rust_type_name(&mut self, mut rust_type_name: RustTypeName) -> AstRustType {
-        rust_type_name.remove_qualifier(&self.ctx.qualifiers);
+        rust_type_name.remove_qualifier(&self.ctx.qualifier);
         rust_type_name
     }
 
@@ -375,9 +375,9 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 (AstRustType::Tuple { elems: old_elems }, AstRustType::Tuple { elems: new_elems }) => {
                     self.merge_rust_type_slices(old_elems, new_elems, errors);
                 }
-                (AstRustType::Ident { qualifiers, simple_name, generic_args }, AstRustType::Ident { qualifiers: new_qualifiers, simple_name: new_simple_name, generic_args: new_generic_args }) => {
-                    if qualifiers != &new_qualifiers {
-                        errors.push(String::from("ident qualifiers do not match"));
+                (AstRustType::Ident { qualifier, simple_name, generic_args }, AstRustType::Ident { qualifier: new_qualifiers, simple_name: new_simple_name, generic_args: new_generic_args }) => {
+                    if qualifier != &new_qualifiers {
+                        errors.push(String::from("ident qualifier do not match"));
                     }
                     if simple_name != &new_simple_name {
                         errors.push(String::from("ident names do not match"));

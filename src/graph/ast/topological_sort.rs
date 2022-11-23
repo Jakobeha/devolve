@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::iter::{empty, once};
+use structural_reflection::Qualifier;
 
 use crate::graph::StaticStrs;
 use crate::graph::ast::types::{AstValueBody, AstEnumTypeDef, AstNode, AstRustType, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstValueHead};
@@ -14,7 +15,7 @@ pub struct AstNodeDep<'a> {
 }
 
 pub struct AstTypeDep<'a> {
-    pub qualifiers: &'a Vec<String>,
+    pub qualifier: &'a Qualifier,
     pub simple_name: &'a str
 }
 
@@ -141,7 +142,7 @@ impl HasDeps for AstTypeDef {
 
 pub fn type_def_local_deps(type_def: &AstTypeDef) -> impl Iterator<Item=&str> {
     type_def_deps(type_def)
-        .filter(|dep| dep.qualifiers.is_empty())
+        .filter(|dep| dep.qualifier.is_local())
         .map(|dep| dep.simple_name)
 }
 
@@ -175,11 +176,11 @@ fn type_def_body_deps(type_body: &AstTypeDefBody) -> impl Iterator<Item=AstTypeD
 
 fn rust_type_deps(rust_type: &AstRustType) -> impl Iterator<Item=AstTypeDep<'_>> {
     match rust_type {
-        AstRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
+        AstRustType::Ident { qualifier, simple_name, generic_args: _ } => {
             // Generic args may add indirection, in which case we shouldn't count them.
             // Currently we assume all generic args are indirect, but in the future we may change this.
             // Either way generic args are only supported in registered builtin types.
-            let dep = AstTypeDep { qualifiers, simple_name };
+            let dep = AstTypeDep { qualifier, simple_name };
             Box::new(once(dep)) as Box<dyn Iterator<Item=AstTypeDep<'_>>>
         }
         AstRustType::ConstExpr { .. } => {

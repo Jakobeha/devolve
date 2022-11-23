@@ -3,7 +3,7 @@ use std::marker::PhantomPinned;
 use std::pin::Pin;
 
 /// Contains all of the constant *references* in the IR-graph.
-/// Note that constants which are not references (e.g. numbers) are stored directly.
+/// Note that constants which are not references (e.g. numbers) are stored inline.
 #[derive(Debug, Clone)]
 pub struct ConstantPool(Pin<Box<ConstantPoolData>>);
 

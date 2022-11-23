@@ -212,10 +212,10 @@ impl NodeTypeFn {
         );
         quote! {
             // Must match the signature of NodeTypeFn
-            pub fn #node_type_name(arg: &str, fn_ctx: ::dui_graph::node_types::NodeTypeFnCtx<'_>) -> Result<::dui_graph::node_types::NodeType<#ctx_ty>, Box<dyn ::std::error::Error>> + Send + Sync> {
+            pub fn #node_type_name(arg: &str, fn_ctx: ::dui_graph::raw::NodeTypeFnCtx<'_>) -> Result<::dui_graph::raw::NodeType<#ctx_ty>, Box<dyn ::std::error::Error>> + Send + Sync> {
                 use structural_reflection::c_tuple::*;
 
-                ::dui_graph::node_type::NodeType {
+                ::dui_graph::raw::NodeType {
                     compute: ComputeFn::new(|ctx, input_data, output_data| {
                         let input_data = unsafe { input_data.as_raw() };
                         let output_data = unsafe { output_data.as_raw() };

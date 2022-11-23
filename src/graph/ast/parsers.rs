@@ -751,7 +751,7 @@ fn parse_header(header_str: &str) -> Result<AstFieldHeader, (usize, ParseErrorBo
         lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
         let h = munch_int(&mut lexer)?;
         lexer.munch_end()?;
-        return Ok(AstFieldHeader::NodeAttr(AstNodeAttr::Color(NodeColor { l, c, h })));
+        return Ok(AstFieldHeader::NodeAttr(AstNodeAttr::PrimaryColor(NodeColor { l, c, h })));
     }
     if header_str.starts_with("@") {
         return Err((0, ParseErrorBody::BadHeader(header_str.to_string())));

@@ -103,8 +103,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         field_name: &str
     ) -> Vec<NodeIOWithLayout> {
         let resolved_type = match &type_name {
-            RustTypeName::Ident { qualifiers, simple_name, generic_args }
-            if qualifiers == &self.ctx.qualifiers && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
+            RustTypeName::Ident { qualifier, simple_name, generic_args }
+            if qualifier == &self.ctx.qualifier && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
             _ => None
         };
         match resolved_type {
@@ -152,8 +152,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         field_name: &str
     ) -> Vec<NodeIOWithLayout> {
         let resolved_type = match &type_name {
-            RustTypeName::Ident { qualifiers, simple_name, generic_args }
-            if qualifiers == &self.ctx.qualifiers && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
+            RustTypeName::Ident { qualifier, simple_name, generic_args }
+            if qualifier == &self.ctx.qualifier && generic_args.is_empty() => self.resolved_rust_types.get(simple_name.as_str()),
             _ => None
         };
         match resolved_type {

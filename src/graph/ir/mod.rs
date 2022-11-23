@@ -12,11 +12,17 @@ use crate::graph::ast::types::AstGraph;
 use crate::misc::try_index::{NotFound, TryIndex, TryIndexMut};
 use structural_reflection::TypeStructure;
 
+/// IR datatype traversal
 mod query_mutate;
+/// IR datatypes
 mod types;
+/// Pretty printing for diagnostics
 mod display;
+/// Compile-time context (small module)
 mod ctx;
+/// Ast to IR
 mod from_ast;
+/// IR to Ast
 mod serialize;
 
 // region serialization / deserialization

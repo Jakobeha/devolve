@@ -52,8 +52,12 @@ pub enum AstFieldHeader {
 pub enum AstNodeAttr {
     /// Sets the position of the entire node
     Pos(NodePos),
-    /// Sets the color of the entire node
-    Color(NodeColor)
+    /// Sets the primary color of the entire node.
+    ///
+    /// Primary color is used to group nodes independent of location and type
+    /// The secondary color (which may actually be more prominent) is determined by the node type
+    /// (groups nodes by node type). It's not represented in the AST since the type is not either.
+    PrimaryColor(NodeColor)
 }
 
 /// Node position = int vector2
@@ -63,7 +67,9 @@ pub struct NodePos {
     pub y: i32
 }
 
-/// Node color = [OkLCH (OkLab version of LCH)](https://bottosson.github.io/posts/oklab/)
+/// Node color = [OkLCH (OkLab version of LCH)](https://bottosson.github.io/posts/oklab/).
+///
+/// Both primary (node specific) and secondary (node type specific) color are of this type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NodeColor {
     pub l: u8,

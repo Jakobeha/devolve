@@ -4,7 +4,7 @@ use std::mem::take;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::{ForwardNode, GraphBuilder};
 use crate::ir::{FieldHeader, Node, NodeId, NodeIO, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
-use crate::node_types::{NodeType, NodeTypeFnCtx};
+use crate::graph::raw::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodeAttr, NodeColor, NodePos};
 use crate::raw::NullRegion;
 
@@ -80,7 +80,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         let meta = NodeMetadata {
             node_name: node_name.to_string(),
             pos,
-            color,
+            primary_color: color,
             input_headers,
             output_headers
         };
@@ -178,7 +178,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                                     });
                                 }
                             },
-                            AstNodeAttr::Color(new_color) => {
+                            AstNodeAttr::PrimaryColor(new_color) => {
                                 if color.is_none() {
                                     *color = Some(*new_color)
                                 } else {

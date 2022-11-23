@@ -55,8 +55,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
 
     fn resolve_type_structurally2(&mut self, ast_type: AstRustType) -> RustType {
         let (known_size, known_align) = match &ast_type {
-            AstRustType::Ident { qualifiers, simple_name, generic_args: _ } => {
-                let (previously_defined_size, previously_defined_align) = if qualifiers == &self.ctx.qualifiers {
+            AstRustType::Ident { qualifier, simple_name, generic_args: _ } => {
+                let (previously_defined_size, previously_defined_align) = if qualifier == &self.ctx.qualifier {
                     match self.resolved_rust_types.get(simple_name.as_str()) {
                         None => (None, None),
                         Some(previously_defined_type) => {

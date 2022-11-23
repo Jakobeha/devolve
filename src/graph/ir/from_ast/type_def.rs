@@ -37,7 +37,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         }
         RustType {
             type_id: None,
-            type_name: RustTypeName::scoped_simple(self.ctx.qualifiers.clone(), type_def_name.to_string()),
+            type_name: RustTypeName::scoped_simple(self.ctx.qualifier.clone(), type_def_name.to_string()),
             size: size.unwrap_or(usize::MAX),
             align: align.unwrap_or(usize::MAX),
             structure

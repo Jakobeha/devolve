@@ -141,7 +141,7 @@ impl Display for AstNodeAttr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             AstNodeAttr::Pos(pos) => write!(f, "pos {},{}", pos.x, pos.y),
-            AstNodeAttr::Color(color) => write!(f, "color lch,{},{},{}", color.l, color.c, color.h),
+            AstNodeAttr::PrimaryColor(color) => write!(f, "color lch,{},{},{}", color.l, color.c, color.h),
         }
     }
 }

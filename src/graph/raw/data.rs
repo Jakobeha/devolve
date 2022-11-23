@@ -4,7 +4,7 @@ use std::ptr::{copy_nonoverlapping, slice_from_raw_parts_mut};
 use structural_reflection::{HasTypeName, infer_c_tuple_elem_offsets, infer_c_tuple_size, RustType};
 use crate::raw::{NullRegion, IODataTypes};
 
-/// Input data holder for a node-graph.
+/// Untyped input data for a node graph.
 ///
 /// Implementation: type/memory-safe wrapper over [RawData] to be passed as input.
 #[repr(transparent)]

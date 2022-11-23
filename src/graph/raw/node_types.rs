@@ -6,18 +6,21 @@ use crate::graph::raw::ComputeFn;
 use crate::ir::NodeIOType;
 use structural_reflection::RustType;
 use derive_more::{Display, Error};
+use crate::ast::types::NodeColor;
 
-/// Map of node types available to
+/// Map of node types available to the DUI graph
 pub struct NodeTypes<RuntimeCtx: 'static + ?Sized> {
     statics: HashMap<String, NodeType<RuntimeCtx>>,
     fns: HashMap<String, NodeTypeFn<RuntimeCtx>>
 }
 
+/// Each node type consists of a compute function, input/output type info, and metadata
 pub struct NodeType<RuntimeCtx: 'static + ?Sized> {
     pub compute: ComputeFn<RuntimeCtx>,
     pub type_data: NodeTypeData,
     pub default_inputs: Vec<NodeIO>,
     pub default_default_outputs: Vec<NodeIO>,
+    pub meta: NodeTypeMetadata
 }
 
 pub struct NodeTypeFnCtx<'a> {
@@ -26,10 +29,29 @@ pub struct NodeTypeFnCtx<'a> {
     pub output_types: &'a [NodeIOType]
 }
 
-/// The function takes one argument, which may have commas. You can split on the commas and that
-/// emulates taking multiple arguments.
+/// Aesthetic (UI) metadata for a node type
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeTypeMetadata {
+    /// Secondary node color used to group node types
+    pub secondary_color: Option<NodeColor>
+}
+
+/// Function which generates a node type, but can alter the input/output types and compute function
+/// based on the arguments. Also known as a "dynamic node type".
+///
+/// For example, `Math(u = x + y * z, v = y)` would likely generate a node type with inputs
+/// `x`, `y`, and `z`, and outputs `u` and `v`, which performs the computations.
+///
+/// This can also emulate a "regular" node type, but vary the input/output types based on what is
+/// provided. For instance, a node where one of the inputs can be an integer or a string, and the
+/// input type and compute function is different depending on what is provided. If the type function
+/// is called with arguments you may want to throw [NodeTypeExpectedNoArguments].
+///
+/// The text inside () is the argument, and it may have commas. You can split on the commas and that
+/// emulates taking multiple arguments. If the function is called without (), the argument is "".
 pub type NodeTypeFn<RuntimeCtx> = Box<dyn Fn(&str, NodeTypeFnCtx<'_>) -> Result<NodeType<RuntimeCtx>, Box<dyn Error>> + Send + Sync>;
 
+/// Error for if a node type expects no arguments.
 #[derive(Debug, Display, Error)]
 #[display(fmt = "node-type expected no arguments")]
 pub struct NodeTypeExpectedNoArguments;
@@ -107,6 +129,15 @@ impl<RuntimeCtx: 'static + ?Sized> Clone for NodeType<RuntimeCtx> {
             type_data: self.type_data.clone(),
             default_inputs: self.default_inputs.clone(),
             default_default_outputs: self.default_default_outputs.clone(),
+            meta: self.meta.clone()
+        }
+    }
+}
+
+impl Default for NodeTypeMetadata {
+    fn default() -> Self {
+        Self {
+            secondary_color: None
         }
     }
 }

@@ -48,7 +48,7 @@ pub struct IrGraph<RuntimeCtx: 'static + ?Sized> {
     pub(in crate::graph) output_metadata: NodeMetadata,
 }
 
-/// Node type definition
+/// Node type definition = input/output type data
 #[derive(Clone)]
 pub struct NodeTypeData {
     /// Input field types
@@ -131,8 +131,10 @@ pub struct NodeMetadata {
     pub node_name: String,
     /// Node position in the UI. If unset, will be layout automatically
     pub pos: Option<NodePos>,
-    /// Node color in the UI. If unset, will be the default color
-    pub color: Option<NodeColor>,
+    /// Primary (set on node itself) node color in the UI. If unset, will be the default color.
+    ///
+    /// Primary color is used to group nodes independent of location and type
+    pub primary_color: Option<NodeColor>,
     /// Input headers.
     ///
     /// Note that they are inserted in a weird way (ascending index) when converting back into AST
@@ -193,7 +195,7 @@ impl NodeMetadata {
         Self {
             node_name,
             pos: None,
-            color: None,
+            primary_color: None,
             input_headers: Vec::new(),
             output_headers: Vec::new(),
         }

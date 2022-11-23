@@ -178,7 +178,7 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
     };
 }
 
-// impl_io_data_types!();
+impl_io_data_types!();
 impl_io_data_types!(A);
 impl_io_data_types!(A, B);
 impl_io_data_types!(A, B, C);

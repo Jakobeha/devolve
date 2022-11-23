@@ -7,12 +7,11 @@ mod batch_file;
 use std::error::Error;
 use std::sync::Mutex;
 use dui_graph::ir::{ComptimeCtx, IrGraph, NodeIO, NodeIOType, NodeTypeData};
-use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
-use dui_graph::raw::{ComputeFn, NullRegion, InputData, OutputData, NonNull, Nullable};
+use dui_graph::raw::{ComputeFn, NodeType, NodeTypes, NullRegion, InputData, OutputData, NonNull, Nullable, NodeTypeMetadata};
 use structural_reflection::c_tuple::{c_tuple, CTuple, CTuple2};
-use structural_reflection::RustType;
+use structural_reflection::{qualifier, RustType};
 use structural_reflection::derive::{HasTypeName, HasStructure};
 use dui_graph::StaticStrs;
 use crate::batch_file::{RunTest, RunTestsOnFiles};
@@ -98,7 +97,8 @@ fn tests_on_files() {
                             default_default_outputs: vec![
                                 NodeIO::Hole,
                                 NodeIO::Hole,
-                            ]
+                            ],
+                            meta: NodeTypeMetadata::default()
                         });
                         node_types.insert(String::from("TextField"), NodeType {
                             compute: ComputeFn::new(|ctx, inputs, outputs| {
@@ -149,7 +149,8 @@ fn tests_on_files() {
                                 NodeIO::Hole,
                                 NodeIO::Hole,
                                 NodeIO::Hole,
-                            ]
+                            ],
+                            meta: NodeTypeMetadata::default()
                         });
                         node_types.insert_fn0(String::from("Box"), |ctx| Ok(NodeType {
                             compute: ComputeFn::new(|ctx, inputs, outputs| {
@@ -191,11 +192,12 @@ fn tests_on_files() {
                             ],
                             default_default_outputs: vec![
                                 NodeIO::Hole
-                            ]
+                            ],
+                            meta: NodeTypeMetadata::default()
                         }));
 
                         let input = input.clone();
-                        let comptime_ctx = ComptimeCtx { qualifiers: vec![], node_types };
+                        let comptime_ctx = ComptimeCtx { qualifier: qualifier![], node_types };
                         try_or_none!(
                             IrGraph::try_from((input, &comptime_ctx)),
                             errors,
