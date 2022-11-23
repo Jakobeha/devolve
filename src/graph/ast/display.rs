@@ -5,7 +5,7 @@ use snailquote::escape;
 
 use crate::graph::ast::topological_sort::SortByDeps;
 use crate::misc::fmt_with_ctx::{DisplayWithCtx, DisplayWithCtx2, Indent};
-use crate::ast::types::{AstBody, AstField, AstFieldElem, AstFieldHeader, AstFieldTypeDef, AstGraph, AstLiteral, AstNode, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
+use crate::ast::types::{AstValueBody, AstField, AstFieldElem, AstFieldHeader, AstFieldTypeDef, AstGraph, AstLiteral, AstNode, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead, AstNodeAttr};
 use structural_reflection::DuplicateNamesInScope;
 use crate::StaticStrs;
 
@@ -15,7 +15,7 @@ impl Display for AstGraph {
             .flat_map(|rust_type| rust_type.iter_simple_names())
             .collect::<DuplicateNamesInScope>();
 
-        let mut rust_types = self.rust_types.iter().collect::<Vec<_>>();
+        let mut rust_types = self.type_defs.iter().collect::<Vec<_>>();
         rust_types.sort_by_deps();
         let mut nodes = self.nodes.iter().collect::<Vec<_>>();
         nodes.sort_by_deps();
@@ -132,7 +132,16 @@ impl Display for AstFieldHeader {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             AstFieldHeader::Message(message) => write!(f, "{}", message),
-            AstFieldHeader::Pos(pos) => write!(f, "@pos {},{}", pos.x, pos.y)
+            AstFieldHeader::NodeAttr(node_attr) => write!(f, "@{}", node_attr)
+        }
+    }
+}
+
+impl Display for AstNodeAttr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AstNodeAttr::Pos(pos) => write!(f, "pos {},{}", pos.x, pos.y),
+            AstNodeAttr::Color(color) => write!(f, "color lch,{},{},{}", color.l, color.c, color.h),
         }
     }
 }
@@ -149,26 +158,26 @@ impl DisplayWithCtx2 for AstField {
         if let Some(rust_type) = self.rust_type.as_ref() {
             write!(f, ": {}", rust_type.display(dnis))?;
         }
-        if let Some(value) = self.value.as_ref() {
+        if let Some(value) = self.value_head.as_ref() {
             write!(f, " = {}", value.with_ctx(dnis))?;
         }
         write!(f, "{}", self.value_children.with_ctx((dnis, &indent.next())))
     }
 }
 
-impl DisplayWithCtx2 for AstBody {
+impl DisplayWithCtx2 for AstValueBody {
     type Ctx1 = DuplicateNamesInScope;
     type Ctx2 = Indent;
 
     fn fmt(&self, f: &mut Formatter<'_>, (dnis, indent): (&Self::Ctx1, &Self::Ctx2)) -> std::fmt::Result {
         match self {
-            AstBody::None => {},
-            AstBody::Tuple(tuple_items) => {
+            AstValueBody::None => {},
+            AstValueBody::Tuple(tuple_items) => {
                 for tuple_item in tuple_items {
                     write!(f, "\n{}{}", indent, tuple_item.with_ctx((dnis, &indent.next())))?;
                 }
             }
-            AstBody::Fields(fields) => {
+            AstValueBody::Fields(fields) => {
                 for field in fields {
                     write!(f, "\n{}{}", indent, field.with_ctx((dnis, &indent.next())))?;
                 }
@@ -209,8 +218,8 @@ impl DisplayWithCtx for AstValueHead {
             } else {
                 write!(f, "{}.{}", node_name, field_name)
             },
-            AstValueHead::Tuple(items) => write!(f, "({})", ", ".join(items.iter().map(|x| x.with_ctx(dnis)))),
-            AstValueHead::Array(elems) => write!(f, "[{}]", ", ".join(elems.iter().map(|x| x.with_ctx(dnis)))),
+            AstValueHead::InlineTuple(items) => write!(f, "({})", ", ".join(items.iter().map(|x| x.with_ctx(dnis)))),
+            AstValueHead::InlineArray(elems) => write!(f, "[{}]", ", ".join(elems.iter().map(|x| x.with_ctx(dnis)))),
             AstValueHead::Struct { type_name: rust_type, inline_params } => {
                 write!(f, "{}", rust_type.display(dnis))?;
                 if let Some(inline_params) = inline_params.as_ref() {

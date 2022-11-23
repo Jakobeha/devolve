@@ -3,7 +3,7 @@ use std::iter::zip;
 use std::mem::{MaybeUninit, size_of};
 use std::ptr::copy_nonoverlapping;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
-use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeInput as GraphNodeInput, NodeInputDep as GraphNodeInputDep, NodeInputWithLayout as GraphNodeInputWithLayout, NodeIOType};
+use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeIO as GraphNodeInput, NodeIODep as GraphNodeInputDep, NodeIOWithLayout as GraphNodeInputWithLayout, NodeIOType};
 use crate::raw::{ComputeFn, IOData, InputData, OutputData, NullRegion, RawData, ConstantPool};
 use structural_reflection::{IsSubtypeOf, RustType};
 

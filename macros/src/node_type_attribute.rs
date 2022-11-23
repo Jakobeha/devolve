@@ -244,10 +244,10 @@ impl NodeTypeFn {
                         ]
                     },
                     default_inputs: vec![
-                        #(arg_defaults),*
+                        #(#arg_defaults),*
                     ],
                     default_default_outputs: vec![
-                        #(out_defaults),*
+                        #(#out_defaults),*
                     ]
                 }
             }

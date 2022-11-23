@@ -5,8 +5,8 @@ use std::mem::size_of;
 use join_lazy_fmt::Join;
 use log::{error, warn};
 
-use crate::graph::ir::{FieldHeader, IrGraph, Node, NodeInput, NodeInputDep, NodeInputWithLayout, NodeIOType, NodeTypeData};
-use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
+use crate::graph::ir::{FieldHeader, IrGraph, Node, NodeIO, NodeIODep, NodeIOWithLayout, NodeIOType, NodeTypeData};
+use crate::graph::ast::types::{AstValueBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
 use crate::graph::StaticStrs;
 use crate::ir::{ComptimeCtx, NodeTypeName};
 use structural_reflection::{DuplicateNamesInScope, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
@@ -139,7 +139,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         self.result.nodes.insert(node.meta.node_name, ast_node);
     }
 
-    fn serialize_field(&mut self, field_type: &NodeIOType, field_value: &NodeInput) -> AstField {
+    fn serialize_field(&mut self, field_type: &NodeIOType, field_value: &NodeIO) -> AstField {
         let (mut value, mut value_children) = self.serialize_node_value(field_value, &field_type.rust_type);
         self.inline_value_if_small_enough((&mut value, &mut value_children));
         let rust_type = self.elide_type_if_trivial((value.as_ref(), &value_children), |this| {
@@ -149,7 +149,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
             name: field_type.name.to_string(),
             rust_type,
             rust_type_may_be_null: matches!(field_type.null_region, NullRegion::Null),
-            value,
+            value_head: value,
             value_children
         }
     }
@@ -184,15 +184,15 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         match self.serialize_type_def(structure) {
             None => false,
             Some(ast_type_def) => {
-                if let Some((type_name, mut old_ast_type_def)) = self.result.rust_types.remove_entry(type_name) {
+                if let Some((type_name, mut old_ast_type_def)) = self.result.type_defs.remove_entry(type_name) {
                     let mut errors = Vec::new();
                     self.merge_type_defs(&mut old_ast_type_def, ast_type_def, &mut errors);
                     if !errors.is_empty() {
                         error!("conflicting inferred type def. Errors:\n\t{}", "\n\t".join(errors));
                     }
-                    self.result.rust_types.insert(type_name, old_ast_type_def);
+                    self.result.type_defs.insert(type_name, old_ast_type_def);
                 } else {
-                    self.result.rust_types.insert(type_name.to_string(), ast_type_def);
+                    self.result.type_defs.insert(type_name.to_string(), ast_type_def);
                 }
                 true
             }
@@ -254,8 +254,8 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                         // Nullable values are currently unsupported and only a feature of parsing
                         rust_type_may_be_null: false,
                         // Default values are currently unsupported and only a feature of parsing
-                        default_value: None,
-                        default_value_children: AstBody::None
+                        default_value_head: None,
+                        default_value_children: AstValueBody::None
                     }
                 }).collect::<Vec<_>>())
             }
@@ -391,35 +391,35 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }
     }
 
-    fn serialize_node_value(&mut self, node_value: &NodeInput, rust_type: &RustType) -> (Option<AstValueHead>, AstBody) {
+    fn serialize_node_value(&mut self, node_value: &NodeIO, rust_type: &RustType) -> (Option<AstValueHead>, AstValueBody) {
         match node_value {
-            NodeInput::Hole => (None, AstBody::None),
-            NodeInput::Dep(dep) => {
+            NodeIO::Hole => (None, AstValueBody::None),
+            NodeIO::Dep(dep) => {
                 let (node_name, field_name) = match dep {
-                    NodeInputDep::GraphInput { idx } => {
+                    NodeIODep::GraphInput { idx } => {
                         (String::from(StaticStrs::INPUT_NODE), self.input_names[*idx].clone())
                     }
-                    NodeInputDep::OtherNodeOutput { id, idx } => {
+                    NodeIODep::OtherNodeOutput { id, idx } => {
                         let (node_name, output_names) = self.node_names_and_output_names[id.0].as_ref().unwrap();
                         (node_name.clone(), output_names[*idx].clone())
                     }
                 };
-                (Some(AstValueHead::Ref { node_name, field_name }), AstBody::None)
+                (Some(AstValueHead::Ref { node_name, field_name }), AstValueBody::None)
             },
-            NodeInput::ConstInline(constant_data) => {
+            NodeIO::ConstInline(constant_data) => {
                 self.serialize_constant_inline(constant_data, rust_type)
             }
-            NodeInput::ConstRef(constant_ptr) => {
+            NodeIO::ConstRef(constant_ptr) => {
                 self.serialize_constant_ref(*constant_ptr, rust_type)
             }
-            NodeInput::Array(elems) => {
+            NodeIO::Array(elems) => {
                 let array_elem_type = rust_type.structure.array_elem_type_and_length().map(|(array_elem_type, length)| {
                     if length != elems.len() {
                         error!("array length mismatch: {} != {}", length, elems.len());
                     }
                     array_elem_type
                 });
-                (None, AstBody::Tuple(elems.iter().map(|elem| {
+                (None, AstValueBody::Tuple(elems.iter().map(|elem| {
                     let rust_type = array_elem_type.and_then(|array_elem_type| self.serialize_rust_type(array_elem_type));
                     let (value, value_children) = self.serialize_node_value(elem, array_elem_type.unwrap_or(&RustType::unknown()));
                     AstTupleItem {
@@ -430,7 +430,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                     }
                 }).collect()))
             }
-            NodeInput::Tuple(tuple_items) => match &rust_type.structure {
+            NodeIO::Tuple(tuple_items) => match &rust_type.structure {
                 TypeStructure::CReprStruct { body: body_type } => {
                     let head = AstValueHead::Struct {
                         type_name: rust_type.type_name.clone(),
@@ -442,7 +442,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 TypeStructure::CReprEnum { variants } => {
                     if variants.len() == 0 {
                         error!("deserialized 'bottom' value, something is clearly wrong");
-                        return (None, AstBody::None);
+                        return (None, AstValueBody::None);
                     } else if variants.len() != 1 {
                         warn!("deserializing tuple with multiple variants, don't know which one to pick");
                     }
@@ -471,11 +471,11 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }
     }
 
-    fn serialize_constant_inline(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<AstValueHead>, AstBody) {
+    fn serialize_constant_inline(&mut self, constant_data: &[u8], rust_type: &RustType) -> (Option<AstValueHead>, AstValueBody) {
         let size = rust_type.size;
         if size != constant_data.len() {
             error!("deserialized constant data doesn't match type size: size = {}, type = {} (size {})", constant_data.len(), rust_type.type_name.unqualified(), size);
-            return (None, AstBody::None)
+            return (None, AstValueBody::None)
         }
 
         // No inline literals which aren't primitives
@@ -501,15 +501,15 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                         1 => true,
                         not_a_bool => {
                             error!("deserialized bool constant with invalid value: {}", not_a_bool);
-                            return (None, AstBody::None)
+                            return (None, AstValueBody::None)
                         }
                     };
                     AstLiteral::Bool(value)
                 }
                 _ => todo!("primitives which aren't i64 and f64 not yet implemented")
-            })), AstBody::None),
+            })), AstValueBody::None),
             TypeStructure::CReprStruct { body } => (None, match body {
-                TypeStructureBody::None => AstBody::None,
+                TypeStructureBody::None => AstValueBody::None,
                 TypeStructureBody::Tuple(tuple_item_types) => {
                     self.serialize_constant_tuple(constant_data, tuple_item_types)
                 }
@@ -519,15 +519,15 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
             }),
             TypeStructure::Opaque => {
                 error!("deserialized constant data is of opaque type, don't know how to interpret it");
-                (None, AstBody::None)
+                (None, AstValueBody::None)
             }
             TypeStructure::CReprEnum { .. } => {
                 error!("deserialized constant data is of enum type, which can't be represented in serial data");
-                (None, AstBody::None)
+                (None, AstValueBody::None)
             }
             TypeStructure::Pointer { .. } => {
                 error!("deserialized (inline?) constant data is of pointer type, which can't be represented in serial data");
-                (None, AstBody::None)
+                (None, AstValueBody::None)
             }
             TypeStructure::CTuple { elements} => {
                 (None, self.serialize_constant_tuple(constant_data, elements))
@@ -541,7 +541,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }
     }
 
-    fn serialize_constant_ref(&mut self, constant_ptr: InlinePtr, rust_type: &RustType) -> (Option<AstValueHead>, AstBody) {
+    fn serialize_constant_ref(&mut self, constant_ptr: InlinePtr, rust_type: &RustType) -> (Option<AstValueHead>, AstValueBody) {
         // Literals which aren't primitives
         match rust_type.type_id {
             Some(type_id) if type_id == TypeId::of::<String>() => {
@@ -549,20 +549,20 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 let string = match String::from_utf8(constant_data.to_vec()) {
                     Err(error) => {
                         error!("deserialized string is not valid utf8: {}", error);
-                        return (None, AstBody::None)
+                        return (None, AstValueBody::None)
                     },
                     Ok(string) => string
                 };
-                return (Some(AstValueHead::Literal(AstLiteral::String(string))), AstBody::None);
+                return (Some(AstValueHead::Literal(AstLiteral::String(string))), AstValueBody::None);
             }
             _ => {}
         }
 
         error!("deserialized constant data is of unknown pointer type, which can't be represented in serial data");
-        (None, AstBody::None)
+        (None, AstValueBody::None)
     }
 
-    fn serialize_constant_tuple(&mut self, constant_data: &[u8], item_types: &[RustType]) -> AstBody {
+    fn serialize_constant_tuple(&mut self, constant_data: &[u8], item_types: &[RustType]) -> AstValueBody {
         let tuple_items = match self.serialize_constant_compound(
             constant_data,
             item_types.iter().map(|item_type| (item_type, ())),
@@ -575,13 +575,13 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 }
             }
         ) {
-            None => return AstBody::None,
+            None => return AstValueBody::None,
             Some(tuple_items) => tuple_items
         };
-        AstBody::Tuple(tuple_items)
+        AstValueBody::Tuple(tuple_items)
     }
 
-    fn serialize_constant_fields(&mut self, constant_data: &[u8], field_types: &[TypeStructureBodyField]) -> AstBody {
+    fn serialize_constant_fields(&mut self, constant_data: &[u8], field_types: &[TypeStructureBodyField]) -> AstValueBody {
         let fields = match self.serialize_constant_compound(
             constant_data,
             field_types.iter().map(|field_type| (&field_type.rust_type, field_type.name.clone())),
@@ -590,18 +590,18 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                     name,
                     rust_type: ast_rust_type,
                     rust_type_may_be_null: false,
-                    value: ast_value,
+                    value_head: ast_value,
                     value_children: ast_value_children
                 }
             }
         ) {
-            None => return AstBody::None,
+            None => return AstValueBody::None,
             Some(fields) => fields
         };
-        AstBody::Fields(fields)
+        AstValueBody::Fields(fields)
     }
 
-    fn serialize_constant_array(&mut self, constant_data: &[u8], element_type: &RustType, len: usize) -> AstBody {
+    fn serialize_constant_array(&mut self, constant_data: &[u8], element_type: &RustType, len: usize) -> AstValueBody {
         let elements = match self.serialize_constant_compound(
             constant_data,
             std::iter::repeat(element_type).map(|element_type| (element_type, ())).take(len),
@@ -614,13 +614,13 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 }
             }
         ) {
-            None => return AstBody::None,
+            None => return AstValueBody::None,
             Some(elements) => elements
         };
-        AstBody::Tuple(elements)
+        AstValueBody::Tuple(elements)
     }
 
-    fn serialize_constant_slice(&mut self, constant_data: &[u8], element_type: &RustType) -> AstBody {
+    fn serialize_constant_slice(&mut self, constant_data: &[u8], element_type: &RustType) -> AstValueBody {
         let length = constant_data.len() / element_type.size;
         self.serialize_constant_array(constant_data, element_type, length)
     }
@@ -629,7 +629,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         &mut self,
         constant_data: &[u8],
         elem_types: It,
-        mk_ast_elem: fn(Option<AstRustType>, Option<AstValueHead>, AstBody, U) -> V
+        mk_ast_elem: fn(Option<AstRustType>, Option<AstValueHead>, AstValueBody, U) -> V
     ) -> Option<Vec<V>> {
         let mut current_size = 0;
         let mut elems = Vec::new();
@@ -651,9 +651,9 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         Some(elems)
     }
 
-    fn serialize_body(&mut self, body_type: &TypeStructureBody, tuple_items: &[NodeInputWithLayout]) -> AstBody {
+    fn serialize_body(&mut self, body_type: &TypeStructureBody, tuple_items: &[NodeIOWithLayout]) -> AstValueBody {
         match body_type {
-            TypeStructureBody::None => AstBody::None,
+            TypeStructureBody::None => AstValueBody::None,
             TypeStructureBody::Tuple(tuple_item_types) => {
                 self.serialize_tuple_body(tuple_item_types, tuple_items)
             }
@@ -663,8 +663,8 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }
     }
 
-    fn serialize_tuple_body(&mut self, tuple_item_types: &[RustType], tuple_items: &[NodeInputWithLayout]) -> AstBody {
-        AstBody::Tuple(zip(tuple_item_types.iter(), tuple_items.iter()).map(|(tuple_item_type, NodeInputWithLayout { input: tuple_item, .. })| {
+    fn serialize_tuple_body(&mut self, tuple_item_types: &[RustType], tuple_items: &[NodeIOWithLayout]) -> AstValueBody {
+        AstValueBody::Tuple(zip(tuple_item_types.iter(), tuple_items.iter()).map(|(tuple_item_type, NodeIOWithLayout { input: tuple_item, .. })| {
             let rust_type = self.serialize_rust_type(tuple_item_type);
             let (value, value_children) = self.serialize_node_value(tuple_item, tuple_item_type);
             AstTupleItem {
@@ -676,15 +676,15 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }).collect())
     }
 
-    fn serialize_field_body(&mut self, field_types: &[TypeStructureBodyField], fields: &[NodeInputWithLayout]) -> AstBody {
-        AstBody::Fields(zip(field_types.iter(), fields.iter()).map(|(field_type, NodeInputWithLayout { input: field, .. })| {
+    fn serialize_field_body(&mut self, field_types: &[TypeStructureBodyField], fields: &[NodeIOWithLayout]) -> AstValueBody {
+        AstValueBody::Fields(zip(field_types.iter(), fields.iter()).map(|(field_type, NodeIOWithLayout { input: field, .. })| {
             let rust_type = self.serialize_rust_type(&field_type.rust_type);
             let (value, value_children) = self.serialize_node_value(field, &field_type.rust_type);
             AstField {
                 name: field_type.name.clone(),
                 rust_type,
                 rust_type_may_be_null: false,
-                value,
+                value_head: value,
                 value_children
             }
         }).collect())
@@ -692,14 +692,14 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
 
     fn inline_value_if_small_enough(
         &self,
-        (_value, _value_children): (&mut Option<AstValueHead>, &mut AstBody)
+        (_value, _value_children): (&mut Option<AstValueHead>, &mut AstValueBody)
     ) {
         // TODO
     }
 
     fn elide_type_if_trivial(
         &mut self,
-        (value, value_children): (Option<&AstValueHead>, &AstBody),
+        (value, value_children): (Option<&AstValueHead>, &AstValueBody),
         get_type: impl FnOnce(&mut Self) -> Option<AstRustType>
     ) -> Option<AstRustType> {
         if self.is_type_trivial((value, value_children)) {
@@ -709,34 +709,34 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
         }
     }
 
-    fn is_type_trivial(&self, (value, value_children): (Option<&AstValueHead>, &AstBody)) -> bool {
+    fn is_type_trivial(&self, (value, value_children): (Option<&AstValueHead>, &AstValueBody)) -> bool {
         match value {
             Some(AstValueHead::Literal(_)) |
             Some(AstValueHead::Struct { .. }) |
             Some(AstValueHead::Enum { .. }) => true,
             Some(AstValueHead::Ref { .. }) => false,
-            Some(AstValueHead::Tuple(tuple_items)) => {
+            Some(AstValueHead::InlineTuple(tuple_items)) => {
                 tuple_items.iter().all(|tuple_item| {
-                    self.is_type_trivial((Some(tuple_item), &AstBody::None))
+                    self.is_type_trivial((Some(tuple_item), &AstValueBody::None))
                 })
             },
-            Some(AstValueHead::Array(array_items)) => {
+            Some(AstValueHead::InlineArray(array_items)) => {
                 array_items.iter().any(|array_item| {
-                    self.is_type_trivial((Some(array_item), &AstBody::None))
+                    self.is_type_trivial((Some(array_item), &AstValueBody::None))
                 })
             },
             None => match value_children {
-                AstBody::None => false,
-                AstBody::Tuple(tuple_items) => {
+                AstValueBody::None => false,
+                AstValueBody::Tuple(tuple_items) => {
                     tuple_items.iter().all(|tuple_item| {
                         tuple_item.rust_type.is_some() ||
                             self.is_type_trivial((tuple_item.value.as_ref(), &tuple_item.value_children))
                     })
                 },
-                AstBody::Fields(fields) => {
+                AstValueBody::Fields(fields) => {
                     fields.iter().all(|field| {
                         field.rust_type.is_some() ||
-                            self.is_type_trivial((field.value.as_ref(), &field.value_children))
+                            self.is_type_trivial((field.value_head.as_ref(), &field.value_children))
                     })
                 }
             }

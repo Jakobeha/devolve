@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use log::error;
-use crate::graph::ir::{NodeInput, NodeTypeData};
+use crate::graph::ir::{NodeIO, NodeTypeData};
 use crate::graph::raw::ComputeFn;
 use crate::ir::NodeIOType;
 use structural_reflection::RustType;
@@ -16,8 +16,8 @@ pub struct NodeTypes<RuntimeCtx: 'static + ?Sized> {
 pub struct NodeType<RuntimeCtx: 'static + ?Sized> {
     pub compute: ComputeFn<RuntimeCtx>,
     pub type_data: NodeTypeData,
-    pub default_inputs: Vec<NodeInput>,
-    pub default_default_outputs: Vec<NodeInput>,
+    pub default_inputs: Vec<NodeIO>,
+    pub default_default_outputs: Vec<NodeIO>,
 }
 
 pub struct NodeTypeFnCtx<'a> {

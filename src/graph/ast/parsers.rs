@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::num::{ParseIntError, ParseFloatError};
+use std::num::{ParseIntError, ParseFloatError, TryFromIntError};
 use std::path::{PathBuf, Path};
 
 use logos::{Lexer, Logos};
@@ -8,9 +8,9 @@ use snailquote::unescape;
 
 use crate::graph::error::{ParseError, ParseErrorBody, ParseErrors};
 use crate::graph::ast::lexer_ext::LexerExt;
-use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstLiteral, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
+use crate::graph::ast::types::{AstValueBody, AstEnumTypeDef, AstEnumVariantTypeDef, AstField, AstFieldElem, AstFieldTypeDef, AstGraph, AstLiteral, AstNode, AstRustType, AstStructTypeDef, AstTupleItem, AstTypeDef, AstTypeDefBody, AstValueHead};
 use crate::misc::extract::extract;
-use crate::ast::types::{AstFieldHeader, AstNodePos};
+use crate::ast::types::{AstFieldHeader, AstNodeAttr, NodeColor, NodePos};
 use structural_reflection::{RustTypeName, RustTypeNameParseError, RustTypeNameToken};
 use crate::StaticStrs;
 
@@ -100,7 +100,7 @@ enum FieldElemParserItem {
 
 struct BodyParser<'a, 'b: 'a> {
     p: AbstractTreeParser<'a, 'b, BodyParserItem>,
-    body: &'a mut AstBody
+    body: &'a mut AstValueBody
 }
 
 enum BodyParserItem {
@@ -349,7 +349,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                 p.parse();
             },
             BlockParser::StructType { p, name, struct_type } => {
-                if p.graph.rust_types.contains_key(&name) {
+                if p.graph.type_defs.contains_key(&name) {
                     p.errors.push(ParseError {
                         path: p.path.to_path_buf(),
                         line: start_line_num,
@@ -357,11 +357,11 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         body: ParseErrorBody::DuplicateType { name }
                     });
                 } else {
-                    p.graph.rust_types.insert(name, AstTypeDef::Struct(struct_type));
+                    p.graph.type_defs.insert(name, AstTypeDef::Struct(struct_type));
                 }
             }
             BlockParser::EnumType { p, name, enum_type } => {
-                if p.graph.rust_types.contains_key(&name) {
+                if p.graph.type_defs.contains_key(&name) {
                     p.errors.push(ParseError {
                         path: p.path.to_path_buf(),
                         line: start_line_num,
@@ -369,7 +369,7 @@ impl<'a, 'b: 'a> BlockParser<'a, 'b> {
                         body: ParseErrorBody::DuplicateType { name }
                     });
                 } else {
-                    p.graph.rust_types.insert(name, AstTypeDef::Enum(enum_type));
+                    p.graph.type_defs.insert(name, AstTypeDef::Enum(enum_type));
                 }
             }
             BlockParser::Node { p, name, node,  } => {
@@ -566,7 +566,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
     fn parse(
         p: &'a mut GraphParser<'b>,
         lines: &[(usize, String)],
-        body: &'a mut AstBody
+        body: &'a mut AstValueBody
     ) {
         let mut parser = BodyParser::new(p, body);
         parser._parse(lines);
@@ -575,7 +575,7 @@ impl<'a, 'b> BodyParser<'a, 'b> {
 
     fn new(
         p: &'a mut GraphParser<'b>,
-        body: &'a mut AstBody
+        body: &'a mut AstValueBody
     ) -> Self {
         BodyParser {
             p: AbstractTreeParser::new(p),
@@ -602,14 +602,14 @@ impl<'a, 'b> BodyParser<'a, 'b> {
 
     fn finish(self) {
         let (p, items) = self.p.finish();
-        debug_assert!(matches!(self.body, AstBody::None), "finish with existing AstBody unsupported");
+        debug_assert!(matches!(self.body, AstValueBody::None), "finish with existing AstBody unsupported");
         if !items.is_empty() {
             if items.iter().all(|(_, item)| matches!(item, BodyParserItem::Field(_))) {
                 let items = items.into_iter().map(|(_, item)| extract!(item, BodyParserItem::Field(field)).unwrap()).collect::<Vec<_>>();
-                *self.body = AstBody::Fields(items);
+                *self.body = AstValueBody::Fields(items);
             } else if items.iter().all(|(_, item)| matches!(item, BodyParserItem::TupleItem(_))) {
                 let items = items.into_iter().map(|(_, item)| extract!(item, BodyParserItem::TupleItem(tuple_item)).unwrap()).collect::<Vec<_>>();
-                *self.body = AstBody::Tuple(items);
+                *self.body = AstValueBody::Tuple(items);
             } else {
                 p.errors.push(ParseError {
                     path: p.path.to_path_buf(),
@@ -737,11 +737,24 @@ fn parse_divider_or_header_or_field(line: &str) -> Result<FieldElemParserItem, (
 fn parse_header(header_str: &str) -> Result<AstFieldHeader, (usize, ParseErrorBody)> {
     if let Some(pos_str) = header_str.strip_prefix("@pos") {
         let mut lexer = Lexer::<GraphToken>::new(pos_str);
-        let x = munch_i32(&mut lexer)?;
+        let x = munch_int(&mut lexer)?;
         lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
-        let y = munch_i32(&mut lexer)?;
+        let y = munch_int(&mut lexer)?;
         lexer.munch_end()?;
-        return Ok(AstFieldHeader::Pos(AstNodePos { x, y }));
+        return Ok(AstFieldHeader::NodeAttr(AstNodeAttr::Pos(NodePos { x, y })));
+    }
+    if let Some(color_str) = header_str.strip_prefix("@color lch,") {
+        let mut lexer = Lexer::<GraphToken>::new(color_str);
+        let l = munch_int(&mut lexer)?;
+        lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
+        let c = munch_int(&mut lexer)?;
+        lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
+        let h = munch_int(&mut lexer)?;
+        lexer.munch_end()?;
+        return Ok(AstFieldHeader::NodeAttr(AstNodeAttr::Color(NodeColor { l, c, h })));
+    }
+    if header_str.starts_with("@") {
+        return Err((0, ParseErrorBody::BadHeader(header_str.to_string())));
     }
     Ok(AstFieldHeader::Message(header_str.to_string()))
 }
@@ -771,8 +784,8 @@ fn parse_field(line: &str) -> Result<AstField, (usize, ParseErrorBody)> {
         name,
         rust_type,
         rust_type_may_be_null,
-        value,
-        value_children: AstBody::None
+        value_head: value,
+        value_children: AstValueBody::None
     })
 }
 
@@ -781,8 +794,8 @@ fn parse_field_type(line: &str) -> Result<AstFieldTypeDef, (usize, ParseErrorBod
         name,
         rust_type,
         rust_type_may_be_null,
-        default_value: value,
-        default_value_children: AstBody::None
+        default_value_head: value,
+        default_value_children: AstValueBody::None
     })
 }
 
@@ -867,7 +880,7 @@ fn parse_tuple_item(line: &str) -> Result<AstTupleItem, (usize, ParseErrorBody)>
         rust_type,
         rust_type_may_be_null,
         value,
-        value_children: AstBody::None
+        value_children: AstValueBody::None
     })
 }
 
@@ -949,7 +962,7 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<AstValueHead, (usize, Pa
                     }
                 }
             }
-            Ok(AstValueHead::Array(values))
+            Ok(AstValueHead::InlineArray(values))
         }
         Some(GraphToken::Punct('(')) => {
             let mut values = Vec::new();
@@ -966,7 +979,7 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<AstValueHead, (usize, Pa
                     }
                 }
             }
-            Ok(AstValueHead::Tuple(values))
+            Ok(AstValueHead::InlineTuple(values))
         }
         // Special error message because we catch this one when we do actually have an opened bracket
         Some(GraphToken::Punct(']')) => Err((lexer.span().start, ParseErrorBody::Unopened(']'))),
@@ -989,10 +1002,10 @@ fn munch_rust_type(lexer: &mut Lexer<GraphToken>) -> Result<AstRustType, (usize,
     Ok(rust_type)
 }
 
-fn munch_i32(lexer: &mut Lexer<GraphToken>) -> Result<i32, (usize, ParseErrorBody)> {
-    Ok(i32::try_from(lexer.munch("integer", |token| extract!(token, GraphToken::Integer(integer)))?
+fn munch_int<T: TryFrom<i64, Error=TryFromIntError>>(lexer: &mut Lexer<GraphToken>) -> Result<T, (usize, ParseErrorBody)> {
+    Ok(T::try_from(lexer.munch("integer", |token| extract!(token, GraphToken::Integer(integer)))?
         .map_err(|err| (lexer.span().start, ParseErrorBody::BadInteger(err)))? as i64)
-        .map_err(|err| (lexer.span().start, ParseErrorBody::BadInt32(err)))?)
+        .map_err(|err| (lexer.span().start, ParseErrorBody::BadIntSize(err)))?)
 }
 
 fn expect_no_lines(p: &mut GraphParser, lines: &[(usize, String)]) {

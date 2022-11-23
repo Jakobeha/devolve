@@ -3,9 +3,9 @@ use std::iter::zip;
 use std::mem::take;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::{ForwardNode, GraphBuilder};
-use crate::ir::{FieldHeader, Node, NodeId, NodeInput, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
+use crate::ir::{FieldHeader, Node, NodeId, NodeIO, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::node_types::{NodeType, NodeTypeFnCtx};
-use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodePos};
+use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodeAttr, NodeColor, NodePos};
 use crate::raw::NullRegion;
 
 impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
@@ -45,8 +45,9 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
 
         // Get input / output fields and metadata
         let mut pos = None;
-        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos);
-        let (output_types, mut outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos);
+        let mut color = None;
+        let (input_types, mut inputs, input_headers) = self.resolve_field_elems(node.input_fields, node_name, &mut pos, &mut color);
+        let (output_types, mut outputs, output_headers) = self.resolve_field_elems(node.output_fields, node_name, &mut pos, &mut color);
 
         // Get and resolve inherited type (includes computing type fn)
         let inherited_type = node.node_type.as_ref()
@@ -79,6 +80,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         let meta = NodeMetadata {
             node_name: node_name.to_string(),
             pos,
+            color,
             input_headers,
             output_headers
         };
@@ -154,18 +156,38 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         &mut self,
         fields: Vec<AstFieldElem>,
         node_name: &str,
-        pos: &mut Option<AstNodePos>
-    ) -> (Vec<NodeIOType>, Vec<NodeInput>, Vec<FieldHeader>) {
+        pos: &mut Option<NodePos>,
+        color: &mut Option<NodeColor>
+    ) -> (Vec<NodeIOType>, Vec<NodeIO>, Vec<FieldHeader>) {
         let mut types: Vec<NodeIOType> = Vec::new();
-        let mut inputs: Vec<NodeInput> = Vec::new();
+        let mut inputs: Vec<NodeIO> = Vec::new();
         let mut headers: Vec<FieldHeader> = Vec::new();
         for (index, field) in fields.into_iter().enumerate() {
             match field {
                 AstFieldElem::Header { header } => {
                     // Extract information from header
                     match &header {
-                        AstFieldHeader::Pos(new_pos) if pos.is_none() => *pos = Some(*new_pos),
-                        _ => {}
+                        AstFieldHeader::Message(_) => {}
+                        AstFieldHeader::NodeAttr(attr) => match attr {
+                            AstNodeAttr::Pos(new_pos) => {
+                                if pos.is_none() {
+                                    *pos = Some(*new_pos)
+                                } else {
+                                    self.errors.push(GraphFormError::NodeMetaMultiplePos {
+                                        node_name: node_name.to_string()
+                                    });
+                                }
+                            },
+                            AstNodeAttr::Color(new_color) => {
+                                if color.is_none() {
+                                    *color = Some(*new_color)
+                                } else {
+                                    self.errors.push(GraphFormError::NodeMetaMultipleColor {
+                                        node_name: node_name.to_string()
+                                    });
+                                }
+                            }
+                        }
                     }
                     // Add header even if we extract so we can losslessly reconstruct
                     headers.push(FieldHeader { index, header });
@@ -180,13 +202,13 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         (types, inputs, headers)
     }
 
-    fn resolve_node_field(&mut self, field: AstField, node_name: &str) -> (NodeIOType, NodeInput) {
+    fn resolve_node_field(&mut self, field: AstField, node_name: &str) -> (NodeIOType, NodeIO) {
         let rust_type = self.resolve_type(
             field.rust_type,
-            (field.value.as_ref(), &field.value_children),
+            (field.value_head.as_ref(), &field.value_children),
         );
         let value = self.resolve_value(
-            (field.value, field.value_children),
+            (field.value_head, field.value_children),
             Cow::Borrowed(&rust_type),
             node_name,
             &field.name
@@ -199,7 +221,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         (io_type, value)
     }
 
-    fn apply_inherited_to_fields(&mut self, inherited_field_types: &[NodeIOType], inherited_field_defaults: &[NodeInput], field_types: &[NodeIOType], fields: &mut Vec<NodeInput>) {
+    fn apply_inherited_to_fields(&mut self, inherited_field_types: &[NodeIOType], inherited_field_defaults: &[NodeIO], field_types: &[NodeIOType], fields: &mut Vec<NodeIO>) {
         let mut old_fields = Vec::new();
         old_fields.append(fields);
         for field_io_type in inherited_field_types {
@@ -207,14 +229,14 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             let field_idx = field_types.iter().position(|field_type| &field_type.name == field_field_name);
 
             fields.push(match field_idx {
-                None => NodeInput::Hole,
+                None => NodeIO::Hole,
                 Some(field_idx) => take(&mut old_fields[field_idx])
             });
         }
 
         // Add default fields which were not overridden
         for (field, default_field) in zip(fields, inherited_field_defaults) {
-            if matches!(field, NodeInput::Hole) {
+            if matches!(field, NodeIO::Hole) {
                 // Add this default field since it's not overridden
                 *field = default_field.clone();
             }

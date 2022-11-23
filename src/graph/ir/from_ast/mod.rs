@@ -5,7 +5,7 @@ use slab::Slab;
 use crate::graph::error::{GraphFormError, GraphFormErrors};
 use crate::graph::ir::{IrGraph, Node, NodeId, NodeTypeData, NodeTypeName};
 use crate::graph::ast::topological_sort::SortByDeps;
-use crate::graph::ast::types::{AstBody, AstGraph, AstValueHead};
+use crate::graph::ast::types::{AstValueBody, AstGraph, AstValueHead};
 use crate::graph::StaticStrs;
 use crate::raw::ConstantPool;
 use crate::ir::{ComptimeCtx, NodeMetadata};
@@ -33,7 +33,7 @@ pub(super) struct GraphBuilder<'a, RuntimeCtx: 'static + ?Sized> {
 }
 
 enum AstBodyOrInlineTuple {
-    AstBody(AstBody),
+    AstBody(AstValueBody),
     InlineTuple { items: Vec<AstValueHead> }
 }
 
@@ -65,7 +65,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
 
     fn _build(mut self, graph: AstGraph) -> IrGraph<RuntimeCtx> {
         // sort by DAG so we can handle backward references
-        let mut sorted_types = graph.rust_types.into_iter().collect::<Vec<_>>();
+        let mut sorted_types = graph.type_defs.into_iter().collect::<Vec<_>>();
         sorted_types.sort_by_deps();
         let mut sorted_nodes = graph.nodes.into_iter().collect::<Vec<_>>();
         sorted_nodes.sort_by_deps();

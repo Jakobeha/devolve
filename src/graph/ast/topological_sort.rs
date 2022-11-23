@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter::{empty, once};
 
 use crate::graph::StaticStrs;
-use crate::graph::ast::types::{AstBody, AstEnumTypeDef, AstNode, AstRustType, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstValueHead};
+use crate::graph::ast::types::{AstValueBody, AstEnumTypeDef, AstNode, AstRustType, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstValueHead};
 //noinspection RsUnusedImport (IntelliJ fails to detect use)
 use crate::graph::ast::types::AstFieldElem;
 use crate::misc::extract::extract;
@@ -207,14 +207,14 @@ fn rust_type_deps(rust_type: &AstRustType) -> impl Iterator<Item=AstTypeDep<'_>>
 pub fn node_deps(node: &AstNode) -> impl Iterator<Item=AstNodeDep<'_>> {
     node.input_fields.iter()
         .filter_map(|field| extract!(field, AstFieldElem::Field { field }))
-        .flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))
+        .flat_map(|field| value_deps(field.value_head.as_ref(), &field.value_children))
 }
 
 fn node_dep_nodes(node: &AstNode) -> impl Iterator<Item=&str> {
     node_deps(node).map(|dep| dep.node_ident)
 }
 
-fn value_deps<'a>(value: Option<&'a AstValueHead>, value_children: &'a AstBody) -> impl Iterator<Item=AstNodeDep<'a>> {
+fn value_deps<'a>(value: Option<&'a AstValueHead>, value_children: &'a AstValueBody) -> impl Iterator<Item=AstNodeDep<'a>> {
     value_head_deps(value).chain(value_children_deps(value_children))
 }
 
@@ -226,10 +226,10 @@ fn value_head_deps(value_head: Option<&AstValueHead>) -> impl Iterator<Item=AstN
         Some(AstValueHead::Ref { node_name: node_ident, field_name: field_ident }) => {
             Box::new(once(AstNodeDep { node_ident, field_ident })) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        Some(AstValueHead::Array(elems)) => {
+        Some(AstValueHead::InlineArray(elems)) => {
             Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        Some(AstValueHead::Tuple(elems)) => {
+        Some(AstValueHead::InlineTuple(elems)) => {
             Box::new(elems.iter().flat_map(|elem| value_head_deps(Some(elem)))) as Box<dyn Iterator<Item=AstNodeDep>>
         },
         Some(AstValueHead::Struct { type_name: _, inline_params }) |
@@ -242,16 +242,16 @@ fn value_head_deps(value_head: Option<&AstValueHead>) -> impl Iterator<Item=AstN
     }
 }
 
-fn value_children_deps(value_children: &AstBody) -> impl Iterator<Item=AstNodeDep> {
+fn value_children_deps(value_children: &AstValueBody) -> impl Iterator<Item=AstNodeDep> {
     match value_children {
-        AstBody::None => {
+        AstValueBody::None => {
             Box::new(empty()) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        AstBody::Tuple(elems) => {
+        AstValueBody::Tuple(elems) => {
             Box::new(elems.iter().flat_map(|elem| value_deps(elem.value.as_ref(), &elem.value_children))) as Box<dyn Iterator<Item=AstNodeDep>>
         },
-        AstBody::Fields(fields) => {
-            Box::new(fields.iter().flat_map(|field| value_deps(field.value.as_ref(), &field.value_children))) as Box<dyn Iterator<Item=AstNodeDep>>
+        AstValueBody::Fields(fields) => {
+            Box::new(fields.iter().flat_map(|field| value_deps(field.value_head.as_ref(), &field.value_children))) as Box<dyn Iterator<Item=AstNodeDep>>
         }
     }
 }

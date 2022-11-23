@@ -6,7 +6,7 @@ mod batch_file;
 
 use std::error::Error;
 use std::sync::Mutex;
-use dui_graph::ir::{ComptimeCtx, IrGraph, NodeInput, NodeIOType, NodeTypeData};
+use dui_graph::ir::{ComptimeCtx, IrGraph, NodeIO, NodeIOType, NodeTypeData};
 use dui_graph::node_types::{NodeType, NodeTypes};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
@@ -92,12 +92,12 @@ fn tests_on_files() {
                                 ]
                             },
                             default_inputs: vec![
-                                NodeInput::Hole,
-                                NodeInput::const_(false)
+                                NodeIO::Hole,
+                                NodeIO::inline_const(false)
                             ],
                             default_default_outputs: vec![
-                                NodeInput::Hole,
-                                NodeInput::Hole,
+                                NodeIO::Hole,
+                                NodeIO::Hole,
                             ]
                         });
                         node_types.insert(String::from("TextField"), NodeType {
@@ -141,14 +141,14 @@ fn tests_on_files() {
                                 ]
                             },
                             default_inputs: vec![
-                                NodeInput::Hole,
-                                NodeInput::const_("")
+                                NodeIO::Hole,
+                                NodeIO::inline_const("")
                             ],
                             default_default_outputs: vec![
-                                NodeInput::Hole,
-                                NodeInput::Hole,
-                                NodeInput::Hole,
-                                NodeInput::Hole,
+                                NodeIO::Hole,
+                                NodeIO::Hole,
+                                NodeIO::Hole,
+                                NodeIO::Hole,
                             ]
                         });
                         node_types.insert_fn0(String::from("Box"), |ctx| Ok(NodeType {
@@ -185,12 +185,12 @@ fn tests_on_files() {
                                 ]
                             },
                             default_inputs: vec![
-                                NodeInput::Hole,
-                                NodeInput::Hole,
-                                NodeInput::Hole,
+                                NodeIO::Hole,
+                                NodeIO::Hole,
+                                NodeIO::Hole,
                             ],
                             default_default_outputs: vec![
-                                NodeInput::Hole
+                                NodeIO::Hole
                             ]
                         }));
 

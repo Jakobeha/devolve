@@ -2,14 +2,14 @@ use std::iter::zip;
 use std::mem::size_of;
 use crate::error::GraphFormError;
 use crate::ir::from_ast::GraphBuilder;
-use crate::ast::types::{AstBody, AstLiteral, AstRustType, AstValueHead};
+use crate::ast::types::{AstValueBody, AstLiteral, AstRustType, AstValueHead};
 use structural_reflection::{infer_slice_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_type(
         &mut self,
         ast_type: Option<AstRustType>,
-        (value, value_children): (Option<&AstValueHead>, &AstBody)
+        (value, value_children): (Option<&AstValueHead>, &AstValueBody)
     ) -> RustType {
         let structural_type = self.resolve_type_structurally(ast_type, (value, value_children));
         self.further_resolve_structural_type(structural_type)
@@ -46,7 +46,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     fn resolve_type_structurally(
         &mut self,
         ast_type: Option<AstRustType>,
-        (value, value_children): (Option<&AstValueHead>, &AstBody)
+        (value, value_children): (Option<&AstValueHead>, &AstValueBody)
     ) -> RustType {
         let resolved_type = ast_type.map(|ast_type| self.resolve_type_structurally2(ast_type));
         let inferred_type = self.infer_type_structurally((value, value_children));
@@ -141,7 +141,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
 
     pub(super) fn infer_type_structurally(
         &mut self,
-        (value, value_children): (Option<&AstValueHead>, &AstBody)
+        (value, value_children): (Option<&AstValueHead>, &AstValueBody)
     ) -> RustType {
         match value {
             None => self.infer_type_structurally2(value_children),
@@ -160,8 +160,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                     Some(io_type) => io_type.rust_type.clone()
                 }
             },
-            Some(AstValueHead::Tuple(elements)) => {
-                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstBody::None))).collect::<Vec<_>>();
+            Some(AstValueHead::InlineTuple(elements)) => {
+                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstValueBody::None))).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&elements);
                 let align = infer_c_tuple_align(&elements);
                 let structure = TypeStructure::CTuple { elements };
@@ -173,8 +173,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                     structure
                 }
             }
-            Some(AstValueHead::Array(elements)) => {
-                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstBody::None))).collect::<Vec<_>>();
+            Some(AstValueHead::InlineArray(elements)) => {
+                let elements = elements.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstValueBody::None))).collect::<Vec<_>>();
                 let num_elements = elements.len();
                 let element_type = self.merge_resolved_types(elements);
                 let size = infer_array_size(&element_type, num_elements);
@@ -220,8 +220,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         }
     }
 
-    fn infer_type_structurally2(&mut self, value_children: &AstBody) -> RustType {
-        if matches!(value_children, AstBody::None) {
+    fn infer_type_structurally2(&mut self, value_children: &AstValueBody) -> RustType {
+        if matches!(value_children, AstValueBody::None) {
             return RustType::unknown();
         }
         let (size, align, body) = self.infer_type_body_structurally2(value_children);
@@ -237,12 +237,12 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     fn infer_type_body_structurally(
         &mut self,
         inline_params: Option<&[AstValueHead]>,
-        value_children: &AstBody
+        value_children: &AstValueBody
     ) -> (usize, usize, TypeStructureBody) {
         match inline_params {
             None => self.infer_type_body_structurally2(value_children),
             Some(inline_params) => {
-                let elements = inline_params.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstBody::None))).collect::<Vec<_>>();
+                let elements = inline_params.iter().map(|elem| self.infer_type_structurally((Some(elem), &AstValueBody::None))).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&elements);
                 let align = infer_c_tuple_align(&elements);
                 let body = TypeStructureBody::Tuple(elements);
@@ -253,11 +253,11 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
 
     fn infer_type_body_structurally2(
         &mut self,
-        value_children: &AstBody
+        value_children: &AstValueBody
     ) -> (usize, usize, TypeStructureBody) {
         match value_children {
-            AstBody::None => (0, 0, TypeStructureBody::None),
-            AstBody::Tuple(tuple_items) => {
+            AstValueBody::None => (0, 0, TypeStructureBody::None),
+            AstValueBody::Tuple(tuple_items) => {
                 let item_types = tuple_items.iter().map(|tuple_item| {
                     // why do we have to clone rust_type here? are we doing something redundant?
                     self.resolve_type(tuple_item.rust_type.clone(), (tuple_item.value.as_ref(), &tuple_item.value_children))
@@ -267,10 +267,10 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                 let body = TypeStructureBody::Tuple(item_types);
                 (size, align, body)
             },
-            AstBody::Fields(fields) => {
+            AstValueBody::Fields(fields) => {
                 let item_types = fields.iter().map(|field| {
                     // why do we have to clone rust_type here? (see above)
-                    self.resolve_type(field.rust_type.clone(), (field.value.as_ref(), &field.value_children))
+                    self.resolve_type(field.rust_type.clone(), (field.value_head.as_ref(), &field.value_children))
                 }).collect::<Vec<_>>();
                 let size = infer_c_tuple_size(&item_types);
                 let align = infer_c_tuple_align(&item_types);

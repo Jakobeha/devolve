@@ -1,6 +1,6 @@
 use crate::error::GraphFormError;
 use crate::ir::from_ast::GraphBuilder;
-use crate::ast::types::{AstEnumTypeDef, AstEnumVariantTypeDef, AstFieldTypeDef, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstBody};
+use crate::ast::types::{AstEnumTypeDef, AstEnumVariantTypeDef, AstFieldTypeDef, AstStructTypeDef, AstTypeDef, AstTypeDefBody, AstValueBody};
 use structural_reflection::{RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
 impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
@@ -64,7 +64,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
     }
 
     fn resolve_field_def(&mut self, type_def_name: &str, field_def: AstFieldTypeDef) -> TypeStructureBodyField {
-        if field_def.default_value.is_some() || !matches!(field_def.default_value_children, AstBody::None) {
+        if field_def.default_value_head.is_some() || !matches!(field_def.default_value_children, AstValueBody::None) {
             self.errors.push(GraphFormError::FieldDefaultValueNotSupported {
                 type_def_name: type_def_name.to_string(),
                 field_name: field_def.name.to_string()

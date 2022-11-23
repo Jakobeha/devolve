@@ -3,7 +3,7 @@ use std::mem::{MaybeUninit, size_of};
 use slab::Slab;
 use structural_reflection::RustType;
 use crate::graph::raw::ComputeFn;
-use crate::ast::types::{AstFieldHeader, AstNodePos};
+use crate::ast::types::{AstFieldHeader, NodeColor, NodePos};
 use crate::misc::inline_ptr::InlinePtr;
 use crate::raw::{ConstantPool, NullRegion};
 
@@ -20,7 +20,7 @@ use crate::raw::{ConstantPool, NullRegion};
 ///
 /// Not invariants:
 /// - Nodes may have cycles
-/// - Nodes are not necessarily sorted in topological order even if there are cycles,
+/// - Nodes are not necessarily sorted in topological order (regardless if there are cycles),
 ///   *unless* this was directly created from [AstGraph]
 /// - Nodes may not have compute
 /// - Dependency inputs may have the incorrect type
@@ -28,24 +28,36 @@ use crate::raw::{ConstantPool, NullRegion};
 /// If [IrGraph::validate] checks the "not invariants". If it returns no errors, than all of those are held
 /// and you can safely unsafely convert to [LowerGraph](crate::lower::LowerGraph).
 pub struct IrGraph<RuntimeCtx: 'static + ?Sized> {
+    /// Graph input (input "node") types
     pub(in crate::graph) input_types: Vec<NodeIOType>,
-    pub(in crate::graph) default_inputs: Vec<NodeInput>,
+    /// Graph input (input "node") default values (all must be constants)
+    pub(in crate::graph) default_inputs: Vec<NodeIO>,
+    /// Graph output (output "node") types
     pub(in crate::graph) output_types: Vec<NodeIOType>,
+    /// Graph output (output "node") values
+    pub(in crate::graph) outputs: Vec<NodeIO>,
+    /// Rust types defined or imported into the graph */
     pub(in crate::graph) types: HashMap<NodeTypeName, NodeTypeData>,
+    /// Nodes = computations
     pub(in crate::graph) nodes: Slab<Node<RuntimeCtx>>,
-    pub(in crate::graph) outputs: Vec<NodeInput>,
+    /** Allocated constants (currently only strings) so we can have constant references */
     pub(in crate::graph) constant_pool: ConstantPool,
+    /** Graph input (input "node") metadata */
     pub(in crate::graph) input_metadata: NodeMetadata,
+    /** Graph output (output "node") metadata */
     pub(in crate::graph) output_metadata: NodeMetadata,
 }
 
+/// Node type definition
 #[derive(Clone)]
 pub struct NodeTypeData {
+    /// Input field types
     pub inputs: Vec<NodeIOType>,
+    /// Output field types
     pub outputs: Vec<NodeIOType>
 }
 
-/// Input type or output type
+/// Input type or output field type
 #[derive(Debug, Clone)]
 pub struct NodeIOType {
     pub name: String,
@@ -53,27 +65,42 @@ pub struct NodeIOType {
     pub null_region: NullRegion,
 }
 
+/// Node input or default output; or graph output or default input
+///
+/// Notice the inversion: graph "inputs" are actually output values, and graph "outputs" are
+/// actually input values, when we are inside of the graph. They are only actually inputs/outputs
+/// as in the name when we are outside.
 #[derive(Debug, Clone)]
-pub enum NodeInput {
+pub enum NodeIO {
+    /// Unset (null)
     Hole,
-    Dep(NodeInputDep),
+    /// References a graph input or another node output
+    Dep(NodeIODep),
+    /// Constant inline value (e.g. bool, number)
     ConstInline(Box<[u8]>),
+    /// Constant reference (e.g. string)
     ConstRef(InlinePtr),
-    Array(Vec<NodeInput>),
-    // Different-sized elems means we need to know the layout
-    // (technically we could workaround storing here and it's redundant, but in practice this is easier)
-    Tuple(Vec<NodeInputWithLayout>)
+    /// Array of values (same type, arbitrary length)
+    Array(Vec<NodeIO>),
+    /// Tuple of values (may have different types, fixed length)
+    ///
+    /// Different-sized elems means we need to know the layout.
+    /// Technically we could workaround storing here and it's redundant,
+    /// but in practice this is easier
+    Tuple(Vec<NodeIOWithLayout>)
 }
 
+/// Node input or default output with layout information (size and alignment)
 #[derive(Debug, Clone)]
-pub struct NodeInputWithLayout {
-    pub input: NodeInput,
+pub struct NodeIOWithLayout {
+    pub input: NodeIO,
     pub size: usize,
     pub align: usize
 }
 
+/// Reference to a graph input or another node output
 #[derive(Debug, Clone, Copy)]
-pub enum NodeInputDep {
+pub enum NodeIODep {
     GraphInput { idx: usize },
     OtherNodeOutput {
         id: NodeId,
@@ -81,20 +108,40 @@ pub enum NodeInputDep {
     }
 }
 
+/// Node = effectful computation / function
 pub struct Node<RuntimeCtx: 'static + ?Sized> {
+    /// Node type (function name)
     pub type_name: NodeTypeName,
-    pub inputs: Vec<NodeInput>,
-    pub default_outputs: Vec<NodeInput>,
+    /// Node inputs
+    pub inputs: Vec<NodeIO>,
+    /// Node default outputs - filled if the function returns null for some of its outputs.
+    pub default_outputs: Vec<NodeIO>,
+    /// Actual compute function referenced by `type_name`.
     pub compute: Option<ComputeFn<RuntimeCtx>>,
+    /// Node metadata for the UI (aesthetic)
     pub meta: NodeMetadata
 }
 
-/// Display info which is not used in actual computations
+/// Aesthetic/UI info which is not used in actual computations
 #[derive(Clone)]
 pub struct NodeMetadata {
+    /// Node name (distinct from node type).
+    ///
+    /// Different nodes *must* have different names (or the conversion to AST will not work).
     pub node_name: String,
-    pub pos: Option<AstNodePos>,
+    /// Node position in the UI. If unset, will be layout automatically
+    pub pos: Option<NodePos>,
+    /// Node color in the UI. If unset, will be the default color
+    pub color: Option<NodeColor>,
+    /// Input headers.
+    ///
+    /// Note that they are inserted in a weird way (ascending index) when converting back into AST
+    /// (see [FieldHeader]`.index`)
     pub input_headers: Vec<FieldHeader>,
+    /// Output headers.
+    ///
+    /// Note that they are inserted in a weird way (ascending index) when converting back into AST.
+    /// (see [FieldHeader]`.index`)
     pub output_headers: Vec<FieldHeader>,
 }
 
@@ -106,6 +153,7 @@ pub struct FieldHeader {
     pub header: AstFieldHeader
 }
 
+/// Node type name = string [newtype](https://wiki.haskell.org/Newtype)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct NodeTypeName(String);
@@ -115,8 +163,11 @@ pub struct NodeTypeName(String);
 #[repr(transparent)]
 pub struct NodeId(pub usize);
 
-impl NodeInput {
-    pub fn const_<T: Copy>(input: T) -> Self {
+impl NodeIO {
+    /// Create an inline constant node input from the given value
+    /// (this function converts it into [raw](MaybeUninit) data for you, safe because the type is
+    /// [Copy]-able)
+    pub fn inline_const<T: Copy>(input: T) -> Self {
         let mut bytes = Box::<[u8]>::new_uninit_slice(size_of::<T>());
         let bytes = unsafe {
             bytes.as_mut_ptr().copy_from_nonoverlapping(
@@ -125,21 +176,24 @@ impl NodeInput {
             );
             bytes.assume_init()
         };
-        NodeInput::ConstInline(bytes)
+        NodeIO::ConstInline(bytes)
     }
 }
 
-impl Default for NodeInput {
+impl Default for NodeIO {
     fn default() -> Self {
-        NodeInput::Hole
+        NodeIO::Hole
     }
 }
 
 impl NodeMetadata {
+    /// Empty node metadata except for the node name
+    /// (required, can pass a randomly-generated unique name if you need to)
     pub fn empty(node_name: String) -> Self {
         Self {
             node_name,
             pos: None,
+            color: None,
             input_headers: Vec::new(),
             output_headers: Vec::new(),
         }

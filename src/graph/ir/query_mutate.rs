@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::iter::zip;
 
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle, NodeDisplayInputName};
-use crate::ir::{IrGraph, Node, NodeId, NodeInput, NodeInputDep, NodeIOType};
+use crate::ir::{IrGraph, Node, NodeId, NodeIO, NodeIODep, NodeIOType};
 use structural_reflection::{IsSubtypeOf, RustType};
 use crate::raw::NullRegion;
 
@@ -52,13 +52,13 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
         errors: &mut GraphValidationErrors,
         node_id: NodeId,
         node: &Node<RuntimeCtx>,
-        input: &NodeInput,
+        input: &NodeIO,
         input_name: &str,
         input_rust_type: &RustType,
         input_null_region: &NullRegion,
     ) {
         match input {
-            NodeInput::Hole => if !NullRegion::Null.is_subset_of(input_null_region) {
+            NodeIO::Hole => if !NullRegion::Null.is_subset_of(input_null_region) {
                 errors.push(GraphValidationError::IONullabilityMismatch {
                     output_nullability: NullRegion::Null,
                     input_nullability: input_null_region.clone(),
@@ -69,14 +69,14 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
                 });
                 // Type is ok (bottom)
             },
-            NodeInput::Dep(dep) => {
+            NodeIO::Dep(dep) => {
                 let output_type = match dep {
-                    NodeInputDep::GraphInput { idx} => &self.input_types[*idx],
-                    NodeInputDep::OtherNodeOutput { id, idx } => &self.types[&self.nodes[id.0].type_name].outputs[*idx]
+                    NodeIODep::GraphInput { idx} => &self.input_types[*idx],
+                    NodeIODep::OtherNodeOutput { id, idx } => &self.types[&self.nodes[id.0].type_name].outputs[*idx]
                 };
                 let default_output = match dep {
-                    NodeInputDep::GraphInput { idx} => &self.default_inputs[*idx],
-                    NodeInputDep::OtherNodeOutput { id, idx } => &self.nodes[id.0].default_outputs[*idx]
+                    NodeIODep::GraphInput { idx} => &self.default_inputs[*idx],
+                    NodeIODep::OtherNodeOutput { id, idx } => &self.nodes[id.0].default_outputs[*idx]
                 };
                 let NodeIOType { name: _, rust_type: output_rust_type, null_region: output_type_null_region } = output_type;
                 let mut output_null_region = default_output.null_region(self);
@@ -84,11 +84,11 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
 
                 self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, &output_null_region)
             }
-            NodeInput::ConstInline(_) | NodeInput::ConstRef(_) => {
+            NodeIO::ConstInline(_) | NodeIO::ConstRef(_) => {
                 // Nullability is ok (not nullable)
                 // Type is ok (invariant)
             }
-            NodeInput::Array(elems) => {
+            NodeIO::Array(elems) => {
                 let (elem_input_type, len) = input_rust_type.structure.array_elem_type_and_length().expect("broken invariant: node input is array but type isn't array");
                 assert_eq!(elems.len(), len, "broken invariant: node input / type array length mismatch");
                 let elem_input_nullability = input_null_region;
@@ -96,7 +96,7 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
                     self.check_type(errors, node_id, node, elem, input_name, elem_input_type, elem_input_nullability);
                 }
             }
-            NodeInput::Tuple(elems) => {
+            NodeIO::Tuple(elems) => {
                 let elem_input_types = input_rust_type.structure.general_compound_elem_types().expect("broken invariant: node input is tuple but type isn't tuple");
                 let elem_input_nullabilities = input_null_region.subdivide();
                 for (elem, (elem_input_type, elem_input_nullability)) in zip(elems, zip(elem_input_types, elem_input_nullabilities)) {
@@ -214,7 +214,7 @@ impl<RuntimeCtx: 'static + ?Sized> Node<RuntimeCtx> {
         self.iter_dep_nodes().any(|dep| dep == other_id)
     }
 
-    pub fn iter_deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
+    pub fn iter_deps(&self) -> impl Iterator<Item=NodeIODep> + '_ {
         self.inputs.iter().flat_map(|input| input.deps())
     }
 
@@ -234,44 +234,44 @@ impl<RuntimeCtx: 'static + ?Sized> Node<RuntimeCtx> {
     }
 }
 
-impl NodeInput {
-    pub const ZST: NodeInput = NodeInput::Tuple(Vec::new());
+impl NodeIO {
+    pub const ZST: NodeIO = NodeIO::Tuple(Vec::new());
 
-    pub fn deps(&self) -> impl Iterator<Item=NodeInputDep> + '_ {
+    pub fn deps(&self) -> impl Iterator<Item=NodeIODep> + '_ {
         match &self {
-            NodeInput::Hole | NodeInput::ConstInline(_) | NodeInput::ConstRef(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeInputDep>>,
-            NodeInput::Dep(dep) => Box::new(std::iter::once(*dep)) as Box<dyn Iterator<Item=NodeInputDep>>,
-            NodeInput::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>,
-            NodeInput::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps())) as Box<dyn Iterator<Item=NodeInputDep>>
+            NodeIO::Hole | NodeIO::ConstInline(_) | NodeIO::ConstRef(_) => Box::new(std::iter::empty()) as Box<dyn Iterator<Item=NodeIODep>>,
+            NodeIO::Dep(dep) => Box::new(std::iter::once(*dep)) as Box<dyn Iterator<Item=NodeIODep>>,
+            NodeIO::Array(inputs) => Box::new(inputs.iter().flat_map(|input| input.deps())) as Box<dyn Iterator<Item=NodeIODep>>,
+            NodeIO::Tuple(inputs_with_layouts) => Box::new(inputs_with_layouts.iter().flat_map(|input_with_layout| input_with_layout.input.deps())) as Box<dyn Iterator<Item=NodeIODep>>
         }
     }
 
     pub fn dep_nodes(&self) -> impl Iterator<Item=NodeId> + '_ {
         self.deps().filter_map(|dep| match dep {
-            NodeInputDep::GraphInput { idx: _ } => None,
-            NodeInputDep::OtherNodeOutput { id, idx: _ } => Some(id)
+            NodeIODep::GraphInput { idx: _ } => None,
+            NodeIODep::OtherNodeOutput { id, idx: _ } => Some(id)
         })
     }
 
     fn null_region<RuntimeCtx: 'static + ?Sized>(&self, graph: &IrGraph<RuntimeCtx>) -> NullRegion {
         match &self {
-            NodeInput::Hole => NullRegion::Null,
-            NodeInput::ConstInline(_) | NodeInput::ConstRef(_) => NullRegion::NonNull,
-            NodeInput::Dep(dep) => {
+            NodeIO::Hole => NullRegion::Null,
+            NodeIO::ConstInline(_) | NodeIO::ConstRef(_) => NullRegion::NonNull,
+            NodeIO::Dep(dep) => {
                 let output_type = match dep {
-                    NodeInputDep::GraphInput { idx} => &graph.input_types[*idx],
-                    NodeInputDep::OtherNodeOutput { id, idx } => &graph.types[&graph.nodes[id.0].type_name].outputs[*idx]
+                    NodeIODep::GraphInput { idx} => &graph.input_types[*idx],
+                    NodeIODep::OtherNodeOutput { id, idx } => &graph.types[&graph.nodes[id.0].type_name].outputs[*idx]
                 };
                 let default_output = match dep {
-                    NodeInputDep::GraphInput { idx} => &graph.default_inputs[*idx],
-                    NodeInputDep::OtherNodeOutput { id, idx } => &graph.nodes[id.0].default_outputs[*idx]
+                    NodeIODep::GraphInput { idx} => &graph.default_inputs[*idx],
+                    NodeIODep::OtherNodeOutput { id, idx } => &graph.nodes[id.0].default_outputs[*idx]
                 };
                 let mut output_null_region = default_output.null_region(graph);
                 output_null_region.intersect(&output_type.null_region);
                 output_null_region
             },
-            NodeInput::Array(inputs) => NullRegion::Partial(inputs.iter().map(|input| input.null_region(graph)).collect()),
-            NodeInput::Tuple(inputs_with_layouts) => NullRegion::Partial(inputs_with_layouts.iter().map(|input_with_layout| input_with_layout.input.null_region(graph)).collect())
+            NodeIO::Array(inputs) => NullRegion::Partial(inputs.iter().map(|input| input.null_region(graph)).collect()),
+            NodeIO::Tuple(inputs_with_layouts) => NullRegion::Partial(inputs_with_layouts.iter().map(|input_with_layout| input_with_layout.input.null_region(graph)).collect())
         }
     }
 }
