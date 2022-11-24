@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use dui_graph::ir::{ComptimeCtx, IrGraph, NodeIO, NodeIOType, NodeTypeData};
 use dui_graph::ast::types::AstGraph;
 use dui_graph::lower::LowerGraph;
-use dui_graph::raw::{ComputeFn, NodeType, NodeTypes, NullRegion, InputData, OutputData, NonNull, Nullable, NodeTypeMetadata};
+use dui_graph::raw::{ComputeFn, NodeType, NodeTypes, NullRegion, StoreData, LoadData, NonNull, Nullable, NodeTypeMetadata};
 use structural_reflection::c_tuple::{c_tuple, CTuple, CTuple2};
 use structural_reflection::{qualifier, RustType};
 use structural_reflection::derive::{HasTypeName, HasStructure};
@@ -101,8 +101,23 @@ fn tests_on_files() {
                             meta: NodeTypeMetadata::default()
                         });
                         node_types.insert(String::from("TextField"), NodeType {
-                            compute: ComputeFn::new(|ctx, inputs, outputs| {
-                                eprintln!("TODO TextField");
+                            compute: ComputeFn::new(|ctx, inputs: &LoadData, outputs: &mut StoreData| {
+                                let (text, placeholder) = inputs.load_all::<CTuple!(
+                                    NonNull<&str>,
+                                    Nullable<&str>
+                                )>().expect("TextField inputs are of bad type").into_reg();
+                                assert_eq!((text, placeholder), (NonNull("Text"), Nullable::Some("Placeholder")));
+                                outputs.store_all::<CTuple!(
+                                    NonNull<ViewId>,
+                                    NonNull<&str>,
+                                    Nullable<CTuple2<CRange<usize>, &str>>,
+                                    Nullable<()>
+                                )>(c_tuple!(
+                                    NonNull(ViewId(0)),
+                                    NonNull(&text.0),
+                                    Nullable::None,
+                                    Nullable::None
+                                )).expect("TextField outputs are of bad type");
                             }),
                             type_data: NodeTypeData {
                                 inputs: vec![
@@ -230,10 +245,16 @@ fn tests_on_files() {
                             RustType::of::<bool>(),
                             RustType::of::<()>()
                         ];
-                        let input_nullability = [
+                        let input_type_nullabilities = [
+                            NullRegion::Null,
+                            NullRegion::NonNull,
+                            NullRegion::Null,
+                            NullRegion::Null,
+                        ];
+                        let input_value_nullabilities = [
                             NullRegion::NonNull,
                             NullRegion::NonNull,
-                            NullRegion::NonNull,
+                            NullRegion::Null,
                             NullRegion::Null,
                         ];
                         let output_types = [
@@ -243,28 +264,35 @@ fn tests_on_files() {
                             RustType::of::<()>(),
                             RustType::of::<()>()
                         ];
-                        let output_nullability = [
+                        let output_nullabilities = [
                             NullRegion::NonNull,
                             NullRegion::Null,
                             NullRegion::Null,
                             NullRegion::Null,
                             NullRegion::Null,
                         ];
-                        let check_errors = lower_graph.check(&input_types, &output_types, &input_nullability, &output_nullability);
+                        let check_errors = lower_graph.check(
+                            &input_types,
+                            &output_types,
+                            &input_type_nullabilities,
+                            &input_value_nullabilities,
+                            &output_nullabilities
+                        );
                         if !check_errors.is_empty() {
                             errors.push(format!("lower graph check failed: {}", check_errors));
                             return None;
                         }
 
-                        // TODO: run inputs and check outputs with some sets of data
+                        // TODO: test more complex computations, probably without view nodes
 
-                        let inputs = InputData::new(c_tuple!(
+                        // placeholder field is before text field in text_input.dui
+                        let inputs = LoadData::init(c_tuple!(
+                            Nullable::Some("Placeholder"),
                             NonNull("Text"),
-                            NonNull("Placeholder"),
-                            Nullable::Some(true),
+                            Nullable::<bool>::None,
                             Nullable::<()>::None
                         ));
-                        let outputs = OutputData::with_checked::<CTuple!(
+                        let (text, text_modified, enter_key, click_ok, click_cancel) = StoreData::with::<CTuple!(
                             NonNull<&str>,
                             Nullable<CTuple2<CRange<usize>, &str>>,
                             Nullable<()>,
@@ -272,9 +300,14 @@ fn tests_on_files() {
                             Nullable<()>
                         )>(|outputs| {
                             let mut ctx = TestRuntimeCtx {};
-                            // compute does the exact same as compute_unchecked, but runs check first
-                            unsafe { lower_graph.compute_unchecked(&mut ctx, &inputs, outputs) };
-                        });
+                            lower_graph.compute(&mut ctx, &inputs, outputs)
+                                .expect("compute shouldn't have returned any errors, especially because we already checked");
+                        }).expect("data not stored").into_reg();
+                        assert_eq!(text, NonNull("Text"));
+                        assert_eq!(text_modified, Nullable::None);
+                        assert_eq!(enter_key, Nullable::None);
+                        assert_eq!(click_ok, Nullable::None);
+                        assert_eq!(click_cancel, Nullable::None);
 
                         None
                     }

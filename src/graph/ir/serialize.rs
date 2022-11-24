@@ -506,7 +506,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                     };
                     AstLiteral::Bool(value)
                 }
-                _ => todo!("primitives which aren't i64 and f64 not yet implemented")
+                _ => unimplemented!("primitives which aren't i64 and f64")
             })), AstValueBody::None),
             TypeStructure::CReprStruct { body } => (None, match body {
                 TypeStructureBody::None => AstValueBody::None,

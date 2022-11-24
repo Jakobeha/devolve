@@ -1,6 +1,6 @@
 Input
   ===
-  placeholder: &str
+  placeholder?: &str
   text: &str
   ok_enabled: bool = true
   -- events

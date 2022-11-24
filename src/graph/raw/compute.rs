@@ -1,5 +1,5 @@
 use std::hash::{Hash, Hasher};
-use crate::raw::{InputData, OutputData};
+use crate::raw::{StoreData, LoadData};
 
 /// Effectful computation = wrapper for Rust function to be used by nodes in a DUI graph.
 ///
@@ -9,10 +9,10 @@ pub struct ComputeFn<RuntimeCtx: 'static + ?Sized>(Box<dyn ComputeFnTrait<Runtim
 #[derive(Clone)]
 struct PanickingComputeFn;
 
-struct StaticComputeFn<RuntimeCtx: 'static + ?Sized>(fn(&mut RuntimeCtx, &InputData, &mut OutputData));
+struct StaticComputeFn<RuntimeCtx: 'static + ?Sized>(fn(&mut RuntimeCtx, &LoadData, &mut StoreData));
 
 /// The actual `Fn` type of [ComputeFn], needs to be a subclass of [Fn] so that it can be cloned
-pub trait ComputeFnTrait<RuntimeCtx: 'static + ?Sized>: Fn(&mut RuntimeCtx, &InputData, &mut OutputData) + Send + Sync + 'static {
+pub trait ComputeFnTrait<RuntimeCtx: 'static + ?Sized>: Fn(&mut RuntimeCtx, &LoadData, &mut StoreData) + Send + Sync + 'static {
     /// Clone this into Box wrapper
     fn box_clone(&self) -> Box<dyn ComputeFnTrait<RuntimeCtx>>;
 }
@@ -24,17 +24,17 @@ impl<RuntimeCtx: 'static + ?Sized> ComputeFn<RuntimeCtx> {
     }
 
     /// Wrap the function into [ComputeFn]
-    pub fn new(fun: impl Fn(&mut RuntimeCtx, &InputData, &mut OutputData) + Clone + Send + Sync + 'static) -> Self {
+    pub fn new(fun: impl Fn(&mut RuntimeCtx, &LoadData, &mut StoreData) + Clone + Send + Sync + 'static) -> Self {
         ComputeFn(Box::new(fun) as Box<dyn ComputeFnTrait<RuntimeCtx>>)
     }
 
     /// Call the wrapped function
-    pub fn call(&self, ctx: &mut RuntimeCtx, inputs: &InputData, outputs: &mut OutputData) {
+    pub fn call(&self, ctx: &mut RuntimeCtx, inputs: &LoadData, outputs: &mut StoreData) {
         (self.0)(ctx, inputs, outputs)
     }
 }
 
-impl<RuntimeCtx: 'static + ?Sized, F: Fn(&mut RuntimeCtx, &InputData, &mut OutputData) + Clone + Send + Sync + 'static> ComputeFnTrait<RuntimeCtx> for F {
+impl<RuntimeCtx: 'static + ?Sized, F: Fn(&mut RuntimeCtx, &LoadData, &mut StoreData) + Clone + Send + Sync + 'static> ComputeFnTrait<RuntimeCtx> for F {
     fn box_clone(&self) -> Box<dyn ComputeFnTrait<RuntimeCtx>> {
         Box::new(self.clone())
     }

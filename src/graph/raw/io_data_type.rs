@@ -3,14 +3,7 @@ use std::mem::MaybeUninit;
 use structural_reflection::{HasStructure, HasTypeName, RustType};
 use crate::raw::NullRegion;
 
-pub trait IODataType: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
-    type Inner: HasStructure + Copy;
-
-    fn max_null_region() -> NullRegion;
-    fn split(self) -> (MaybeUninit<Self::Inner>, NullRegion);
-    fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self;
-}
-
+/// A tuple of values with nullability info, which can be read from or written to a DUI-graph
 pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
     type Inner: HasStructure + Copy;
     type IterRustTypes: Iterator<Item=RustType>;
@@ -23,20 +16,38 @@ pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized 
     fn new(inner: MaybeUninit<Self::Inner>, null_regions: Vec<NullRegion>) -> Self;
 }
 
-#[derive(Debug, Clone, Copy)]
+/// A value with nullability info, which can be read from or written to a DUI-graph
+pub trait IODataType: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
+    type Inner: HasStructure + Copy;
+
+    fn rust_type() -> RustType;
+    fn max_null_region() -> NullRegion;
+    fn split(self) -> (MaybeUninit<Self::Inner>, NullRegion);
+    fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self;
+}
+
+/// Non-null [IODataType]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NonNull<T>(pub T);
 
-#[derive(Debug, Clone, Copy)]
+/// Nullable [IODataType]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Nullable<T> {
     None,
     Some(T),
 }
 
+/// [IODataType] of a tuple or structure where some elements may be nullable and some may be non-null.
+/// The tuple or structure's tuple items/fields are represented as a tuple, [IODataTypes].
 #[derive(Debug, Clone, Copy)]
 pub struct Partial<T: IODataTypes>(pub T) where <T::Inner as HasTypeName>::StaticId: Sized;
 
 impl<T: HasStructure + Copy> IODataType for NonNull<T> where T::StaticId: Sized {
     type Inner = T;
+
+    fn rust_type() -> RustType {
+        RustType::of::<T>()
+    }
 
     fn max_null_region() -> NullRegion {
         NullRegion::NonNull
@@ -47,13 +58,17 @@ impl<T: HasStructure + Copy> IODataType for NonNull<T> where T::StaticId: Sized 
     }
 
     fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self {
-        assert_matches!(null_region, NullRegion::NonNull);
+        assert_matches!(null_region, NullRegion::NonNull, "NonNull created with null data");
         NonNull(unsafe { inner.assume_init() })
     }
 }
 
 impl<T: HasStructure + Copy> IODataType for Nullable<T> where T::StaticId: Sized {
     type Inner = T;
+
+    fn rust_type() -> RustType {
+        RustType::of::<T>()
+    }
 
     fn max_null_region() -> NullRegion {
         NullRegion::Null
@@ -77,6 +92,10 @@ impl<T: HasStructure + Copy> IODataType for Nullable<T> where T::StaticId: Sized
 
 impl<T: IODataTypes> IODataType for Partial<T> where <T::Inner as HasTypeName>::StaticId: Sized {
     type Inner = T::Inner;
+
+    fn rust_type() -> RustType {
+        RustType::of::<T::Inner>()
+    }
 
     fn max_null_region() -> NullRegion {
         NullRegion::Partial(T::iter_max_null_regions().collect())
@@ -152,7 +171,7 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
             let offset = offsets.next().unwrap();
             let (elem_value, elem_nullability) = $name.split();
             unsafe {
-                value.as_mut_ptr().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().write(elem_value);
+                value.as_mut_ptr().cast::<MaybeUninit<u8>>().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().write(elem_value);
             }
             null_regions.push(elem_nullability);
         })*
@@ -168,7 +187,7 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
         let this = structural_reflection::c_tuple::c_tuple!($({
             let offset = offsets.next().unwrap();
             let elem_nullability = null_regions.next().unwrap();
-            let elem_value = unsafe { value.as_ptr().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().read() };
+            let elem_value = unsafe { value.as_ptr().cast::<MaybeUninit<u8>>().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().read() };
             $name::new(elem_value, elem_nullability)
         }),*);
         assert!(offsets.next().is_none() && null_regions.next().is_none());
@@ -186,3 +205,31 @@ impl_io_data_types!(A, B, C, D);
 impl_io_data_types!(A, B, C, D, E);
 impl_io_data_types!(A, B, C, D, E, F);
 impl_io_data_types!(A, B, C, D, E, F, G);
+
+#[cfg(test)]
+mod tests {
+    use structural_reflection::c_tuple::{c_tuple, CTuple};
+    use crate::raw::{IODataTypes, NonNull, Nullable, NullRegion};
+
+    #[test]
+    pub fn regression_tests() {
+        let input_data = c_tuple!(
+            Nullable::Some("Placeholder"),
+            NonNull("Text"),
+            Nullable::<bool>::None,
+            Nullable::<()>::None
+        );
+        let (input_raw_data, input_nullabilities) = input_data.split();
+        assert_eq!(
+            input_nullabilities,
+            vec![NullRegion::NonNull, NullRegion::NonNull, NullRegion::Null, NullRegion::Null]
+        );
+        let input_data2 = <CTuple!(
+            Nullable<&str>,
+            NonNull<&str>,
+            Nullable<bool>,
+            Nullable<()>
+        )>::new(input_raw_data, input_nullabilities);
+        assert_eq!(input_data, input_data2);
+    }
+}

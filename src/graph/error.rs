@@ -10,7 +10,7 @@ use join_lazy_fmt::Join;
 use crate::graph::ir::NodeId;
 use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
 use crate::ir::NodeDisplay;
-use crate::raw::NullRegion;
+use crate::raw::{IOTypeCheckError, NullRegion};
 
 macro_rules! mk_errors {
     ($Errors:ident, $Error:ident, $errors:literal) => {
@@ -365,6 +365,7 @@ pub struct NodeDisplayInputName {
 
 #[derive(Debug, Display, Error)]
 pub enum GraphIOCheckError {
+    IOTypeCheckError(IOTypeCheckError),
     #[display(fmt = "inputs count mismatch: got {} expected {}", actual, expected)]
     InputsCountMismatch {
         actual: usize,
@@ -416,3 +417,9 @@ pub enum GraphIOCheckError {
 #[derive(Debug, Display)]
 #[display(fmt = "[{}]", "\", \".join(_0)")]
 pub struct NodeCycle(pub Vec<NodeId>);
+
+impl From<IOTypeCheckError> for GraphIOCheckError {
+    fn from(error: IOTypeCheckError) -> Self {
+        GraphIOCheckError::IOTypeCheckError(error)
+    }
+}

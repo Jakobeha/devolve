@@ -67,6 +67,21 @@ impl NullRegion {
         }
     }
 
+    /// - `Null` = converts into `Partial` of `len` `Null`, iterates over those
+    /// - `NonNull` = converts into `Partial` of `len` `NonNull`, iterates over those
+    /// - `Partial` = iterator of elems
+    pub fn subdivide_mut(&mut self, len: usize) -> &mut [Self] {
+        match self {
+            NullRegion::Null => *self = NullRegion::Partial(vec![NullRegion::Null; len]),
+            NullRegion::NonNull => *self = NullRegion::Partial(vec![NullRegion::NonNull; len]),
+            _ => {}
+        }
+        match self {
+            NullRegion::Partial(elems) => elems,
+            _ => unreachable!()
+        }
+    }
+
     /// - `Null` = iterator of infinite `Null`
     /// - `NonNull` = iterator of infinite `NonNull`
     /// - `Partial` = iterator of elems
