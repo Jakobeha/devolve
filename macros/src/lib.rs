@@ -2,13 +2,14 @@
 #![feature(decl_macro)]
 #![feature(drain_filter)]
 #![feature(proc_macro_diagnostic)]
+#![feature(box_patterns)]
 
 use proc_macro::TokenStream;
+use quote::ToTokens;
 use syn::parse_macro_input;
-pub use graph_macro::*;
+use crate::node_type_attribute::NodeTypeFn;
 
 mod node_type_attribute;
-mod graph_macro;
 
 /// Generates a `NodeTypeFn` for the corresponding function, named `<function_name>__node_type`.
 ///
@@ -21,7 +22,7 @@ mod graph_macro;
 /// # Example
 ///
 /// ```rust
-/// use dui_graph::macros::node_type;
+/// use devolve::macros::node_type;
 /// use structural_reflection::derive::{HasTypeName, HasStructure};
 /// use structural_reflection::RustType;
 ///
@@ -33,12 +34,12 @@ mod graph_macro;
 ///
 /// struct ExpectedAtLeast2Vectors;
 ///
-/// #[node_type]
+/// #[node_type(return(name = "float"))]
 /// fn max_distance(
 ///     ctx: &mut MyRuntimeCtx,
 ///     vectors: &[Vector3<f32>],
 ///     #[node_type(default = "DistanceType::Euclidean")] distance_type: DistanceType
-/// ) -> #[node_type(name = "float")] f32 {
+/// ) -> (#[node_type(name = "float")] f32) {
 ///     #[node_type(validator)]
 ///     fn validate_inputs(
 ///         vectors: &[RustType],
@@ -58,6 +59,6 @@ mod graph_macro;
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn node_type(input: TokenStream) -> TokenStream {
-    parse_macro_input!(input as NodeTypeAttribute).to_token_stream()
+pub fn node_type(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    parse_macro_input!(input as NodeTypeFn).to_token_stream().into()
 }

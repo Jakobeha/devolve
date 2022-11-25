@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use dui_graph::misc::fmt_with_ctx::{DisplayWithCtx, Indent};
+use devolve::misc::fmt_with_ctx::{DisplayWithCtx, Indent};
 
 
 pub macro error($errors:expr, $($t:tt)*) { {

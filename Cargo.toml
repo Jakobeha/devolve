@@ -39,4 +39,5 @@ log = "0.4.17"
 test-log = "0.2.11"
 env_logger = "0.9.0"
 # Rust patterns
+lazy_static = "1.4.0"
 ttmap = "0.2.1"
