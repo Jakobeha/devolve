@@ -25,7 +25,7 @@
 /// #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
 /// enum DistanceType { Euclidean, Manhattan }
 ///
-/// graph! { path = "max_distance.dui", ctx = MyRuntimeCtx |
+/// graph! { path = "max_distance.dvl", ctx = MyRuntimeCtx |
 ///     pub fn max_euclidean_distance(inputs: &[Vector3<f32>]) -> (f32);
 ///     pub fn max_distance(inputs: &[Vector3<f32>], distance_type: DistanceType) -> (f32);
 ///     pub unsafe fn max_distance_unsafe(inputs: &[Vector3<f32>], distance_type: DistanceType) -> (f32);
@@ -57,7 +57,7 @@ pub macro graph {
 { path = $path:literal, comptime_ctx = $comptime_ctx:expr $(, ctx = $ctx_ty:ty $( , $($tt1:tt)*)?)? | $($tt2:tt)*  } => {
         lazy_static::lazy_static! {
             static ref PATH_RESOLVER: PathGraphResolver<'static, __first!($( $ctx_ty )?, ())> = ::dui_graph::macros::graph_resolvers::PathGraphResolver::new(
-                ::dui::macros::graph_resolvers::resolve_graph_path($path, ::std::path::Path(env!("CARGO_MANIFEST_DIR"), file!())),
+                ::devolve::macros::graph_resolvers::resolve_graph_path($path, ::std::path::Path(env!("CARGO_MANIFEST_DIR"), file!())),
                 &$comptime_ctx
             );
         }

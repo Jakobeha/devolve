@@ -140,8 +140,8 @@ impl<T: 'static> RunTestsOnFiles<T> {
     fn test_file(&self, errors: &mut ErrorNodes, dir_path: &Path, input: &DirEntry) {
         // region load input boilerplate
         let file_path = input.path();
-        if file_path.extension() != Some(OsStr::new("dui")) {
-            info!("skipping non-dui file: {}", file_path.display());
+        if file_path.extension() != Some(OsStr::new("dvl")) {
+            info!("skipping non-dvl file: {}", file_path.display());
             return;
         }
         let file_name = input.file_name();

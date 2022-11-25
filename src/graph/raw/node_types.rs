@@ -8,7 +8,7 @@ use structural_reflection::RustType;
 use derive_more::{Display, Error};
 use crate::ast::types::NodeColor;
 
-/// Map of node types available to the DUI graph
+/// Map of node types available to the devolve graph
 pub struct NodeTypes<RuntimeCtx: 'static + ?Sized> {
     statics: HashMap<String, NodeType<RuntimeCtx>>,
     fns: HashMap<String, NodeTypeFn<RuntimeCtx>>

@@ -37,7 +37,7 @@ struct TestRuntimeCtx {
 fn tests_on_files() {
     ErrorNodes::log_errors_and_panic(|errors| {
         RunTestsOnFiles {
-            dir_name: "duis",
+            dir_name: "dvls",
             try_parse: |input_string, path| AstGraph::parse_from_input(&input_string, path).map_err(|err| Box::new(err) as Box<dyn Error + 'static>),
             tests: &[
                 RunTest {
@@ -285,7 +285,7 @@ fn tests_on_files() {
 
                         // TODO: test more complex computations, probably without view nodes
 
-                        // placeholder field is before text field in text_input.dui
+                        // placeholder field is before text field in text_input.dvl
                         let inputs = LoadData::init(c_tuple!(
                             Nullable::Some("Placeholder"),
                             NonNull("Text"),
@@ -329,7 +329,7 @@ async fn text_input(
     let (click_ok_send, click_ok) = out_channel();
     let (click_cancel_send, click_cancel) = out_channel();
     // Note: `c.set_view` requires a mutable reference to `c`
-    c.set_view("text_input.dui", iface![
+    c.set_view("text_input.dvl", iface![
         placeholder,
         text,
         text_modified,
@@ -340,7 +340,7 @@ async fn text_input(
     ]);
     select_inline((
         async {
-            // ok_enabled being set to false when text is empty may be possible in the .dui directly in the future
+            // ok_enabled being set to false when text is empty may be possible in the .dvl directly in the future
             // But we can always do it in Rust
             loop {
                 text_modified.await;

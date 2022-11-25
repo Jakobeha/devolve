@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use crate::raw::{StoreData, LoadData};
 
-/// Effectful computation = wrapper for Rust function to be used by nodes in a DUI graph.
+/// Effectful computation = wrapper for Rust function to be used by nodes in a devolve graph.
 ///
 /// Each node type consists of a compute function, input/output type info, and metadata
 pub struct ComputeFn<RuntimeCtx: 'static + ?Sized>(Box<dyn ComputeFnTrait<RuntimeCtx>>);

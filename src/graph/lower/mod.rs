@@ -27,7 +27,7 @@ impl<RuntimeCtx: 'static + ?Sized> SelfContainedLowerGraph<RuntimeCtx> {
     }
 }
 
-/// Built (lowered) compound view graph, loaded from a `.dui` file.
+/// Built (lowered) compound view graph, loaded from a `.dvl` file.
 ///
 /// This graph is completely valid. However, in order to run it, you must check the inputs and
 /// outputs, as they may still be incompatible with the graph.

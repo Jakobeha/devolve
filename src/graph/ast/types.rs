@@ -112,7 +112,7 @@ pub struct AstTupleItem {
 
 /// Rust type definition.
 ///
-/// Remember that all Rust types in a DUI graph must be [Copy]-able since there are no linear types
+/// Remember that all Rust types in a devolve graph must be [Copy]-able since there are no linear types
 /// and their raw data gets passed around (they don't need to support arbitrary and explicitly defined
 /// bits like [Pod](https://docs.rs/bytemuck/latest/bytemuck/trait.Pod.html).
 #[derive(Debug, Clone, PartialEq, Eq)]

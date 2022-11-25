@@ -3,7 +3,7 @@ use std::mem::MaybeUninit;
 use structural_reflection::{HasStructure, HasTypeName, RustType};
 use crate::raw::NullRegion;
 
-/// A tuple of values with nullability info, which can be read from or written to a DUI-graph
+/// A tuple of values with nullability info, which can be read from or written to a devolve graph
 pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
     type Inner: HasStructure + Copy;
     type IterRustTypes: Iterator<Item=RustType>;
@@ -16,7 +16,7 @@ pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized 
     fn new(inner: MaybeUninit<Self::Inner>, null_regions: Vec<NullRegion>) -> Self;
 }
 
-/// A value with nullability info, which can be read from or written to a DUI-graph
+/// A value with nullability info, which can be read from or written to a devolve graph
 pub trait IODataType: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
     type Inner: HasStructure + Copy;
 

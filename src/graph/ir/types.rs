@@ -7,7 +7,7 @@ use crate::ast::types::{AstFieldHeader, NodeColor, NodePos};
 use crate::misc::inline_ptr::InlinePtr;
 use crate::raw::{ConstantPool, NullRegion};
 
-/// Compound view graph intermediate-representation loaded from a .dui file.
+/// Compound view graph intermediate-representation loaded from a .dvl file.
 /// The graph is valid to an extent, see below.
 ///
 /// Invariants:
