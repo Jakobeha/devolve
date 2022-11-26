@@ -210,9 +210,11 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
             TypeStructure::Opaque => None,
             // Probably will never be reached
             TypeStructure::Primitive(primitive) => Some(primitive.rust_type_name()),
+            TypeStructure::OpaqueFields { .. } |
             TypeStructure::CReprStruct { .. } |
             TypeStructure::CReprEnum { .. } |
             TypeStructure::Pointer { .. } => unreachable!("should not have anonymous structs, enums, or pointers"),
+            TypeStructure::OpaqueTuple { elements } |
             TypeStructure::CTuple { elements } => Some(AstRustType::Tuple {
                 elems: elements.iter().map(|element| self.serialize_rust_type(element)).collect::<Option<Vec<_>>>()?
             }),
@@ -508,6 +510,9 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 }
                 _ => unimplemented!("primitives which aren't i64 and f64")
             })), AstValueBody::None),
+            TypeStructure::OpaqueFields { fields } => {
+                (None, self.serialize_constant_fields(constant_data, fields))
+            }
             TypeStructure::CReprStruct { body } => (None, match body {
                 TypeStructureBody::None => AstValueBody::None,
                 TypeStructureBody::Tuple(tuple_item_types) => {
@@ -529,6 +534,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphSerializer<'a, RuntimeCtx> {
                 error!("deserialized (inline?) constant data is of pointer type, which can't be represented in serial data");
                 (None, AstValueBody::None)
             }
+            TypeStructure::OpaqueTuple { elements } |
             TypeStructure::CTuple { elements} => {
                 (None, self.serialize_constant_tuple(constant_data, elements))
             }

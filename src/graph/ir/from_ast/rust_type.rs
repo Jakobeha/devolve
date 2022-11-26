@@ -1,6 +1,6 @@
 use std::iter::zip;
 use std::mem::size_of;
-use crate::error::GraphFormError;
+use crate::error::{GraphFormError, NodeNameFieldName};
 use crate::ir::from_ast::GraphBuilder;
 use crate::ast::types::{AstValueBody, AstLiteral, AstRustType, AstValueHead};
 use structural_reflection::{infer_slice_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
@@ -43,6 +43,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         }
     }
 
+    /// Resolve type structurally, infer value type, and unify
     fn resolve_type_structurally(
         &mut self,
         ast_type: Option<AstRustType>,
@@ -53,6 +54,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         self.merge_resolved_type(resolved_type, inferred_type)
     }
 
+    /// Resolve type itself structurally (no value)
     fn resolve_type_structurally2(&mut self, ast_type: AstRustType) -> RustType {
         let (known_size, known_align) = match &ast_type {
             AstRustType::Ident { qualifier, simple_name, generic_args: _ } => {
@@ -123,22 +125,20 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             }
         };
         // use or, because structure.infer_size is guaranteed to be a no-op if known_size has any chance of being Some
-        let size = known_size.or(structure.infer_size());
-        let align = known_align.or(structure.infer_align());
-        if size.is_none() || align.is_none() {
-            self.errors.push(GraphFormError::TypeLayoutNotResolved {
-                type_name: ast_type.clone()
-            });
-        }
+        let size = known_size.or(structure.infer_size()).unwrap_or(usize::MAX);
+        let align = known_align.or(structure.infer_align()).unwrap_or(usize::MAX);
+        // Note that unknown (usize::MAX) size and alignment are not allowed,
+        // but the errors will be thrown during validation, so we don't need to throw here
         RustType {
             type_id: None,
             type_name: ast_type,
-            size: size.unwrap_or(usize::MAX),
-            align: align.unwrap_or(usize::MAX),
+            size,
+            align,
             structure
         }
     }
 
+    /// Infer type of value
     pub(super) fn infer_type_structurally(
         &mut self,
         (value, value_children): (Option<&AstValueHead>, &AstValueBody)
@@ -220,6 +220,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         }
     }
 
+    /// Infer type of value with no head
     fn infer_type_structurally2(&mut self, value_children: &AstValueBody) -> RustType {
         if matches!(value_children, AstValueBody::None) {
             return RustType::unknown();
@@ -230,10 +231,11 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             type_name: RustTypeName::unknown(),
             size,
             align,
-            structure: TypeStructure::CReprStruct { body }
+            structure: TypeStructure::opaque(body)
         }
     }
 
+    /// Infer type of value body (with auxillary inline params)
     fn infer_type_body_structurally(
         &mut self,
         inline_params: Option<&[AstValueHead]>,
@@ -251,6 +253,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         }
     }
 
+    /// Infer type of value body (without auxillary inline params)
     fn infer_type_body_structurally2(
         &mut self,
         value_children: &AstValueBody
@@ -285,6 +288,9 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         }
     }
 
+    /// Unify types, but slightly different than regular unification
+    /// because we know one of the types is definitive and one is just inferred from the value,
+    /// If `resolved_type` is `None` we just return `inferred_type`.
     fn merge_resolved_type(
         &mut self,
         resolved_type: Option<RustType>,
@@ -293,19 +299,47 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         match resolved_type {
             None => inferred_type,
             Some(mut resolved_type) => {
-                if resolved_type.is_rough_subtype_of(&inferred_type) == IsSubtypeOf::No ||
-                    inferred_type.is_rough_subtype_of(&resolved_type) == IsSubtypeOf::No {
+                if inferred_type.is_rough_subtype_of(&resolved_type) == IsSubtypeOf::No {
                     self.errors.push(GraphFormError::ValueTypeMismatch {
                         explicit_type_name: resolved_type.type_name.clone(),
                         inferred_type_name: inferred_type.type_name.clone()
                     });
                 }
+                // May want to do a more shallow unification.
+                // Currently all we need to support is "opaque & concrete = concrete" (and nested)
                 resolved_type.unify(inferred_type);
                 resolved_type
             }
         }
     }
 
+    /// Unify types, but slightly different than regular unification
+    /// because we know one of the types is definitive and one is just inferred from the value,
+    ///
+    /// Same as `merge_resolved_type` but `resolved_type` must be `Some` and modifies in-place
+    pub(super) fn merge_resolved_type2(
+        &mut self,
+        node_name: &str,
+        field_name: &str,
+        inherited_type: &mut RustType,
+        self_type: RustType
+    ) {
+        if self_type.is_rough_subtype_of(&inherited_type) == IsSubtypeOf::No {
+            self.errors.push(GraphFormError::InheritedNodeTypeMismatch {
+                inherited_type_name: inherited_type.type_name.clone(),
+                self_type_name: self_type.type_name.clone(),
+                referenced_from: NodeNameFieldName {
+                    node_name: node_name.to_string(),
+                    field_name: field_name.to_string()
+                }
+            });
+        }
+        // May want to do a more shallow unification.
+        // Currently all we need to support is "unsized slice & opaque tuple = sized array" (and nested)
+        inherited_type.unify(self_type);
+    }
+
+    /// Unify an array of types, where none of the types have priority over the others
     fn merge_resolved_types(&mut self, resolved_types: Vec<RustType>) -> RustType {
         if resolved_types.is_empty() {
             return RustType::bottom();

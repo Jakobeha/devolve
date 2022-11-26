@@ -1,41 +1,39 @@
-use std::borrow::Cow;
-use std::cell::{Cell, RefCell, RefMut};
 use std::collections::HashSet;
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::SystemTime;
 use crate::ast::types::AstGraph;
 use crate::ir::{ComptimeCtx, IrGraph};
 use crate::lower::{LowerGraph, SelfContainedLowerGraph};
 use crate::raw::IOData;
 
-pub trait GraphResolver<RuntimeCtx> {
+pub trait GraphResolver<RuntimeCtx: 'static + ?Sized> {
     fn with_resolve<R>(&mut self, fn_name: &'static str, fun: impl FnOnce(&mut LowerGraph<RuntimeCtx>, &mut IOData, &mut IOData, bool) -> R) -> R;
 }
 
-pub struct IdentityGraphResolver<'a, RuntimeCtx>(&'a mut SelfContainedLowerGraph<RuntimeCtx>);
+pub struct IdentityGraphResolver<'a, RuntimeCtx: 'static + ?Sized>(&'a mut SelfContainedLowerGraph<RuntimeCtx>);
 
-impl<'a, RuntimeCtx> GraphResolver<RuntimeCtx> for IdentityGraphResolver<'a, RuntimeCtx> {
+impl<'a, RuntimeCtx: 'static + ?Sized> GraphResolver<RuntimeCtx> for IdentityGraphResolver<'a, RuntimeCtx> {
     fn with_resolve<R>(&mut self, _fn_name: &'static str, fun: impl FnOnce(&mut LowerGraph<RuntimeCtx>, &mut IOData, &mut IOData, bool) -> R) -> R {
         fun(&mut self.0.graph, &mut self.0.input_data, &mut self.0.output_data, false)
     }
 }
 
-pub struct PathGraphResolver<'a, RuntimeCtx> {
+pub struct PathGraphResolver<'a, RuntimeCtx: 'static + ?Sized> {
     pub path: PathBuf,
     pub comptime_ctx: &'a ComptimeCtx<RuntimeCtx>,
-    pub loaded_time: Cell<SystemTime>,
-    pub loaded: RefCell<Option<SelfContainedLowerGraph<RuntimeCtx>>>,
+    pub loaded_time: Mutex<SystemTime>,
+    pub loaded: Mutex<Option<SelfContainedLowerGraph<RuntimeCtx>>>,
     pub checked: HashSet<&'static str>,
 }
 
-impl<'a, RuntimeCtx> PathGraphResolver<'a, RuntimeCtx> {
+impl<'a, RuntimeCtx: 'static + ?Sized> PathGraphResolver<'a, RuntimeCtx> {
     pub fn new(path: PathBuf, comptime_ctx: &'a ComptimeCtx<RuntimeCtx>) -> Self {
         Self {
             path: path.to_path_buf(),
             comptime_ctx,
-            loaded_time: Cell::new(SystemTime::UNIX_EPOCH),
-            loaded: RefCell::new(None),
+            loaded_time: Mutex::new(SystemTime::UNIX_EPOCH),
+            loaded: Mutex::new(None),
             checked: HashSet::new(),
         }
     }
@@ -52,9 +50,10 @@ impl<'a, RuntimeCtx> PathGraphResolver<'a, RuntimeCtx> {
     }
 
     fn load_if_empty(&mut self) {
-        if !self.loaded.borrow().is_some() {
-            *self.loaded.borrow_mut() = Some(self.load());
-            self.loaded_time.set(self.path.metadata().unwrap().modified().unwrap());
+        let loaded = self.loaded.lock().unwrap();
+        if !loaded.is_some() {
+            *loaded = Some(self.load());
+            *self.loaded_time.lock() = self.path.metadata().unwrap().modified().unwrap();
         }
     }
 
@@ -78,11 +77,12 @@ impl<'a, RuntimeCtx> PathGraphResolver<'a, RuntimeCtx> {
     }
 }
 
-impl<RuntimeCtx> GraphResolver<RuntimeCtx> for PathGraphResolver<RuntimeCtx> {
+impl<'a, RuntimeCtx: 'static + ?Sized> GraphResolver<RuntimeCtx> for PathGraphResolver<'a, RuntimeCtx> {
     fn with_resolve<R>(&mut self, fn_name: &'static str, fun: impl FnOnce(&mut LowerGraph<RuntimeCtx>, &mut IOData, &mut IOData, bool) -> R) -> R {
         self.reload_if_necessary();
 
-        let graph = RefMut::map(self.loaded.borrow_mut(), |x| x.as_mut().unwrap());
+        let mut loaded_lock = self.loaded.lock().unwrap();
+        let graph = loaded_lock.as_mut().unwrap();
         // If newly inserted = not checked
         let is_checked = !self.checked.insert(fn_name);
         fun(&mut graph.graph, &mut graph.input_data, &mut graph.output_data, is_checked)

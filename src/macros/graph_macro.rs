@@ -33,14 +33,14 @@
 /// ```
 pub macro graph {
 { graph_resolver = $graph_resolver:expr $(, ctx = $ctx_ty:ty)?;
-    $($vis:vis $( $unsafe:ident )? fn $name:ident($($arg:ident: $arg_ty:ty),*) -> ($($ret_ty:ty),*));* $(;)?
+    $($vis:vis $( unsafe )? fn $name:ident($($arg:ident: $arg_ty:ty),*) -> ($($ret_ty:ty),*));* $(;)?
 } => {
     $(
         #[allow(unsafe_block_in_unsafe_fn)]
-        $vis $( $unsafe )? fn $name($(ctx: &mut $ctx_ty, )? $($arg: $arg_ty),*) -> ($($ret_ty),*) {
+        $vis $( unsafe )? fn $name($(ctx: &mut $ctx_ty, )? $($arg: $arg_ty),*) -> ($($ret_ty),*) {
             $graph_resolver.with_resolve(stringify!($name), |(graph, inputs, outputs, is_checked)| {
                 let inputs = inputs.subset(&[$(stringify!($arg)),*]);
-                __first!($( {} __ignore!($unsafe) )?, if !is_checked {
+                __first!($( {} __ignore!(unsafe) )?, if !is_checked {
                     inputs.check::<::structural_reflection::c_tuple::CTuple!($($arg_ty),*)>();
                     outputs.check::<::structural_reflection::c_tuple::CTuple!($($ret_ty),*)>();
                 })
@@ -52,17 +52,17 @@ pub macro graph {
     )*
 },
 { graph = $graph:expr $(, $($tt1:tt)*)?; $($tt2:tt)* } => {
-    graph!(graph_resolver = ::devolve::macros::graph_resolvers::IdentityGraphResolver($graph) $(, $($tt1)*)? | $($tt2)*)
+    graph! { graph_resolver = $crate::macros::graph_resolvers::IdentityGraphResolver($graph) $(, $($tt1)*)?; $($tt2)* }
 },
 { path = $path:literal, comptime_ctx = $comptime_ctx:expr $(, ctx = $ctx_ty:ty $( , $($tt1:tt)*)?)?; $($tt2:tt)*  } => {
     lazy_static::lazy_static! {
-        static ref PATH_RESOLVER: PathGraphResolver<'static, __first!($( $ctx_ty )?, ())> = ::devolve::macros::graph_resolvers::PathGraphResolver::new(
-            ::devolve::macros::graph_resolvers::resolve_graph_path($path, ::std::path::Path(env!("CARGO_MANIFEST_DIR"), file!())),
+        static ref PATH_RESOLVER: $crate::macros::graph_resolvers::PathGraphResolver<'static, __first!($( $ctx_ty )?, ())> = $crate::macros::graph_resolvers::PathGraphResolver::new(
+            $crate::macros::graph_resolvers::resolve_graph_path($path, env!("CARGO_MANIFEST_DIR"), file!()),
             &$comptime_ctx
         );
     }
 
-    graph!(graph_resolver = PATH_RESOLVER $(, ctx = $ctx_ty $(, $($tt1)*)?)? | $($tt2)*)
+    graph! { graph_resolver = PATH_RESOLVER $(, ctx = $ctx_ty $(, $($tt1)*)?)?; $($tt2)* }
 }
 }
 
@@ -74,13 +74,15 @@ $first
 
 #[cfg(test)]
 mod tests {
-    use devolve::ir::ComptimeCtx;
     use structural_reflection::Qualifier;
+    use structural_reflection::derive::{HasStructure, HasTypeName};
     use lazy_static::lazy_static;
+    use crate::ir::ComptimeCtx;
+    use crate::raw::NodeTypes;
     use crate::macros::graph;
 
     lazy_static! {
-        const MY_COMPTIME_CTX: ComptimeCtx<MyRuntimeCtx> = ComptimeCtx {
+        static ref MY_COMPTIME_CTX: ComptimeCtx<MyRuntimeCtx> = ComptimeCtx {
             qualifier: Qualifier::local(),
             node_types: NodeTypes::new()
         };
@@ -88,11 +90,13 @@ mod tests {
 
     struct MyRuntimeCtx;
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
+    #[repr(C)]
     struct Vector3<T> { x: T, y: T, z: T }
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
+    #[repr(C)]
     enum DistanceType { Euclidean, Manhattan }
 
-    graph! { path = "max_distance.dvl", comptime_ctx = MY_COMPTIME_CTX, ctx = MyRuntimeCtx |
+    graph! { path = "max_distance.dvl", comptime_ctx = MY_COMPTIME_CTX, ctx = MyRuntimeCtx;
         pub fn max_euclidean_distance(inputs: &[Vector3<f32>]) -> (f32);
         pub fn max_distance(inputs: &[Vector3<f32>], distance_type: DistanceType) -> (f32);
         pub unsafe fn max_distance_unsafe(inputs: &[Vector3<f32>], distance_type: DistanceType) -> (f32);

@@ -124,8 +124,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                 }
             }
             Some(explicit_rust_type) => {
-                if explicit_rust_type.structure.is_structural_subtype_of(&rust_type.structure) == IsSubtypeOf::No ||
-                    rust_type.structure.is_structural_subtype_of(&explicit_rust_type.structure) == IsSubtypeOf::No {
+                if rust_type.structure.is_structural_subtype_of(&explicit_rust_type.structure) == IsSubtypeOf::No {
                     self.errors.push(GraphFormError::NestedValueTypeMismatch {
                         inferred_type_name: rust_type.type_name.clone(),
                         explicit_type_name: explicit_rust_type.type_name.clone(),
@@ -173,8 +172,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                 }
             }
             Some(explicit_rust_type) => {
-                if explicit_rust_type.structure.is_structural_subtype_of(&rust_type.structure) == IsSubtypeOf::No ||
-                    rust_type.structure.is_structural_subtype_of(&explicit_rust_type.structure) == IsSubtypeOf::No {
+                if rust_type.structure.is_structural_subtype_of(&explicit_rust_type.structure) == IsSubtypeOf::No {
                     self.errors.push(GraphFormError::NestedValueTypeMismatch {
                         inferred_type_name: rust_type.type_name.clone(),
                         explicit_type_name: explicit_rust_type.type_name.clone(),
@@ -593,8 +591,8 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
             AstValueBody::None => NodeIO::Hole,
             AstValueBody::Tuple(tuple_items) => {
                 let tuple_item_types = rust_type.structure
-                    .tuple_struct_item_types()
-                    .or(rust_type.structure.tuple_elem_types());
+                    .general_tuple_item_types2(tuple_items.len())
+                    .map(|tuple_item_types| tuple_item_types.collect::<Vec<_>>());
                 if tuple_item_types.is_none() {
                     self.errors.push(GraphFormError::NotATupleOrTupleStruct {
                         type_name: rust_type.type_name.clone(),
@@ -603,10 +601,10 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                             field_name: field_name.to_string()
                         }
                     });
-                } else if tuple_item_types.unwrap().len() != tuple_items.len() {
+                } else if tuple_item_types.as_ref().unwrap().len() != tuple_items.len() {
                     self.errors.push(GraphFormError::TupleOrTupleStructLengthMismatch {
                         actual_length: tuple_items.len(),
-                        type_length: tuple_item_types.unwrap().len(),
+                        type_length: tuple_item_types.as_ref().unwrap().len(),
                         type_name: rust_type.type_name.clone(),
                         referenced_from: NodeNameFieldName {
                             node_name: node_name.to_string(),
@@ -615,7 +613,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                     });
                 }
                 NodeIO::Tuple(tuple_items.into_iter().enumerate().map(|(index, tuple_item)| {
-                    let tuple_item_type = tuple_item_types.map(|tuple_item_types| tuple_item_types[index].clone());
+                    let tuple_item_type = tuple_item_types.as_ref().map(|tuple_item_types| tuple_item_types[index].clone());
                     self.resolve_value_child(
                         (tuple_item.value, tuple_item.value_children),
                         (tuple_item_type, tuple_item.rust_type),
@@ -684,8 +682,7 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
         let elem_type = match explicit_elem_type {
             None => inferred_elem_type,
             Some(mut explicit_elem_type) => {
-                if inferred_elem_type.is_rough_subtype_of(&explicit_elem_type) == IsSubtypeOf::No ||
-                    explicit_elem_type.is_rough_subtype_of(&inferred_elem_type) == IsSubtypeOf::No {
+                if inferred_elem_type.is_rough_subtype_of(&explicit_elem_type) == IsSubtypeOf::No {
                     self.errors.push(GraphFormError::NestedValueTypeMismatch {
                         inferred_type_name: inferred_elem_type.type_name.clone(),
                         explicit_type_name: explicit_elem_type.type_name.clone(),

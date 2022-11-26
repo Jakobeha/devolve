@@ -57,6 +57,13 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
         input_rust_type: &RustType,
         input_null_region: &NullRegion,
     ) {
+        self.check_type_itself(
+            errors,
+            node_id,
+            node,
+            input_name,
+            input_rust_type
+        );
         match input {
             NodeIO::Hole => if !NullRegion::Null.is_subset_of(input_null_region) {
                 errors.push(GraphValidationError::IONullabilityMismatch {
@@ -149,6 +156,34 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
                     input_name: input_name.to_string()
                 }
             });
+        }
+    }
+
+    fn check_type_itself(
+        &self,
+        errors: &mut GraphValidationErrors,
+        node_id: NodeId,
+        node: &Node<RuntimeCtx>,
+        input_name: &str,
+        rust_type: &RustType
+    ) {
+        if rust_type.size == usize::MAX {
+            errors.push(GraphValidationError::UnknownSizedType {
+                type_: rust_type.clone(),
+                referenced_from: NodeDisplayInputName {
+                    node: node.display(node_id),
+                    input_name: input_name.to_string()
+                }
+            })
+        }
+        if rust_type.align == usize::MAX {
+            errors.push(GraphValidationError::UnknownAlignedType {
+                type_: rust_type.clone(),
+                referenced_from: NodeDisplayInputName {
+                    node: node.display(node_id),
+                    input_name: input_name.to_string()
+                }
+            })
         }
     }
 

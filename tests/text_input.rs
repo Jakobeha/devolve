@@ -110,7 +110,7 @@ fn tests_on_files() {
                                 outputs.store_all::<CTuple!(
                                     NonNull<ViewId>,
                                     NonNull<&str>,
-                                    Nullable<CTuple2<CRange<usize>, &str>>,
+                                    Nullable<CTuple2<CRange<i64>, &str>>,
                                     Nullable<()>
                                 )>(c_tuple!(
                                     NonNull(ViewId(0)),
@@ -145,7 +145,7 @@ fn tests_on_files() {
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
-                                        rust_type: RustType::of::<CTuple2<CRange<usize>, &str>>(),
+                                        rust_type: RustType::of::<CTuple2<CRange<i64>, &str>>(),
                                         null_region: NullRegion::Null
                                     },
                                     NodeIOType {
@@ -167,7 +167,7 @@ fn tests_on_files() {
                             ],
                             meta: NodeTypeMetadata::default()
                         });
-                        node_types.insert_fn0(String::from("Box"), |ctx| Ok(NodeType {
+                        node_types.insert(String::from("Box"), NodeType {
                             compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Box");
                             }),
@@ -175,20 +175,17 @@ fn tests_on_files() {
                                 inputs: vec![
                                     NodeIOType {
                                         name: "children".to_string(),
-                                        rust_type: RustType::of_array::<ViewId>(ctx.input_types.iter()
-                                            .find(|input_type| input_type.name == "children")
-                                            .and_then(|input_type| input_type.rust_type.structure.general_compound_length())
-                                            .unwrap_or(0)),
+                                        rust_type: RustType::of_slice::<ViewId>(),
                                         null_region: NullRegion::NonNull,
                                     },
                                     NodeIOType {
                                         name: "width".to_string(),
-                                        rust_type: RustType::of::<usize>(),
+                                        rust_type: RustType::of::<i64>(),
                                         null_region: NullRegion::Null,
                                     },
                                     NodeIOType {
                                         name: "height".to_string(),
-                                        rust_type: RustType::of::<usize>(),
+                                        rust_type: RustType::of::<i64>(),
                                         null_region: NullRegion::Null,
                                     }
                                 ],
@@ -209,7 +206,7 @@ fn tests_on_files() {
                                 NodeIO::Hole
                             ],
                             meta: NodeTypeMetadata::default()
-                        }));
+                        });
 
                         let input = input.clone();
                         let comptime_ctx = ComptimeCtx { qualifier: qualifier![], node_types };
@@ -259,7 +256,7 @@ fn tests_on_files() {
                         ];
                         let output_types = [
                             RustType::of::<&str>(),
-                            RustType::of::<CTuple2<CRange<usize>, &str>>(),
+                            RustType::of::<CTuple2<CRange<i64>, &str>>(),
                             RustType::of::<()>(),
                             RustType::of::<()>(),
                             RustType::of::<()>()
@@ -294,7 +291,7 @@ fn tests_on_files() {
                         ));
                         let (text, text_modified, enter_key, click_ok, click_cancel) = StoreData::with::<CTuple!(
                             NonNull<&str>,
-                            Nullable<CTuple2<CRange<usize>, &str>>,
+                            Nullable<CTuple2<CRange<i64>, &str>>,
                             Nullable<()>,
                             Nullable<()>,
                             Nullable<()>
@@ -322,7 +319,7 @@ async fn text_input(
     mut c: PromptContext<'_>,
     placeholder: In<str>,
     text: InOut<String>,
-    text_modified: OutSend<(CRange<usize>, String)>,
+    text_modified: OutSend<(CRange<i64>, String)>,
     ok_enabled: In<bool>
 ) -> String {
     let (enter_key_send, enter_key) = out_channel();

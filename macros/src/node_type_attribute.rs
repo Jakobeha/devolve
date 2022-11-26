@@ -7,47 +7,50 @@ use syn::{Expr, FnArg, Item, ItemFn, LitStr, parenthesized, parse_quote, ReturnT
 use syn::spanned::Spanned;
 
 pub(crate) struct NodeTypeFn {
-    pub attr: HeadAttr,
-    pub ctx_arg: CtxArg,
-    pub inputs: Vec<IOArg>,
-    pub validators: Vec<ValidatorFn>,
-    pub outputs: Vec<IOArg>,
-    pub fun: ItemFn,
+    attr: HeadAttr,
+    ctx_arg: CtxArg,
+    inputs: Vec<IOArg>,
+    // TODO: Use validators
+    #[allow(unused)] // See TODO
+    validators: Vec<ValidatorFn>,
+    outputs: Vec<IOArg>,
+    fun: ItemFn,
 }
 
 #[derive(Default)]
 struct FullHeadAttr {
-    pub head: HeadAttr,
-    pub return_attrs: Option<Vec<ArgAttr>>
+    head: HeadAttr,
+    return_attrs: Option<Vec<ArgAttr>>
 }
 
 #[derive(Default)]
 struct HeadAttr {
-    pub no_ctx: bool,
+    no_ctx: bool,
 }
 
 struct CtxArg {
-    pub type_: TypeReference
+    type_: TypeReference
 }
 
 struct IOArg {
-    pub attr: ArgAttr,
-    pub name: String,
-    pub type_: IOArgType
+    attr: ArgAttr,
+    name: String,
+    type_: IOArgType
 }
 
-enum IOArgType {
-    VarLenArray { elem: Type },
-    Type(Type),
+struct IOArgType {
+    type_: Type,
+    is_reference: bool,
 }
 
 #[derive(Clone, Default)]
 struct ArgAttr {
-    pub name: Option<String>,
-    pub default: Option<(Option<Token![=]>, Expr)>
+    name: Option<String>,
+    default: Option<(Option<Token![=]>, Expr)>
 }
 
 struct ValidatorFn {
+    #[allow(unused)] // See TODO
     fun: ItemFn
 }
 
@@ -56,7 +59,7 @@ impl Parse for NodeTypeFn {
         let mut fun = input.call(ItemFn::parse)?;
         let FullHeadAttr { head: attr, return_attrs } = fun.attrs.iter()
             .find(|attr| attr.path.is_ident("node_type"))
-            .ok_or(syn::Error::new(fun.span(), "missing #[node_type] attribute (how?)"))?
+            .ok_or(syn::Error::new(fun.span(), "missing #[node_type] attribute"))?
             .parse_args::<FullHeadAttr>()?;
         let (ctx_arg, inputs) = if attr.no_ctx {
             (CtxArg::default(), fun.sig.inputs.iter().map(IOArg::try_from_arg).try_collect::<Vec<_>>()?)
@@ -191,11 +194,23 @@ impl IOArg {
     }
 
     fn try_new(attr: ArgAttr, name: String, ty: &Type) -> syn::Result<Self> {
-        let type_ = match ty {
-            Type::Reference(TypeReference { elem: box Type::Slice(slice_ty), .. }) => IOArgType::VarLenArray { elem: slice_ty.elem.as_ref().clone() },
-            ty => IOArgType::Type(ty.clone()),
-        };
+        let type_ = IOArgType::from(ty.clone());
         Ok(Self { attr, name, type_ })
+    }
+}
+
+impl From<Type> for IOArgType {
+    fn from(ty: Type) -> Self {
+        match ty {
+            Type::Reference(TypeReference { elem, .. }) if ty.to_token_stream().to_string() != "&str" => IOArgType {
+                type_: *elem,
+                is_reference: true,
+            },
+            ty => IOArgType {
+                type_: ty,
+                is_reference: false,
+            }
+        }
     }
 }
 
@@ -265,10 +280,7 @@ impl NodeTypeFn {
         let input_names = self.inputs.iter().map(|input|
             input.attr.name.as_ref().unwrap_or(&input.name)
         );
-        let input_tys = self.inputs.iter().map(|input| match &input.type_ {
-            IOArgType::VarLenArray { elem: _ } => todo!("support var-len arrays"),
-            IOArgType::Type(type_) => type_
-        });
+        let input_tys = self.inputs.iter().map(|input| &input.type_.type_);
         let input_nullabilitys = self.inputs.iter().map(|_|
             quote!(devolve::raw::nullability::NullRegion::NonNull)
         );
@@ -278,10 +290,24 @@ impl NodeTypeFn {
         let input_defaults = self.inputs.iter().map(|input|
             input.attr.default.as_ref().map(|(_, expr)| expr)
         );
+        let input_defaults2 = self.inputs.iter().map(|input|
+            input.attr.default.as_ref().map(|(_, expr)| {
+                let type_ = input.type_.type_.clone();
+                let type2 = type_.clone();
+                quote!(NodeIO::ConstInline(Box::from_raw(std::slice::from_raw_parts(&#expr as *const #type_ as *const u8, std::mem::size_of::<#type2>()))))
+            })
+        );
+        let inputs = self.inputs.iter().enumerate().map(|(index, input)| {
+            if input.type_.is_reference {
+                quote!(&inputs.#index)
+            } else {
+                quote!(inputs.#index)
+            }
+        });
         let output_names = self.outputs.iter().map(|output|
             output.attr.name.as_ref().unwrap_or(&output.name)
         );
-        let output_tys = self.outputs.iter().map(|output| &output.type_);
+        let output_tys = self.outputs.iter().map(|output| &output.type_.type_);
         let output_nullabilitys = self.outputs.iter().map(|_|
             quote!(devolve::raw::nullability::NullRegion::NonNull)
         );
@@ -291,6 +317,14 @@ impl NodeTypeFn {
         let output_defaults = self.outputs.iter().map(|output|
             output.attr.default.as_ref().map(|(_, expr)| expr)
         );
+        let output_defaults2 = output_defaults.clone();
+        let input_tys2 = input_tys.clone();
+        let output_tys2 = output_tys.clone();
+        let fn_ctx = if self.attr.no_ctx {
+            None
+        } else {
+            Some(quote!(fn_ctx))
+        };
         quote! {
             // Must match the signature of NodeTypeFn
             pub fn #node_type_name(type_arg: &str, fn_ctx: ::devolve::raw::NodeTypeFnCtx<'_>) -> Result<::devolve::raw::NodeType<#ctx_ty>, Box<dyn ::std::error::Error>> + Send + Sync> {
@@ -303,8 +337,11 @@ impl NodeTypeFn {
                         let inputs = unsafe { input_data.load::<CTuple!(
                             #(#input_nullabilitys2<#input_tys>),*
                         )>() }.into_trailing((#(#input_defaults),*));
-                        let output = Fn::call(#fun_name(), inputs);
-                        unsafe { output_data.store(IODataTypes::from_reg(output, #(#input_defaults),*) as CTuple!(
+                        let output = Fn::call(#fun_name(), (
+                            #(#fn_ctx, )?
+                            #(#inputs,)*
+                        ));
+                        unsafe { output_data.store(IODataTypes::from_reg(output, #(#output_defaults),*) as CTuple!(
                             #(#output_nullabilitys2<#output_tys>),*
                         )) }
                     }),
@@ -312,23 +349,23 @@ impl NodeTypeFn {
                         inputs: vec![
                             #(NodeIOType {
                                 name: #input_names,
-                                rust_type: #input_tys,
+                                rust_type: #input_tys2,
                                 null_region: #input_nullabilitys
                             }),*
                         ]
                         outputs: vec![
                             #(NodeIOType {
                                 name: #output_names,
-                                rust_type: #output_tys,
+                                rust_type: #output_tys2,
                                 null_region: #output_nullabilitys
                             }),*
                         ]
                     },
                     default_inputs: vec![
-                        #(#input_defaults),*
+                        #(#input_defaults2),*
                     ],
                     default_default_outputs: vec![
-                        #(#output_defaults),*
+                        #(#output_defaults2),*
                     ]
                 }
             }

@@ -55,23 +55,34 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
 
         // Get node type name and data, fill in more inputs / outputs with default values
         // and reorder inputs and outputs if we have an inherited type with different order
+        let self_type_data = NodeTypeData {
+            inputs: input_types,
+            outputs: output_types
+        };
         let (node_type_name, type_data, compute) = match inherited_type {
             None => {
                 // Use structural self-type, no reordering or defaults necessary
-                let self_type_data = NodeTypeData {
-                    inputs: input_types,
-                    outputs: output_types
-                };
                 (NodeTypeName::from(node_name.to_string()), self_type_data, None)
             },
             Some(inherited_type) => {
                 // Reorder inputs and outputs to match inherited type, then add defaults which were not overridden
-                self.apply_inherited_to_fields(&inherited_type.type_data.inputs, &inherited_type.default_inputs, &input_types, &mut inputs);
-                self.apply_inherited_to_fields(&inherited_type.type_data.outputs, &inherited_type.default_default_outputs, &output_types, &mut outputs);
+                self.apply_inherited_to_fields(
+                    &inherited_type.type_data.inputs,
+                    &inherited_type.default_inputs,
+                    &self_type_data.inputs,
+                    &mut inputs
+                );
+                self.apply_inherited_to_fields(
+                    &inherited_type.type_data.outputs,
+                    &inherited_type.default_default_outputs,
+                    &self_type_data.outputs,
+                    &mut outputs
+                );
 
                 // Use inherited type
                 let inherited_type_name = NodeTypeName::from(node.node_type.unwrap());
-                let inherited_type_data = inherited_type.type_data.clone();
+                let mut inherited_type_data = inherited_type.type_data.clone();
+                self.merge_inherited_type_data(node_name, &mut inherited_type_data, self_type_data);
                 (inherited_type_name, inherited_type_data, Some(inherited_type.compute.clone()))
             }
         };
@@ -134,6 +145,26 @@ impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
                 });
                 None
             },
+        }
+    }
+
+    /// Add extra self-type data to inherited type data. Specifically: missing size for slices
+    fn merge_inherited_type_data(&mut self, node_name: &str, inherited_type_data: &mut NodeTypeData, self_type_data: NodeTypeData) {
+        self.merge_inherited_types(node_name, &mut inherited_type_data.inputs, self_type_data.inputs);
+        self.merge_inherited_types(node_name, &mut inherited_type_data.outputs, self_type_data.outputs);
+    }
+
+    fn merge_inherited_types(&mut self, node_name: &str, inherited_types: &mut [NodeIOType], mut self_types: Vec<NodeIOType>) {
+        for inherited_type in inherited_types {
+            if let Some(self_type) = self_types.drain_filter(|self_type| self_type.name == inherited_type.name).next() {
+                let field_name = self_type.name;
+                self.merge_resolved_type2(
+                    node_name,
+                    &field_name,
+                    &mut inherited_type.rust_type,
+                    self_type.rust_type
+                );
+            }
         }
     }
 

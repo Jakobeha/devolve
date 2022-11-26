@@ -289,6 +289,12 @@ pub enum GraphFormError {
         type_name: RustTypeName,
         referenced_from: NodeNameFieldName
     },
+    #[display(fmt = "type mismatch: actual type is {}, but node type's field type is {} (referenced from {})\nNote that if the type names are the same, the contents are still different", "self_type_name.unqualified()", "inherited_type_name.unqualified()", referenced_from)]
+    InheritedNodeTypeMismatch {
+        self_type_name: RustTypeName,
+        inherited_type_name: RustTypeName,
+        referenced_from: NodeNameFieldName
+    },
     #[display(fmt = "type mismatch: value is {}, type is {}\nNote that if the type names are the same, the contents are still different", "inferred_type_name.unqualified()", "explicit_type_name.unqualified()")]
     ValueTypeMismatch {
         inferred_type_name: RustTypeName,
@@ -314,11 +320,7 @@ pub enum GraphFormError {
     PointerToUnregisteredType {
         #[error(not(source))]
         refd_type_name: RustTypeName
-    },
-    #[display(fmt = "type layout not resolved, we need to know the size and alignment of each item: {}", "type_name.unqualified()")]
-    TypeLayoutNotResolved {
-        type_name: RustTypeName
-    },
+    }
 }
 
 #[derive(Debug, Clone, Display)]
@@ -353,7 +355,21 @@ pub enum GraphValidationError {
         output_type: RustType,
         input_type: RustType,
         referenced_from: NodeDisplayInputName
-    }
+    },
+    #[display(fmt = "unknown type (referenced from {})", referenced_from)]
+    UnknownType {
+        referenced_from: NodeDisplayInputName
+    },
+    #[display(fmt = "type has unknown size: {} (referenced from {})", "type_.type_name.unqualified()", referenced_from)]
+    UnknownSizedType {
+        type_: RustType,
+        referenced_from: NodeDisplayInputName
+    },
+    #[display(fmt = "type has unknown alignment: {} (referenced from {})", "type_.type_name.unqualified()", referenced_from)]
+    UnknownAlignedType {
+        type_: RustType,
+        referenced_from: NodeDisplayInputName
+    },
 }
 
 #[derive(Debug, Clone, Display)]
