@@ -928,64 +928,84 @@ fn munch_value(lexer: &mut Lexer<GraphToken>) -> Result<AstValueHead, (usize, Pa
             Ok(string) => Ok(AstValueHead::Literal(AstLiteral::String(string)))
         }
         Some(GraphToken::Ident) => {
-            let node_name = lexer.slice().to_string();
-            let field_name = {
-                // lexer doesn't support peek but there are workarounds, here is one
-                let remainder = lexer.remainder().trim_start();
-                // check that the next char is _ and the char after is not for an identifier.
-                // We want to check for either '_' or '_: ...'
-                if remainder.starts_with(".") {
-                    lexer.munch("'.'", |token| extract!(token, GraphToken::Punct('.')))?;
-                    lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
-                    lexer.slice().to_string()
-                } else {
-                    String::from(StaticStrs::SELF_FIELD)
+            let remainder = lexer.remainder();
+            if let Some(type_end_pos) = remainder.rfind("::") {
+                // Struct or enum variant
+                let type_name_str = &lexer.source()[lexer.span().start..lexer.span().end + type_end_pos];
+                let type_name = RustTypeName::try_from(type_name_str).map_err(|RustTypeNameParseError { index, cause }| {
+                    (lexer.span().start + index, ParseErrorBody::ParsingType { cause })
+                })?;
+                lexer.bump(type_end_pos + 2);
+                match lexer.next() {
+                    None => Ok(AstValueHead::Struct { type_name, inline_params: None }),
+                    Some(GraphToken::Punct('(')) => {
+                        let inline_params = munch_value_list(lexer, '(', ')')?;
+                        Ok(AstValueHead::Struct { type_name, inline_params: Some(inline_params) })
+                    }
+                    Some(GraphToken::Ident) => {
+                        let variant_name = lexer.slice().to_string();
+                        match lexer.next() {
+                            None => Ok(AstValueHead::Enum { type_name, variant_name, inline_params: None }),
+                            Some(GraphToken::Punct('(')) => {
+                                let inline_params = munch_value_list(lexer, '(', ')')?;
+                                Ok(AstValueHead::Enum { type_name, variant_name, inline_params: Some(inline_params) })
+                            }
+                            _ => Err((lexer.span().start, ParseErrorBody::Expected("'(' or end of line")))
+                        }
+                    }
+                    _ => Err((lexer.span().start, ParseErrorBody::Expected("enum variant name, '(', or end of line")))
                 }
-            };
-            Ok(AstValueHead::Ref {
-                node_name,
-                field_name
-            })
+            } else {
+                // Ref
+                let node_name = lexer.slice().to_string();
+                let field_name = {
+                    // lexer doesn't support peek but there are workarounds, here is one
+                    let remainder = remainder.trim_start();
+                    // check that the next char is .
+                    if remainder.starts_with(".") {
+                        // Ref
+                        lexer.munch("'.'", |token| extract!(token, GraphToken::Punct('.')))?;
+                        lexer.munch("ident", |token| extract!(token, GraphToken::Ident))?;
+                        lexer.slice().to_string()
+                    } else {
+                        String::from(StaticStrs::SELF_FIELD)
+                    }
+                };
+                Ok(AstValueHead::Ref {
+                    node_name,
+                    field_name
+                })
+            }
         }
         Some(GraphToken::Punct('[')) => {
-            let mut values = Vec::new();
-            loop {
-                match munch_value(lexer) {
-                    Err((column, error)) => match error {
-                        ParseErrorBody::Unopened(']') => break,
-                        ParseErrorBody::ExpectedMore(_) => return Err((column, ParseErrorBody::Unclosed('['))),
-                        _ => return Err((column, error))
-                    }
-                    Ok(value) => {
-                        values.push(value);
-                        lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
-                    }
-                }
-            }
-            Ok(AstValueHead::InlineArray(values))
+            Ok(AstValueHead::InlineArray(munch_value_list(lexer, '[', ']')?))
         }
         Some(GraphToken::Punct('(')) => {
-            let mut values = Vec::new();
-            loop {
-                match munch_value(lexer) {
-                    Err((column, error)) => match error {
-                        ParseErrorBody::Unopened(')') => break,
-                        ParseErrorBody::ExpectedMore(_) => return Err((column, ParseErrorBody::Unclosed('('))),
-                        _ => return Err((column, error))
-                    }
-                    Ok(value) => {
-                        values.push(value);
-                        lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
-                    }
-                }
-            }
-            Ok(AstValueHead::InlineTuple(values))
+            Ok(AstValueHead::InlineTuple(munch_value_list(lexer, '(', ')')?))
         }
         // Special error message because we catch this one when we do actually have an opened bracket
         Some(GraphToken::Punct(']')) => Err((lexer.span().start, ParseErrorBody::Unopened(']'))),
         Some(GraphToken::Punct(')')) => Err((lexer.span().start, ParseErrorBody::Unopened(')'))),
         Some(_) => Err((lexer.span().start, ParseErrorBody::Expected("value")))
     }
+}
+
+fn munch_value_list(lexer: &mut Lexer<GraphToken>, open_punc: char, close_punc: char) -> Result<Vec<AstValueHead>, (usize, ParseErrorBody)> {
+    let mut values = Vec::new();
+    loop {
+        match munch_value(lexer) {
+            Err((column, error)) => match error {
+                ParseErrorBody::Unopened(punc) if punc == close_punc => break,
+                ParseErrorBody::ExpectedMore(_) => return Err((column, ParseErrorBody::Unclosed(open_punc))),
+                _ => return Err((column, error))
+            }
+            Ok(value) => {
+                values.push(value);
+                lexer.munch("','", |token| extract!(token, GraphToken::Punct(',')))?;
+            }
+        }
+    }
+    Ok(values)
 }
 
 fn munch_rust_type(lexer: &mut Lexer<GraphToken>) -> Result<AstRustType, (usize, ParseErrorBody)> {

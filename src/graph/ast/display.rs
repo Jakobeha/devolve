@@ -221,7 +221,7 @@ impl DisplayWithCtx for AstValueHead {
             AstValueHead::InlineTuple(items) => write!(f, "({})", ", ".join(items.iter().map(|x| x.with_ctx(dnis)))),
             AstValueHead::InlineArray(elems) => write!(f, "[{}]", ", ".join(elems.iter().map(|x| x.with_ctx(dnis)))),
             AstValueHead::Struct { type_name: rust_type, inline_params } => {
-                write!(f, "{}", rust_type.display(dnis))?;
+                write!(f, "{}::", rust_type.display(dnis))?;
                 if let Some(inline_params) = inline_params.as_ref() {
                     write!(f, "({})", ", ".join(inline_params.iter().map(|x| x.with_ctx(dnis))))?;
                 }

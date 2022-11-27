@@ -5,7 +5,7 @@ use crate::ir::from_ast::GraphBuilder;
 use crate::ast::types::{AstValueBody, AstLiteral, AstRustType, AstValueHead};
 use structural_reflection::{infer_slice_align, infer_array_size, infer_c_tuple_align, infer_c_tuple_size, IsSubtypeOf, PrimitiveType, RustType, RustTypeName, TypeEnumVariant, TypeStructureBody, TypeStructureBodyField, TypeStructure};
 
-impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
+impl<'a, RuntimeCtx: ?Sized> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_type(
         &mut self,
         ast_type: Option<AstRustType>,

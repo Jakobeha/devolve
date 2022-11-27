@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::time::SystemTime;
 use crate::ast::types::AstGraph;
 use crate::ir::{ComptimeCtx, IrGraph};
@@ -22,8 +21,8 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphResolver<RuntimeCtx> for IdentityGra
 pub struct PathGraphResolver<'a, RuntimeCtx: 'static + ?Sized> {
     pub path: PathBuf,
     pub comptime_ctx: &'a ComptimeCtx<RuntimeCtx>,
-    pub loaded_time: Mutex<SystemTime>,
-    pub loaded: Mutex<Option<SelfContainedLowerGraph<RuntimeCtx>>>,
+    pub loaded_time: SystemTime,
+    pub loaded: Option<SelfContainedLowerGraph<RuntimeCtx>>,
     pub checked: HashSet<&'static str>,
 }
 
@@ -32,8 +31,8 @@ impl<'a, RuntimeCtx: 'static + ?Sized> PathGraphResolver<'a, RuntimeCtx> {
         Self {
             path: path.to_path_buf(),
             comptime_ctx,
-            loaded_time: Mutex::new(SystemTime::UNIX_EPOCH),
-            loaded: Mutex::new(None),
+            loaded_time: SystemTime::UNIX_EPOCH,
+            loaded: None,
             checked: HashSet::new(),
         }
     }
@@ -50,30 +49,32 @@ impl<'a, RuntimeCtx: 'static + ?Sized> PathGraphResolver<'a, RuntimeCtx> {
     }
 
     fn load_if_empty(&mut self) {
-        let loaded = self.loaded.lock().unwrap();
-        if !loaded.is_some() {
-            *loaded = Some(self.load());
-            *self.loaded_time.lock() = self.path.metadata().unwrap().modified().unwrap();
+        if !self.loaded.is_some() {
+            self.loaded = Some(self.load());
+            self.loaded_time = self.path
+                .metadata().expect("failed to get graph file metadata")
+                .modified().expect("failed to get graph file modified time");
         }
     }
 
     fn clear(&mut self) {
-        self.loaded.replace(None);
+        self.loaded = None;
         self.checked.clear();
     }
 
     fn load(&self) -> SelfContainedLowerGraph<RuntimeCtx> {
-        let graph = AstGraph::parse_from(&self.path).expect("failed to read and parse graph file");
-        let graph = IrGraph::try_from((graph, self.comptime_ctx)).expect("failed to compile graph");
-        let graph = LowerGraph::try_from(graph).expect("failed to compile graph");
+        // Use unwrap_or_else and panic! because these errors produce nice messages
+        let graph = AstGraph::parse_from(&self.path).unwrap_or_else(|err| panic!("failed to read and parse graph file\n{}", err));
+        let graph = IrGraph::try_from((graph, self.comptime_ctx)).unwrap_or_else(|err| panic!("failed to compile graph\n{}", err));
+        let graph = LowerGraph::try_from(graph).unwrap_or_else(|err| panic!("failed to lower graph\n{}", err));
         SelfContainedLowerGraph::new(graph)
     }
 
     fn path_is_newer(&self) -> bool {
-        let metadata = std::fs::metadata(&self.path).expect("failed to stat graph file");
+        // Also unwrap_or_else and panic because we want the path in the error message
+        let metadata = std::fs::metadata(&self.path).unwrap_or_else(|err| panic!("failed to stat graph file at\n\t{}\n\t{}", self.path.display(), err));
         let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        let loaded_time = self.loaded_time.get();
-        loaded_time < modified
+        self.loaded_time < modified
     }
 }
 
@@ -81,8 +82,7 @@ impl<'a, RuntimeCtx: 'static + ?Sized> GraphResolver<RuntimeCtx> for PathGraphRe
     fn with_resolve<R>(&mut self, fn_name: &'static str, fun: impl FnOnce(&mut LowerGraph<RuntimeCtx>, &mut IOData, &mut IOData, bool) -> R) -> R {
         self.reload_if_necessary();
 
-        let mut loaded_lock = self.loaded.lock().unwrap();
-        let graph = loaded_lock.as_mut().unwrap();
+        let graph = self.loaded.as_mut().unwrap();
         // If newly inserted = not checked
         let is_checked = !self.checked.insert(fn_name);
         fun(&mut graph.graph, &mut graph.input_data, &mut graph.output_data, is_checked)
@@ -94,9 +94,15 @@ pub fn resolve_graph_path(path: &str, cargo_manifest_dir: &str, file: &str) -> P
     match path.strip_prefix("$CARGO_MANIFEST_DIR") {
         None => {
             buf.push(file);
+            buf.pop();
             buf.push(path);
         },
-        Some(path) => buf.push(path)
+        Some(mut path) => {
+            if path.starts_with('/') || path.starts_with('\\') {
+                path = &path[1..];
+            }
+            buf.push(path)
+        }
     }
     buf
 }

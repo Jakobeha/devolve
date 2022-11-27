@@ -8,7 +8,7 @@ use crate::ast::types::{AstValueBody, AstField, AstLiteral, AstRustType, AstValu
 use structural_reflection::{IsSubtypeOf, RustType, RustTypeName, TypeStructureBody, TypeStructure};
 use crate::misc::inline_ptr::InlinePtr;
 
-impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
+impl<'a, RuntimeCtx: ?Sized> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn resolve_value(
         &mut self,
         (value, value_children): (Option<AstValueHead>, AstValueBody),

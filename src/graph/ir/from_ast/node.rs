@@ -8,7 +8,7 @@ use crate::graph::raw::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodeAttr, NodeColor, NodePos};
 use crate::raw::NullRegion;
 
-impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
+impl<'a, RuntimeCtx: ?Sized> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
         self.forward_resolved_nodes.get(node_name).map(|(id, node)| (*id, node))
     }

@@ -6,6 +6,7 @@ use crate::raw::NullRegion;
 /// A tuple of values with nullability info, which can be read from or written to a devolve graph
 pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
     type Inner: HasStructure + Copy;
+    type Normal: Copy;
     type IterRustTypes: Iterator<Item=RustType>;
     type IterNullRegions: Iterator<Item=NullRegion>;
 
@@ -13,16 +14,19 @@ pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized 
     fn iter_max_null_regions() -> Self::IterNullRegions;
     fn len() -> usize;
     fn split(self) -> (MaybeUninit<Self::Inner>, Vec<NullRegion>);
+    fn into_normal(self) -> Self::Normal;
     fn new(inner: MaybeUninit<Self::Inner>, null_regions: Vec<NullRegion>) -> Self;
 }
 
 /// A value with nullability info, which can be read from or written to a devolve graph
 pub trait IODataType: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
     type Inner: HasStructure + Copy;
+    type Normal: Copy;
 
     fn rust_type() -> RustType;
     fn max_null_region() -> NullRegion;
     fn split(self) -> (MaybeUninit<Self::Inner>, NullRegion);
+    fn into_normal(self) -> Self::Normal;
     fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self;
 }
 
@@ -44,6 +48,7 @@ pub struct Partial<T: IODataTypes>(pub T) where <T::Inner as HasTypeName>::Stati
 
 impl<T: HasStructure + Copy> IODataType for NonNull<T> where T::StaticId: Sized {
     type Inner = T;
+    type Normal = T;
 
     fn rust_type() -> RustType {
         RustType::of::<T>()
@@ -57,6 +62,10 @@ impl<T: HasStructure + Copy> IODataType for NonNull<T> where T::StaticId: Sized 
         (MaybeUninit::new(self.0), NullRegion::NonNull)
     }
 
+    fn into_normal(self) -> Self::Normal {
+        self.0
+    }
+
     fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self {
         assert_matches!(null_region, NullRegion::NonNull, "NonNull created with null data");
         NonNull(unsafe { inner.assume_init() })
@@ -65,6 +74,7 @@ impl<T: HasStructure + Copy> IODataType for NonNull<T> where T::StaticId: Sized 
 
 impl<T: HasStructure + Copy> IODataType for Nullable<T> where T::StaticId: Sized {
     type Inner = T;
+    type Normal = Option<T>;
 
     fn rust_type() -> RustType {
         RustType::of::<T>()
@@ -81,6 +91,13 @@ impl<T: HasStructure + Copy> IODataType for Nullable<T> where T::StaticId: Sized
         }
     }
 
+    fn into_normal(self) -> Self::Normal {
+        match self {
+            Nullable::None => None,
+            Nullable::Some(v) => Some(v),
+        }
+    }
+
     fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self {
         match null_region {
             NullRegion::Null => Nullable::None,
@@ -92,6 +109,7 @@ impl<T: HasStructure + Copy> IODataType for Nullable<T> where T::StaticId: Sized
 
 impl<T: IODataTypes> IODataType for Partial<T> where <T::Inner as HasTypeName>::StaticId: Sized {
     type Inner = T::Inner;
+    type Normal = T::Normal;
 
     fn rust_type() -> RustType {
         RustType::of::<T::Inner>()
@@ -104,6 +122,10 @@ impl<T: IODataTypes> IODataType for Partial<T> where <T::Inner as HasTypeName>::
     fn split(self) -> (MaybeUninit<Self::Inner>, NullRegion) {
         let (value, null_regions) = self.0.split();
         (value, NullRegion::Partial(null_regions))
+    }
+
+    fn into_normal(self) -> Self::Normal {
+        self.0.into_normal()
     }
 
     fn new(inner: MaybeUninit<Self::Inner>, null_region: NullRegion) -> Self {
@@ -140,6 +162,8 @@ macro_rules! impl_io_data_types {
     ($($name:ident),*) => {
 impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structural_reflection::c_tuple::CTuple!($($name),*) where $(<$name::Inner as HasTypeName>::StaticId: Sized),* {
     type Inner = structural_reflection::c_tuple::CTuple!($($name::Inner),*);
+    #[allow(unused_parens)]
+    type Normal = ($($name::Normal),*);
     type IterRustTypes = __impl_io_data_types__chain_type!(structural_reflection::RustType | $($name),*);
     type IterNullRegions = __impl_io_data_types__chain_type!($crate::raw::NullRegion | $($name),*);
 
@@ -178,6 +202,12 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
         assert!(offsets.next().is_none());
 
         (value, null_regions)
+    }
+
+    fn into_normal(self) -> Self::Normal {
+        #[allow(unused_parens, non_snake_case)]
+        let ($($name),*) = structural_reflection::c_tuple::CTuple::into_reg(self);
+        ($($name.into_normal()),*)
     }
 
     fn new(#[allow(unused_variables)] value: std::mem::MaybeUninit<Self::Inner>, null_regions: std::vec::Vec<$crate::raw::NullRegion>) -> Self {

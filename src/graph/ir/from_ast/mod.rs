@@ -46,7 +46,7 @@ impl AstBodyOrInlineTuple {
     }
 }
 
-impl<'a, RuntimeCtx> GraphBuilder<'a, RuntimeCtx> {
+impl<'a, RuntimeCtx: ?Sized> GraphBuilder<'a, RuntimeCtx> {
     /// Note: the built graph's nodes are guaranteed to be topologically sorted as long as there are no cycles.
     /// This is not the case for [IrGraph] in general though.
     pub(super) fn build(graph: AstGraph, ctx: &'a ComptimeCtx<RuntimeCtx>, errors: &'a mut GraphFormErrors) -> IrGraph<RuntimeCtx> {

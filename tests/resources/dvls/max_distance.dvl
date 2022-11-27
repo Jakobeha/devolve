@@ -1,0 +1,22 @@
+enum DistanceType
+  Euclidian
+  Manhattan
+
+struct Vector3
+  x: f64
+  y: f64
+  z: f64
+
+Input
+  ===
+  inputs: [Vector3]
+  distance_type: DistanceType = DistanceType::Euclidian
+
+Fun
+  inputs = Input.inputs
+  distance_type = Input.distance_type
+  ===
+  distance: f64
+
+Output
+  distance: f64 = Fun.distance
