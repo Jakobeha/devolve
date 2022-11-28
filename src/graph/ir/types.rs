@@ -5,7 +5,7 @@ use structural_reflection::RustType;
 use crate::graph::raw::ComputeFn;
 use crate::ast::types::{AstFieldHeader, NodeColor, NodePos};
 use crate::misc::inline_ptr::InlinePtr;
-use crate::raw::{ConstantPool, NullRegion};
+use crate::raw::{ConstantPool, Nullability};
 
 /// Compound view graph intermediate-representation loaded from a .dvl file.
 /// The graph is valid to an extent, see below.
@@ -62,7 +62,7 @@ pub struct NodeTypeData {
 pub struct NodeIOType {
     pub name: String,
     pub rust_type: RustType,
-    pub null_region: NullRegion,
+    pub nullability: Nullability,
 }
 
 /// Node input or default output; or graph output or default input

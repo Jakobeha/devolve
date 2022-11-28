@@ -5,7 +5,7 @@ use std::iter::zip;
 use crate::error::{GraphValidationError, GraphValidationErrors, NodeCycle, NodeDisplayInputName};
 use crate::ir::{IrGraph, Node, NodeId, NodeIO, NodeIODep, NodeIOType};
 use structural_reflection::{IsSubtypeOf, RustType};
-use crate::raw::NullRegion;
+use crate::raw::Nullability;
 
 impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
     pub fn validate(&self) -> GraphValidationErrors {
@@ -35,12 +35,12 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
             assert_eq!(inputs.len(), input_types.len(), "input count mismatch");
             assert_eq!(default_outputs.len(), output_types.len(), "output count mismatch");
 
-            for (input, NodeIOType { name: input_name, rust_type: input_rust_type, null_region: input_null_region }) in zip(inputs, input_types) {
-                self.check_type(&mut errors, node_id, node, input, input_name, input_rust_type, input_null_region);
+            for (input, NodeIOType { name: input_name, rust_type: input_rust_type, nullability: input_nullability }) in zip(inputs, input_types) {
+                self.check_type(&mut errors, node_id, node, input, input_name, input_rust_type, input_nullability);
             }
-            for (default_output, NodeIOType { name: output_name, rust_type: output_rust_type, null_region: _ }) in zip(default_outputs, output_types) {
-                // input null_region is null because the default output is never required, even if the actual type is non-null
-                self.check_type(&mut errors, node_id, node, default_output, output_name, output_rust_type, &NullRegion::Null);
+            for (default_output, NodeIOType { name: output_name, rust_type: output_rust_type, nullability: _ }) in zip(default_outputs, output_types) {
+                // input nullability is null because the default output is never required, even if the actual type is non-null
+                self.check_type(&mut errors, node_id, node, default_output, output_name, output_rust_type, &Nullability::Null);
             }
         }
 
@@ -55,7 +55,7 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
         input: &NodeIO,
         input_name: &str,
         input_rust_type: &RustType,
-        input_null_region: &NullRegion,
+        input_nullability: &Nullability,
     ) {
         self.check_type_itself(
             errors,
@@ -65,10 +65,10 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
             input_rust_type
         );
         match input {
-            NodeIO::Hole => if !NullRegion::Null.is_subset_of(input_null_region) {
+            NodeIO::Hole => if !Nullability::Null.is_subset_of(input_nullability) {
                 errors.push(GraphValidationError::IONullabilityMismatch {
-                    output_nullability: NullRegion::Null,
-                    input_nullability: input_null_region.clone(),
+                    output_nullability: Nullability::Null,
+                    input_nullability: input_nullability.clone(),
                     referenced_from: NodeDisplayInputName {
                         node: node.display(node_id),
                         input_name: input_name.to_string()
@@ -85,11 +85,11 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
                     NodeIODep::GraphInput { idx} => &self.default_inputs[*idx],
                     NodeIODep::OtherNodeOutput { id, idx } => &self.nodes[id.0].default_outputs[*idx]
                 };
-                let NodeIOType { name: _, rust_type: output_rust_type, null_region: output_type_null_region } = output_type;
-                let mut output_null_region = default_output.null_region(self);
-                output_null_region.intersect(output_type_null_region);
+                let NodeIOType { name: _, rust_type: output_rust_type, nullability: output_type_nullability } = output_type;
+                let mut output_nullability = default_output.nullability(self);
+                output_nullability.intersect(output_type_nullability);
 
-                self.check_type2(errors, node_id, node, input_name, input_rust_type, input_null_region, output_rust_type, &output_null_region)
+                self.check_type2(errors, node_id, node, input_name, input_rust_type, input_nullability, output_rust_type, &output_nullability)
             }
             NodeIO::ConstInline(_) | NodeIO::ConstRef(_) => {
                 // Nullability is ok (not nullable)
@@ -98,14 +98,14 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
             NodeIO::Array(elems) => {
                 let (elem_input_type, len) = input_rust_type.structure.array_elem_type_and_length().expect("broken invariant: node input is array but type isn't array");
                 assert_eq!(elems.len(), len, "broken invariant: node input / type array length mismatch");
-                let elem_input_nullability = input_null_region;
+                let elem_input_nullability = input_nullability;
                 for elem in elems {
                     self.check_type(errors, node_id, node, elem, input_name, elem_input_type, elem_input_nullability);
                 }
             }
             NodeIO::Tuple(elems) => {
                 let elem_input_types = input_rust_type.structure.general_compound_elem_types().expect("broken invariant: node input is tuple but type isn't tuple");
-                let elem_input_nullabilities = input_null_region.subdivide();
+                let elem_input_nullabilities = input_nullability.subdivide();
                 for (elem, (elem_input_type, elem_input_nullability)) in zip(elems, zip(elem_input_types, elem_input_nullabilities)) {
                     self.check_type(errors, node_id, node, &elem.input, input_name, elem_input_type, elem_input_nullability);
                 }
@@ -120,9 +120,9 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
         node: &Node<RuntimeCtx>,
         input_name: &str,
         input_rust_type: &RustType,
-        input_null_region: &NullRegion,
+        input_nullability: &Nullability,
         output_rust_type: &RustType,
-        output_null_region: &NullRegion,
+        output_nullability: &Nullability,
     ) {
         match output_rust_type.is_rough_subtype_of(input_rust_type) {
             IsSubtypeOf::No => {
@@ -147,10 +147,10 @@ impl<RuntimeCtx: 'static + ?Sized> IrGraph<RuntimeCtx> {
             }
             IsSubtypeOf::Yes => {}
         }
-        if !output_null_region.is_subset_of(input_null_region) {
+        if !output_nullability.is_subset_of(input_nullability) {
             errors.push(GraphValidationError::IONullabilityMismatch {
-                output_nullability: input_null_region.clone(),
-                input_nullability: output_null_region.clone(),
+                output_nullability: input_nullability.clone(),
+                input_nullability: output_nullability.clone(),
                 referenced_from: NodeDisplayInputName {
                     node: node.display(node_id),
                     input_name: input_name.to_string()
@@ -288,10 +288,10 @@ impl NodeIO {
         })
     }
 
-    fn null_region<RuntimeCtx: 'static + ?Sized>(&self, graph: &IrGraph<RuntimeCtx>) -> NullRegion {
+    fn nullability<RuntimeCtx: 'static + ?Sized>(&self, graph: &IrGraph<RuntimeCtx>) -> Nullability {
         match &self {
-            NodeIO::Hole => NullRegion::Null,
-            NodeIO::ConstInline(_) | NodeIO::ConstRef(_) => NullRegion::NonNull,
+            NodeIO::Hole => Nullability::Null,
+            NodeIO::ConstInline(_) | NodeIO::ConstRef(_) => Nullability::NonNull,
             NodeIO::Dep(dep) => {
                 let output_type = match dep {
                     NodeIODep::GraphInput { idx} => &graph.input_types[*idx],
@@ -301,12 +301,12 @@ impl NodeIO {
                     NodeIODep::GraphInput { idx} => &graph.default_inputs[*idx],
                     NodeIODep::OtherNodeOutput { id, idx } => &graph.nodes[id.0].default_outputs[*idx]
                 };
-                let mut output_null_region = default_output.null_region(graph);
-                output_null_region.intersect(&output_type.null_region);
-                output_null_region
+                let mut output_nullability = default_output.nullability(graph);
+                output_nullability.intersect(&output_type.nullability);
+                output_nullability
             },
-            NodeIO::Array(inputs) => NullRegion::Partial(inputs.iter().map(|input| input.null_region(graph)).collect()),
-            NodeIO::Tuple(inputs_with_layouts) => NullRegion::Partial(inputs_with_layouts.iter().map(|input_with_layout| input_with_layout.input.null_region(graph)).collect())
+            NodeIO::Array(inputs) => Nullability::Partial(inputs.iter().map(|input| input.nullability(graph)).collect()),
+            NodeIO::Tuple(inputs_with_layouts) => Nullability::Partial(inputs_with_layouts.iter().map(|input_with_layout| input_with_layout.input.nullability(graph)).collect())
         }
     }
 }

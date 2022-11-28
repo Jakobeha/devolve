@@ -168,7 +168,7 @@ mod tests {
     use lazy_static::lazy_static;
     use structural_reflection::c_tuple::{c_tuple, CTuple};
     use crate::ir::{ComptimeCtx, NodeIO, NodeIOType, NodeTypeData};
-    use crate::raw::{NodeTypes, NodeType, NodeTypeMetadata, NullRegion, ComputeFn};
+    use crate::raw::{NodeTypes, NodeType, NodeTypeMetadata, Nullability, ComputeFn};
     use crate::macros::graph;
 
     lazy_static! {
@@ -197,19 +197,19 @@ mod tests {
                     NodeIOType {
                         name: "inputs".to_string(),
                         rust_type: RustType::of_slice::<Vector3<f64>>(),
-                        null_region: NullRegion::NonNull
+                        nullability: Nullability::NonNull
                     },
                     NodeIOType {
                         name: "distance_type".to_string(),
                         rust_type: RustType::of::<DistanceType>(),
-                        null_region: NullRegion::NonNull
+                        nullability: Nullability::NonNull
                     }
                 ],
                 outputs: vec![
                     NodeIOType {
                         name: "distance".to_string(),
                         rust_type: RustType::of::<f64>(),
-                        null_region: NullRegion::NonNull
+                        nullability: Nullability::NonNull
                     }
                 ]
             },

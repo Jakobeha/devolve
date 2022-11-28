@@ -10,7 +10,7 @@ use join_lazy_fmt::Join;
 use crate::graph::ir::NodeId;
 use structural_reflection::{RustType, RustTypeName, RustTypeNameParseErrorCause, TypeStructureBodyForm};
 use crate::ir::NodeDisplay;
-use crate::raw::{IOTypeCheckError, NullRegion};
+use crate::raw::{IOTypeCheckError, Nullability};
 
 macro_rules! mk_errors {
     ($Errors:ident, $Error:ident, $errors:literal) => {
@@ -340,8 +340,8 @@ pub enum GraphValidationError {
     },
     #[display(fmt = "I/O nullability mismatch: {} -> {} (in {})", output_nullability, input_nullability, referenced_from)]
     IONullabilityMismatch {
-        output_nullability: NullRegion,
-        input_nullability: NullRegion,
+        output_nullability: Nullability,
+        input_nullability: Nullability,
         referenced_from: NodeDisplayInputName
     },
     #[display(fmt = "I/O type mismatch: {} -> {} (in {})", "output_type.type_name.unqualified()", "input_type.type_name.unqualified()", referenced_from)]
@@ -407,8 +407,8 @@ pub enum GraphIOCheckError {
     #[display(fmt = "input nullability mismatch in {}, {} not a subset of {}", field_name, actual, expected)]
     InputNullabilityMismatch {
         field_name: String,
-        expected: NullRegion,
-        actual: NullRegion
+        expected: Nullability,
+        actual: Nullability
     },
     #[display(fmt = "output type mismatch: in {}, {} not a supertype of {}", field_name, "actual.type_name.unqualified()", "expected.type_name.unqualified()")]
     OutputTypeMismatch {
@@ -425,8 +425,8 @@ pub enum GraphIOCheckError {
     #[display(fmt = "output nullability mismatch in {}, {} not a superset of {}", field_name, actual, expected)]
     OutputNullabilityMismatch {
         field_name: String,
-        expected: NullRegion,
-        actual: NullRegion
+        expected: Nullability,
+        actual: Nullability
     },
 }
 

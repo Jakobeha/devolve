@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use devolve::ir::{ComptimeCtx, IrGraph, NodeIO, NodeIOType, NodeTypeData};
 use devolve::ast::types::AstGraph;
 use devolve::lower::LowerGraph;
-use devolve::raw::{ComputeFn, NodeType, NodeTypes, NullRegion, StoreData, LoadData, NonNull, Nullable, NodeTypeMetadata};
+use devolve::raw::{ComputeFn, NodeType, NodeTypes, Nullability, StoreData, LoadData, NonNull, Nullable, NodeTypeMetadata};
 use structural_reflection::c_tuple::{c_tuple, CTuple, CTuple2};
 use structural_reflection::{qualifier, RustType};
 use structural_reflection::derive::{HasTypeName, HasStructure};
@@ -69,24 +69,24 @@ fn tests_on_files() {
                                     NodeIOType {
                                         name: "text".to_string(),
                                         rust_type: RustType::of::<&str>(),
-                                        null_region: NullRegion::NonNull
+                                        nullability: Nullability::NonNull
                                     },
                                     NodeIOType {
                                         name: "is_enabled".to_string(),
                                         rust_type: RustType::of::<bool>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
                                         rust_type: RustType::of::<ViewId>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     },
                                     NodeIOType {
                                         name: String::from("click"),
                                         rust_type: RustType::of::<()>(),
-                                        null_region: NullRegion::Null
+                                        nullability: Nullability::Null
                                     }
                                 ]
                             },
@@ -124,34 +124,34 @@ fn tests_on_files() {
                                     NodeIOType {
                                         name: "text".to_string(),
                                         rust_type: RustType::of::<&str>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     },
                                     NodeIOType {
                                         name: "placeholder".to_string(),
                                         rust_type: RustType::of::<&str>(),
-                                        null_region: NullRegion::Null,
+                                        nullability: Nullability::Null,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
                                         rust_type: RustType::of::<ViewId>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     },
                                     NodeIOType {
                                         name: String::from("text"),
                                         rust_type: RustType::of::<&str>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     },
                                     NodeIOType {
                                         name: String::from("text_modified"),
                                         rust_type: RustType::of::<CTuple2<CRange<i64>, &str>>(),
-                                        null_region: NullRegion::Null
+                                        nullability: Nullability::Null
                                     },
                                     NodeIOType {
                                         name: String::from("enter_key"),
                                         rust_type: RustType::of::<()>(),
-                                        null_region: NullRegion::Null
+                                        nullability: Nullability::Null
                                     }
                                 ]
                             },
@@ -176,24 +176,24 @@ fn tests_on_files() {
                                     NodeIOType {
                                         name: "children".to_string(),
                                         rust_type: RustType::of_slice::<ViewId>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     },
                                     NodeIOType {
                                         name: "width".to_string(),
                                         rust_type: RustType::of::<i64>(),
-                                        null_region: NullRegion::Null,
+                                        nullability: Nullability::Null,
                                     },
                                     NodeIOType {
                                         name: "height".to_string(),
                                         rust_type: RustType::of::<i64>(),
-                                        null_region: NullRegion::Null,
+                                        nullability: Nullability::Null,
                                     }
                                 ],
                                 outputs: vec![
                                     NodeIOType {
                                         name: String::from(StaticStrs::SELF_FIELD),
                                         rust_type: RustType::of::<ViewId>(),
-                                        null_region: NullRegion::NonNull,
+                                        nullability: Nullability::NonNull,
                                     },
                                 ]
                             },
@@ -243,16 +243,16 @@ fn tests_on_files() {
                             RustType::of::<()>()
                         ];
                         let input_type_nullabilities = [
-                            NullRegion::Null,
-                            NullRegion::NonNull,
-                            NullRegion::Null,
-                            NullRegion::Null,
+                            Nullability::Null,
+                            Nullability::NonNull,
+                            Nullability::Null,
+                            Nullability::Null,
                         ];
                         let input_value_nullabilities = [
-                            NullRegion::NonNull,
-                            NullRegion::NonNull,
-                            NullRegion::Null,
-                            NullRegion::Null,
+                            Nullability::NonNull,
+                            Nullability::NonNull,
+                            Nullability::Null,
+                            Nullability::Null,
                         ];
                         let output_types = [
                             RustType::of::<&str>(),
@@ -262,11 +262,11 @@ fn tests_on_files() {
                             RustType::of::<()>()
                         ];
                         let output_nullabilities = [
-                            NullRegion::NonNull,
-                            NullRegion::Null,
-                            NullRegion::Null,
-                            NullRegion::Null,
-                            NullRegion::Null,
+                            Nullability::NonNull,
+                            Nullability::Null,
+                            Nullability::Null,
+                            Nullability::Null,
+                            Nullability::Null,
                         ];
                         let check_errors = lower_graph.check(
                             &input_types,

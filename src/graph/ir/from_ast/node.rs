@@ -6,7 +6,7 @@ use crate::ir::from_ast::{ForwardNode, GraphBuilder};
 use crate::ir::{FieldHeader, Node, NodeId, NodeIO, NodeIOType, NodeMetadata, NodeTypeData, NodeTypeName};
 use crate::graph::raw::{NodeType, NodeTypeFnCtx};
 use crate::ast::types::{AstField, AstFieldElem, AstFieldHeader, AstNode, AstNodeAttr, NodeColor, NodePos};
-use crate::raw::NullRegion;
+use crate::raw::Nullability;
 
 impl<'a, RuntimeCtx: ?Sized> GraphBuilder<'a, RuntimeCtx> {
     pub(super) fn forward_resolved_node(&self, node_name: &str) -> Option<(NodeId, &ForwardNode)> {
@@ -247,7 +247,7 @@ impl<'a, RuntimeCtx: ?Sized> GraphBuilder<'a, RuntimeCtx> {
         let io_type = NodeIOType {
             name: field.name,
             rust_type,
-            null_region: if field.rust_type_may_be_null { NullRegion::Null } else { NullRegion::NonNull }
+            nullability: if field.rust_type_may_be_null { Nullability::Null } else { Nullability::NonNull }
         };
         (io_type, value)
     }

@@ -4,7 +4,7 @@ use std::mem::{MaybeUninit, size_of};
 use std::ptr::copy_nonoverlapping;
 use crate::graph::error::{GraphIOCheckError, GraphIOCheckErrors, GraphValidationErrors};
 use crate::graph::ir::{IrGraph, Node as GraphNode, NodeId, NodeIO as GraphNodeInput, NodeIODep as GraphNodeInputDep, NodeIOWithLayout as GraphNodeInputWithLayout, NodeIOType};
-use crate::raw::{ComputeFn, IOData, StoreData, LoadData, NullRegion, RawData, ConstantPool, IOTypeCheckError};
+use crate::raw::{ComputeFn, IOData, StoreData, LoadData, Nullability, RawData, ConstantPool, IOTypeCheckError};
 use structural_reflection::{align_up, IsSubtypeOf, RustType};
 
 /// Lower graph with its own input and output data.
@@ -110,24 +110,24 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
             }
         }
         #[inline]
-        unsafe fn get_input(input: GraphNodeInput, (cached_input_data, cached_input_raw_nullability): (&mut RawData, &mut NullRegion), node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> NodeInput {
+        unsafe fn get_input(input: GraphNodeInput, (cached_input_data, cached_input_raw_nullability): (&mut RawData, &mut Nullability), node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> NodeInput {
             match input {
                 GraphNodeInput::Hole => {
                     assert!(hole_is_valid, "Hole input not valid");
                     NodeInput::Hole
                 },
                 GraphNodeInput::Dep(dep) => {
-                    *cached_input_raw_nullability = NullRegion::NonNull;
+                    *cached_input_raw_nullability = Nullability::NonNull;
                     NodeInput::Dep(get_input_dep(dep, node_indices))
                 },
                 GraphNodeInput::ConstInline(const_) => {
-                    *cached_input_raw_nullability = NullRegion::NonNull;
+                    *cached_input_raw_nullability = Nullability::NonNull;
                     debug_assert_eq!(const_.len(), cached_input_data.len());
                     copy_nonoverlapping(const_.as_ptr() as *const MaybeUninit<u8>, cached_input_data.as_mut_ptr(), cached_input_data.len());
                     NodeInput::Const
                 },
                 GraphNodeInput::ConstRef(ptr) => {
-                    *cached_input_raw_nullability = NullRegion::NonNull;
+                    *cached_input_raw_nullability = Nullability::NonNull;
                     // We don't know pointer size, all we know is that it's at least as large as a thin pointer
                     debug_assert!(size_of::<*const ()>() <= cached_input_data.len());
                     copy_nonoverlapping(ptr.ptr_to_pointer_data() as *const MaybeUninit<u8>, cached_input_data.as_mut_ptr(), cached_input_data.len());
@@ -136,17 +136,17 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                 GraphNodeInput::Array(inputs) => {
                     let elem_aligned_size = cached_input_data.len() / inputs.len();
                     let (lowered_inputs, raw_nullabilities) = zip(inputs, cached_input_data.chunks_exact_mut(elem_aligned_size)).map(|(input, cached_input_data)| {
-                        let mut cached_input_raw_nullability = NullRegion::Null;
+                        let mut cached_input_raw_nullability = Nullability::Null;
                         let lowered_input = get_input(input, (cached_input_data, &mut cached_input_raw_nullability), node_indices, hole_is_valid);
                         (lowered_input, cached_input_raw_nullability)
                     }).unzip();
-                    *cached_input_raw_nullability = NullRegion::Partial(raw_nullabilities);
+                    *cached_input_raw_nullability = Nullability::Partial(raw_nullabilities);
                     NodeInput::Array(lowered_inputs)
                 },
                 GraphNodeInput::Tuple(inputs_with_layouts) => {
                     let mut offset = 0;
                     let (lowered_inputs, raw_nullabilities) = inputs_with_layouts.into_iter().map(|GraphNodeInputWithLayout { input, size, align }| {
-                        let mut cached_input_raw_nullability = NullRegion::Null;
+                        let mut cached_input_raw_nullability = Nullability::Null;
                         offset = align_up(offset, align);
                         let cached_input_data = &mut cached_input_data[offset..offset + size];
                         let lowered_input = NodeInputWithLayout {
@@ -157,7 +157,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                         offset += size;
                         (lowered_input, cached_input_raw_nullability)
                     }).unzip();
-                    *cached_input_raw_nullability = NullRegion::Partial(raw_nullabilities);
+                    *cached_input_raw_nullability = Nullability::Partial(raw_nullabilities);
                     NodeInput::Tuple(lowered_inputs)
                 }
             }
@@ -167,7 +167,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
             debug_assert!(input_types.len() == inputs.len());
             let mut cached_input_data = IOData::new_raw_uninit(
                 input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
-                input_types.iter().map(|input| input.null_region.clone()).collect::<Vec<_>>()
+                input_types.iter().map(|input| input.nullability.clone()).collect::<Vec<_>>()
             );
             let inputs = zip(inputs.into_iter(), cached_input_data.iter_raw_data_mut())
                 .map(|(input, cached_input_data_and_nullability)| get_input(input, cached_input_data_and_nullability, node_indices, hole_is_valid))
@@ -216,9 +216,9 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
         &self,
         input_types: &[RustType],
         output_types: &[RustType],
-        input_type_nullabilities: &[NullRegion],
-        input_value_nullabilities: &[NullRegion],
-        output_nullabilities: &[NullRegion]
+        input_type_nullabilities: &[Nullability],
+        input_value_nullabilities: &[Nullability],
+        output_nullabilities: &[Nullability]
     ) -> GraphIOCheckErrors {
         debug_assert_eq!(input_value_nullabilities.len(), input_type_nullabilities.len());
         debug_assert_eq!(input_types.len(), input_value_nullabilities.len());
@@ -247,16 +247,16 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                 expected: self.output_types.len()
             });
         }
-        for (index, (input_value_region, input_type_region)) in zip(input_value_nullabilities(), input_type_nullabilities).enumerate() {
-            if !input_value_region.is_subset_of(input_type_region) {
+        for (index, (input_valueability, input_typeability)) in zip(input_value_nullabilities(), input_type_nullabilities).enumerate() {
+            if !input_valueability.is_subset_of(input_typeability) {
                 errors.push(GraphIOCheckError::IOTypeCheckError(IOTypeCheckError::InvalidRawNullability {
                     index,
-                    actual: input_value_region,
-                    expected: input_type_region.clone()
+                    actual: input_valueability,
+                    expected: input_typeability.clone()
                 }));
             }
         }
-        for ((actual_type, actual_region), NodeIOType { name, rust_type: expected_type, null_region: expected_region }) in zip(zip(input_types, input_value_nullabilities()), &self.input_types) {
+        for ((actual_type, actualability), NodeIOType { name, rust_type: expected_type, nullability: expectedability }) in zip(zip(input_types, input_value_nullabilities()), &self.input_types) {
             match actual_type.is_rough_subtype_of(expected_type) {
                 IsSubtypeOf::No => {
                     errors.push(GraphIOCheckError::InputTypeMismatch {
@@ -274,15 +274,15 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                 },
                 IsSubtypeOf::Yes => {}
             }
-            if !actual_region.is_subset_of(expected_region) {
+            if !actualability.is_subset_of(expectedability) {
                 errors.push(GraphIOCheckError::InputNullabilityMismatch {
                     field_name: name.clone(),
-                    expected: expected_region.clone(),
-                    actual: actual_region
+                    expected: expectedability.clone(),
+                    actual: actualability
                 });
             }
         }
-        for ((actual_type, actual_region), NodeIOType { name, rust_type: expected_type, null_region: expected_region }) in zip(zip(output_types.iter(), output_nullabilities.iter()), self.output_types.iter()) {
+        for ((actual_type, actualability), NodeIOType { name, rust_type: expected_type, nullability: expectedability }) in zip(zip(output_types.iter(), output_nullabilities.iter()), self.output_types.iter()) {
             match expected_type.is_rough_subtype_of(actual_type) {
                 IsSubtypeOf::No => {
                     errors.push(GraphIOCheckError::OutputTypeMismatch {
@@ -300,11 +300,11 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                 },
                 IsSubtypeOf::Yes => {}
             }
-            if !expected_region.is_subset_of(actual_region) {
+            if !expectedability.is_subset_of(actualability) {
                 errors.push(GraphIOCheckError::OutputNullabilityMismatch {
                     field_name: name.clone(),
-                    expected: expected_region.clone(),
-                    actual: actual_region.clone()
+                    expected: expectedability.clone(),
+                    actual: actualability.clone()
                 });
             }
         }
@@ -316,7 +316,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
     pub fn mk_uninit_input_data(&self) -> IOData {
         IOData::new_raw_uninit(
             self.input_types.iter().map(|input_type| input_type.rust_type.clone()).collect(),
-            self.input_types.iter().map(|input_type| input_type.null_region.clone()).collect()
+            self.input_types.iter().map(|input_type| input_type.nullability.clone()).collect()
         )
     }
 
@@ -324,7 +324,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
     pub fn mk_uninit_output_data(&self) -> IOData {
         IOData::new_raw_uninit(
             self.output_types.iter().map(|output_type| output_type.rust_type.clone()).collect(),
-            self.output_types.iter().map(|output_type| output_type.null_region.clone()).collect()
+            self.output_types.iter().map(|output_type| output_type.nullability.clone()).collect()
         )
     }
 
@@ -349,7 +349,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
         #[inline]
         unsafe fn handle_input<RuntimeCtx: 'static + ?Sized>(
             input: &NodeInput,
-            (input_data, input_nullability): (&mut RawData, &mut NullRegion),
+            (input_data, input_nullability): (&mut RawData, &mut Nullability),
             graph_inputs: &IOData,
             default_graph_inputs: &IOData,
             compute_sub_dag: &[Node<RuntimeCtx>]
@@ -364,7 +364,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
                         }
                         NodeInputDep::GraphInput { field_idx } => {
                             if !graph_inputs.raw_nullabilities()[*field_idx].is_subset_of(&default_graph_inputs.raw_nullabilities()[*field_idx]) {
-                                if !matches!(default_graph_inputs.raw_nullabilities()[*field_idx], NullRegion::NonNull) {
+                                if !matches!(default_graph_inputs.raw_nullabilities()[*field_idx], Nullability::NonNull) {
                                     unimplemented!("default partial input where only some of the data is overridden");
                                 }
                                 default_graph_inputs.raw_data_idx(*field_idx)

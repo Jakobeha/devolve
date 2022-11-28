@@ -2,29 +2,32 @@ use std::fmt::{Display, Formatter};
 use std::iter::{repeat, zip};
 use std::ops::Index;
 
+/// Nullability AKA null region: describes whether a value *may be* (not necessarily is) null.
+/// Values can be partially null if they are compound (tuples, arrays, structures, enum variants):
+/// in this case, some fields may be null while some are non-null.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NullRegion {
+pub enum Nullability {
     /// Entire region is null
     Null,
     /// Entire region is not null
     NonNull,
     /// Region is for a struct or array where parts may be null
-    Partial(Vec<NullRegion>)
+    Partial(Vec<Nullability>)
 }
 
-impl NullRegion {
+impl Nullability {
     /// Intersects nullability. **panics** if the null regions are partial and have different lengths
     pub fn intersect(&mut self, rhs: &Self) {
         match (self, rhs) {
-            (NullRegion::Null, NullRegion::Null) => {},
-            (this @ NullRegion::Null, NullRegion::NonNull) => *this = NullRegion::NonNull,
-            (this @ NullRegion::Null, NullRegion::Partial(other_elems)) => *this = NullRegion::Partial(other_elems.clone()),
-            (NullRegion::NonNull, NullRegion::Null) => {},
-            (NullRegion::NonNull, NullRegion::Partial(_)) => {},
-            (NullRegion::NonNull, NullRegion::NonNull) => {},
-            (NullRegion::Partial(_), NullRegion::Null) => {},
-            (this @ NullRegion::Partial(_), NullRegion::NonNull) => *this = NullRegion::NonNull,
-            (NullRegion::Partial(elems), NullRegion::Partial(other_elems)) => {
+            (Nullability::Null, Nullability::Null) => {},
+            (this @ Nullability::Null, Nullability::NonNull) => *this = Nullability::NonNull,
+            (this @ Nullability::Null, Nullability::Partial(other_elems)) => *this = Nullability::Partial(other_elems.clone()),
+            (Nullability::NonNull, Nullability::Null) => {},
+            (Nullability::NonNull, Nullability::Partial(_)) => {},
+            (Nullability::NonNull, Nullability::NonNull) => {},
+            (Nullability::Partial(_), Nullability::Null) => {},
+            (this @ Nullability::Partial(_), Nullability::NonNull) => *this = Nullability::NonNull,
+            (Nullability::Partial(elems), Nullability::Partial(other_elems)) => {
                 assert_eq!(elems.len(), other_elems.len(), "tried to compare null regions of different shapes");
                 for (elem, other_elem) in zip(elems, other_elems) {
                     elem.intersect(other_elem);
@@ -41,15 +44,15 @@ impl NullRegion {
     /// - otherwise, evaluates `a[i] <= b[i]` for each element
     pub fn is_subset_of(&self, other: &Self) -> bool {
         match (self, other) {
-            (NullRegion::Null, NullRegion::Null) => true,
-            (NullRegion::Null, NullRegion::NonNull) => false,
-            (NullRegion::Null, NullRegion::Partial(other_elems)) => other_elems.iter().all(|other_elem| NullRegion::Null.is_subset_of(other_elem)),
-            (NullRegion::NonNull, NullRegion::Null) => true,
-            (NullRegion::NonNull, NullRegion::Partial(_)) => true,
-            (NullRegion::NonNull, NullRegion::NonNull) => true,
-            (NullRegion::Partial(_), NullRegion::Null) => true,
-            (NullRegion::Partial(elems), NullRegion::NonNull) => elems.iter().all(|elem| elem.is_subset_of(&NullRegion::NonNull)),
-            (NullRegion::Partial(elems), NullRegion::Partial(other_elems)) => {
+            (Nullability::Null, Nullability::Null) => true,
+            (Nullability::Null, Nullability::NonNull) => false,
+            (Nullability::Null, Nullability::Partial(other_elems)) => other_elems.iter().all(|other_elem| Nullability::Null.is_subset_of(other_elem)),
+            (Nullability::NonNull, Nullability::Null) => true,
+            (Nullability::NonNull, Nullability::Partial(_)) => true,
+            (Nullability::NonNull, Nullability::NonNull) => true,
+            (Nullability::Partial(_), Nullability::Null) => true,
+            (Nullability::Partial(elems), Nullability::NonNull) => elems.iter().all(|elem| elem.is_subset_of(&Nullability::NonNull)),
+            (Nullability::Partial(elems), Nullability::Partial(other_elems)) => {
                 assert_eq!(elems.len(), other_elems.len(), "tried to compare null regions of different shapes");
                 zip(elems, other_elems).all(|(elem, other_elem)| elem.is_subset_of(other_elem))
             }
@@ -61,9 +64,9 @@ impl NullRegion {
     /// - `Partial` = iterator of elems
     pub fn subdivide(&self) -> impl Iterator<Item=&Self> {
         match self {
-            NullRegion::Null => SubdivideIter::Repeat(repeat(&NullRegion::Null)),
-            NullRegion::NonNull => SubdivideIter::Repeat(repeat(&NullRegion::NonNull)),
-            NullRegion::Partial(elems) => SubdivideIter::Slice(elems.iter())
+            Nullability::Null => SubdivideIter::Repeat(repeat(&Nullability::Null)),
+            Nullability::NonNull => SubdivideIter::Repeat(repeat(&Nullability::NonNull)),
+            Nullability::Partial(elems) => SubdivideIter::Slice(elems.iter())
         }
     }
 
@@ -72,12 +75,12 @@ impl NullRegion {
     /// - `Partial` = iterator of elems
     pub fn subdivide_mut(&mut self, len: usize) -> &mut [Self] {
         match self {
-            NullRegion::Null => *self = NullRegion::Partial(vec![NullRegion::Null; len]),
-            NullRegion::NonNull => *self = NullRegion::Partial(vec![NullRegion::NonNull; len]),
+            Nullability::Null => *self = Nullability::Partial(vec![Nullability::Null; len]),
+            Nullability::NonNull => *self = Nullability::Partial(vec![Nullability::NonNull; len]),
             _ => {}
         }
         match self {
-            NullRegion::Partial(elems) => elems,
+            Nullability::Partial(elems) => elems,
             _ => unreachable!()
         }
     }
@@ -87,25 +90,25 @@ impl NullRegion {
     /// - `Partial` = iterator of elems
     pub fn into_subdivide(self) -> impl Iterator<Item=Self> {
         match self {
-            NullRegion::Null => SubdivideIntoIter::Repeat(repeat(NullRegion::Null)),
-            NullRegion::NonNull => SubdivideIntoIter::Repeat(repeat(NullRegion::NonNull)),
-            NullRegion::Partial(elems) => SubdivideIntoIter::Slice(elems.into_iter())
+            Nullability::Null => SubdivideIntoIter::Repeat(repeat(Nullability::Null)),
+            Nullability::NonNull => SubdivideIntoIter::Repeat(repeat(Nullability::NonNull)),
+            Nullability::Partial(elems) => SubdivideIntoIter::Slice(elems.into_iter())
         }
     }
 }
 
 enum SubdivideIter<'a> {
-    Repeat(std::iter::Repeat<&'a NullRegion>),
-    Slice(std::slice::Iter<'a, NullRegion>),
+    Repeat(std::iter::Repeat<&'a Nullability>),
+    Slice(std::slice::Iter<'a, Nullability>),
 }
 
 enum SubdivideIntoIter {
-    Repeat(std::iter::Repeat<NullRegion>),
-    Slice(std::vec::IntoIter<NullRegion>),
+    Repeat(std::iter::Repeat<Nullability>),
+    Slice(std::vec::IntoIter<Nullability>),
 }
 
 impl<'a> Iterator for SubdivideIter<'a> {
-    type Item = &'a NullRegion;
+    type Item = &'a Nullability;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -116,7 +119,7 @@ impl<'a> Iterator for SubdivideIter<'a> {
 }
 
 impl Iterator for SubdivideIntoIter {
-    type Item = NullRegion;
+    type Item = Nullability;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -128,24 +131,24 @@ impl Iterator for SubdivideIntoIter {
 
 /// Index into this region = get whether the part at index is null:
 /// if this is `Partial`, indexes into the region. Otherwise returns `this`.
-impl Index<usize> for NullRegion {
+impl Index<usize> for Nullability {
     type Output = Self;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {
-            NullRegion::Null => &self,
-            NullRegion::NonNull => &self,
-            NullRegion::Partial(regions) => &regions[index]
+            Nullability::Null => &self,
+            Nullability::NonNull => &self,
+            Nullability::Partial(regions) => &regions[index]
         }
     }
 }
 
-impl Display for NullRegion {
+impl Display for Nullability {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            NullRegion::Null => write!(f, "?"),
-            NullRegion::NonNull => write!(f, "!"),
-            NullRegion::Partial(regions) => {
+            Nullability::Null => write!(f, "?"),
+            Nullability::NonNull => write!(f, "!"),
+            Nullability::Partial(regions) => {
                 write!(f, "[")?;
                 for region in regions {
                     write!(f, "{}", region)?;

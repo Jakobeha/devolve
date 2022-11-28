@@ -3,7 +3,7 @@ use std::mem::{MaybeUninit, size_of};
 use std::ptr::{copy_nonoverlapping, slice_from_raw_parts_mut};
 use structural_reflection::{HasTypeName, infer_c_tuple_elem_offsets, infer_c_tuple_size, RustType};
 use derive_more::{Display, Error};
-use crate::raw::{NullRegion, IODataTypes, IODataType};
+use crate::raw::{Nullability, IODataTypes, IODataType};
 
 /// Dyamically-typed read-only data for a node-graph =
 /// node-graph output data or compute function input data.
@@ -29,13 +29,13 @@ pub struct IOData {
     /// Type nullabilities of the data elements.
     ///
     /// When reading, means "expected to be non-null". When writing, means "required to be non-null"
-    type_nullabilities: Vec<NullRegion>,
+    type_nullabilities: Vec<Nullability>,
     /// Data element offsets
     offsets: Vec<usize>,
     /// Actual data elements in one contiguous region (see `offsets` for their offsets)
     raw: Box<RawData>,
     /// Nullability of each data element. Null = uninitialized.
-    raw_nullabilities: Vec<NullRegion>,
+    raw_nullabilities: Vec<Nullability>,
 }
 
 pub type RawData = [MaybeUninit<u8>];
@@ -68,12 +68,12 @@ impl LoadData {
     }
 
     /// Type nullabilities of the data elements = "expected to be non-null?"
-    pub fn type_nullabilities(&self) -> &[NullRegion] {
+    pub fn type_nullabilities(&self) -> &[Nullability] {
         self.0.type_nullabilities()
     }
 
     /// Nullability of each data element. Null = uninitialized.
-    pub fn raw_nullabilities(&self) -> &[NullRegion] {
+    pub fn raw_nullabilities(&self) -> &[Nullability] {
         self.0.raw_nullabilities()
     }
 
@@ -167,12 +167,12 @@ impl StoreData {
     }
 
     /// Type nullabilities of the data elements = "expected to be non-null?"
-    pub fn type_nullabilities(&self) -> &[NullRegion] {
+    pub fn type_nullabilities(&self) -> &[Nullability] {
         self.0.type_nullabilities()
     }
 
     /// Nullability of each data element. Null = uninitialized.
-    pub fn raw_nullabilities(&self) -> &[NullRegion] {
+    pub fn raw_nullabilities(&self) -> &[Nullability] {
         self.0.raw_nullabilities()
     }
 
@@ -224,19 +224,19 @@ impl IOData {
     pub fn uninit<Values: IODataTypes>() -> Self where <Values::Inner as HasTypeName>::StaticId: Sized {
         IOData::new_raw_uninit(
             Values::iter_rust_types().collect(),
-            Values::iter_max_null_regions().collect()
+            Values::iter_max_nullabilitys().collect()
         )
     }
 
     /// Creates data of `Values` type and type nullability.
     /// Stores `values` into it.
     pub fn init<Values: IODataTypes>(values: Values) -> Self where <Values::Inner as HasTypeName>::StaticId: Sized {
-        let (raw_data, null_regions) = values.split();
+        let (raw_data, nullabilitys) = values.split();
         IOData::new_raw(
             Values::iter_rust_types().collect(),
-            Values::iter_max_null_regions().collect(),
+            Values::iter_max_nullabilitys().collect(),
             raw_data,
-            null_regions
+            nullabilitys
         )
     }
 
@@ -255,9 +255,9 @@ impl IOData {
 
     fn new_raw<T>(
         rust_types: Vec<RustType>,
-        type_nullabilities: Vec<NullRegion>,
+        type_nullabilities: Vec<Nullability>,
         raw_data: MaybeUninit<T>,
-        raw_nullabilities: Vec<NullRegion>
+        raw_nullabilities: Vec<Nullability>
     ) -> Self {
         assert_eq!(size_of::<T>(), infer_c_tuple_size(&rust_types), "size of actual type must equal inferred size of rust_types");
         let mut this = Self::_new_raw_uninit(rust_types, type_nullabilities, raw_nullabilities);
@@ -272,21 +272,21 @@ impl IOData {
     /// Create uninitialied [IOData] with the given (known only at runtime) types and nullabilities
     pub(in crate::graph) fn new_raw_uninit(
         rust_types: Vec<RustType>,
-        type_nullabilities: Vec<NullRegion>
+        type_nullabilities: Vec<Nullability>
     ) -> Self {
         debug_assert_eq!(rust_types.len(), type_nullabilities.len(), "# of types must be the same as # of null regions");
         let len = type_nullabilities.len();
         IOData::_new_raw_uninit(
             rust_types,
             type_nullabilities,
-            vec![NullRegion::Null; len]
+            vec![Nullability::Null; len]
         )
     }
 
     fn _new_raw_uninit(
         rust_types: Vec<RustType>,
-        type_nullabilities: Vec<NullRegion>,
-        raw_nullabilities: Vec<NullRegion>
+        type_nullabilities: Vec<Nullability>,
+        raw_nullabilities: Vec<Nullability>
     ) -> Self {
         assert_eq!(rust_types.len(), type_nullabilities.len(), "# of types must be the same as # of null regions");
 
@@ -329,12 +329,12 @@ impl IOData {
     ///
     /// When loading, nullability = "expected to be non-null?",
     /// when storing, nullability = "required to store non-null?".
-    pub fn type_nullabilities(&self) -> &[NullRegion] {
+    pub fn type_nullabilities(&self) -> &[Nullability] {
         &self.type_nullabilities
     }
 
     /// Nullability of each data element. Null = uninitialized
-    pub fn raw_nullabilities(&self) -> &[NullRegion] {
+    pub fn raw_nullabilities(&self) -> &[Nullability] {
         &self.raw_nullabilities
     }
     // endregion
@@ -357,7 +357,7 @@ impl IOData {
                 });
             }
         }
-        for (index, (actual_nullability, expected_nullability)) in zip(&self.type_nullabilities, Values::iter_max_null_regions()).enumerate() {
+        for (index, (actual_nullability, expected_nullability)) in zip(&self.type_nullabilities, Values::iter_max_nullabilitys()).enumerate() {
             if actual_nullability != &expected_nullability {
                 return Err(IOTypeCheckError::TypeNullabilityMismatch {
                     index,
@@ -398,11 +398,11 @@ impl IOData {
                 expected: Value::rust_type()
             });
         }
-        if self.type_nullabilities[idx] != Value::max_null_region() {
+        if self.type_nullabilities[idx] != Value::max_nullability() {
             return Err(IOTypeCheckError::TypeNullabilityMismatch {
                 index: idx,
                 actual: self.type_nullabilities[idx].clone(),
-                expected: Value::max_null_region()
+                expected: Value::max_nullability()
             });
         }
         Ok(())
@@ -519,7 +519,7 @@ impl IOData {
 
     // region access raw data
     /// Access raw data slice and nullability at the give index
-    pub fn raw_data_idx(&self, idx: usize) -> (&RawData, &NullRegion) {
+    pub fn raw_data_idx(&self, idx: usize) -> (&RawData, &Nullability) {
         let (offset, size) = self.raw_offset_size(idx);
         (&self.raw[offset..offset + size], &self.raw_nullabilities[idx])
     }
@@ -527,7 +527,7 @@ impl IOData {
     /// Mutable access to raw data slice and nullability at the give index.
     ///
     /// SAFETY: Modifications must preserve the shape
-    pub unsafe fn raw_data_idx_mut(&mut self, idx: usize) -> (&mut RawData, &mut NullRegion) {
+    pub unsafe fn raw_data_idx_mut(&mut self, idx: usize) -> (&mut RawData, &mut Nullability) {
         let (offset, size) = self.raw_offset_size(idx);
         (&mut self.raw[offset..offset + size], &mut self.raw_nullabilities[idx])
     }
@@ -556,7 +556,7 @@ impl IOData {
     /// Mutable access to raw data slice and nullability at each index.
     ///
     /// SAFETY: Modifications must preserve the shape
-    pub unsafe fn iter_raw_data_mut(&mut self) -> impl Iterator<Item=(&mut RawData, &mut NullRegion)> {
+    pub unsafe fn iter_raw_data_mut(&mut self) -> impl Iterator<Item=(&mut RawData, &mut Nullability)> {
         let rust_types = &self.rust_types;
         let offsets = &self.offsets;
         let raw = self.raw.as_mut_ptr();
@@ -604,14 +604,14 @@ pub enum IOTypeCheckError {
     #[display(fmt = "type nullability mismatch at index {}: actual={} expected={}", index, actual, expected)]
     TypeNullabilityMismatch {
         index: usize,
-        actual: NullRegion,
-        expected: NullRegion
+        actual: Nullability,
+        expected: Nullability
     },
     #[display(fmt = "value is null when type is not nullable at index {}", index)]
     InvalidRawNullability {
         index: usize,
-        actual: NullRegion,
-        expected: NullRegion
+        actual: Nullability,
+        expected: Nullability
     }
 }
 

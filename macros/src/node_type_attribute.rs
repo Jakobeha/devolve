@@ -349,14 +349,14 @@ impl NodeTypeFn {
                             #(NodeIOType {
                                 name: #input_names,
                                 rust_type: #input_tys2,
-                                null_region: #input_nullabilitys
+                                nullability: #input_nullabilitys
                             }),*
                         ]
                         outputs: vec![
                             #(NodeIOType {
                                 name: #output_names,
                                 rust_type: #output_tys2,
-                                null_region: #output_nullabilitys
+                                nullability: #output_nullabilitys
                             }),*
                         ]
                     },
