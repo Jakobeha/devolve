@@ -60,7 +60,7 @@ fn tests_on_files() {
                     associated_files: &[],
                     run: |errors, input, input_path, _associated_files, _prior_tests| {
                         let mut node_types = NodeTypes::<TestRuntimeCtx>::new();
-                        node_types.insert(String::from("Button"), NodeType {
+                        node_types.insert("Button", NodeType {
                             compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Button");
                             }),
@@ -100,7 +100,7 @@ fn tests_on_files() {
                             ],
                             meta: NodeTypeMetadata::default()
                         });
-                        node_types.insert(String::from("TextField"), NodeType {
+                        node_types.insert("TextField", NodeType {
                             compute: ComputeFn::new(|ctx, inputs: &LoadData, outputs: &mut StoreData| {
                                 let (text, placeholder) = inputs.load_all::<CTuple!(
                                     NonNull<&str>,
@@ -167,7 +167,7 @@ fn tests_on_files() {
                             ],
                             meta: NodeTypeMetadata::default()
                         });
-                        node_types.insert(String::from("Box"), NodeType {
+                        node_types.insert("Box", NodeType {
                             compute: ComputeFn::new(|ctx, inputs, outputs| {
                                 eprintln!("TODO Box");
                             }),

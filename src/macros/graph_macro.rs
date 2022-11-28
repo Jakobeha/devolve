@@ -162,18 +162,67 @@ $first
 
 #[cfg(test)]
 mod tests {
-    use structural_reflection::Qualifier;
+    use std::ops::Add;
+    use structural_reflection::{Qualifier, RustType};
     use structural_reflection::derive::{HasStructure, HasTypeName};
     use lazy_static::lazy_static;
-    use crate::ir::ComptimeCtx;
-    use crate::raw::NodeTypes;
+    use structural_reflection::c_tuple::{c_tuple, CTuple};
+    use crate::ir::{ComptimeCtx, NodeIO, NodeIOType, NodeTypeData};
+    use crate::raw::{NodeTypes, NodeType, NodeTypeMetadata, NullRegion, ComputeFn};
     use crate::macros::graph;
 
     lazy_static! {
         static ref MY_COMPTIME_CTX: ComptimeCtx<MyRuntimeCtx> = ComptimeCtx {
             qualifier: Qualifier::local(),
-            node_types: NodeTypes::new()
+            node_types: node_types()
         };
+    }
+
+    fn node_types() -> NodeTypes<MyRuntimeCtx> {
+        let node_types = NodeTypes::new();
+        node_types.insert("Fun", NodeType {
+            compute: ComputeFn::new(|ctx, inputs, outputs| {
+                let (inputs, distance_type) = inputs.load::<CTuple!(Slice<Vector3<f64>>, NonNull<DistanceType>)>()?;
+
+                let distance = inputs.iter().flat_map(|a| inputs.map(|b| match distance_type {
+                    DistanceType::Euclidean => (a - b).magnitude(),
+                    DistanceType::Manhattan => (a - b).map(|x| x.abs()).sum(),
+                })).min().ok_or("no inputs")?;
+
+                outputs.store(c_tuple!(NonNull(distance)))?;
+                Ok(())
+            }),
+            type_data: NodeTypeData {
+                inputs: vec![
+                    NodeIOType {
+                        name: "inputs".to_string(),
+                        rust_type: RustType::of_slice::<Vector3<f64>>(),
+                        null_region: NullRegion::NonNull
+                    },
+                    NodeIOType {
+                        name: "distance_type".to_string(),
+                        rust_type: RustType::of::<DistanceType>(),
+                        null_region: NullRegion::NonNull
+                    }
+                ],
+                outputs: vec![
+                    NodeIOType {
+                        name: "distance".to_string(),
+                        rust_type: RustType::of::<f64>(),
+                        null_region: NullRegion::NonNull
+                    }
+                ]
+            },
+            default_inputs: vec![
+                NodeIO::Hole,
+                NodeIO::inline_const(DistanceType::Euclidean)
+            ],
+            default_default_outputs: vec![
+                NodeIO::Hole
+            ],
+            meta: NodeTypeMetadata::default()
+        });
+        node_types
     }
 
     struct MyRuntimeCtx;
@@ -183,6 +232,24 @@ mod tests {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, HasTypeName, HasStructure)]
     #[repr(C)]
     enum DistanceType { Euclidean, Manhattan }
+
+    impl Vector3<f64> {
+        fn magnitude(&self) -> f64 {
+            (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+        }
+
+        fn map(&self, f: impl Fn(f64) -> f64) -> Self {
+            Self {
+                x: f(self.x),
+                y: f(self.y),
+                z: f(self.z)
+            }
+        }
+
+        fn sum(&self) -> f64 {
+            self.x + self.y + self.z
+        }
+    }
 
     graph! { path = "$CARGO_MANIFEST_DIR/tests/resources/dvls/max_distance.dvl", comptime_ctx = MY_COMPTIME_CTX, ctx = MyRuntimeCtx;
         fn max_euclidean_distance(inputs: &[Vector3<f64>]) -> (f64);

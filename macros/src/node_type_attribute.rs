@@ -293,8 +293,7 @@ impl NodeTypeFn {
         let input_defaults2 = self.inputs.iter().map(|input|
             input.attr.default.as_ref().map(|(_, expr)| {
                 let type_ = input.type_.type_.clone();
-                let type2 = type_.clone();
-                quote!(NodeIO::ConstInline(Box::from_raw(std::slice::from_raw_parts(&#expr as *const #type_ as *const u8, std::mem::size_of::<#type2>()))))
+                quote!(NodeIO::inline_const::<#type_>(#expr))
             })
         );
         let inputs = self.inputs.iter().enumerate().map(|(index, input)| {
