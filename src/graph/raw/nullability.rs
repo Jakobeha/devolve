@@ -16,6 +16,24 @@ pub enum Nullability {
 }
 
 impl Nullability {
+    /// - `false` => `Null`
+    /// - `true` => `NonNull`
+    pub fn null_iff<T>(value: bool) -> Self {
+        match value {
+            false => Nullability::Null,
+            true => Nullability::NonNull
+        }
+    }
+
+    /// Whether this is `NonNull` or `Partial` of `is_non_null`.
+    pub fn is_non_null(&self) -> bool {
+        match self {
+            Nullability::Null => false,
+            Nullability::NonNull => true,
+            Nullability::Partial(elems) => elems.iter().all(|elem| elem.is_non_null())
+        }
+    }
+
     /// Intersects nullability. **panics** if the null regions are partial and have different lengths
     pub fn intersect(&mut self, rhs: &Self) {
         match (self, rhs) {
@@ -140,6 +158,19 @@ impl Index<usize> for Nullability {
             Nullability::NonNull => &self,
             Nullability::Partial(regions) => &regions[index]
         }
+    }
+}
+
+/// Index path (iterate each elem and index)
+impl<'a> Index<&'a [usize]> for Nullability {
+    type Output = Self;
+
+    fn index(&self, index_path: &'a [usize]) -> &Self::Output {
+        let mut result = self;
+        for index in index_path {
+            result = &result[index];
+        }
+        result
     }
 }
 

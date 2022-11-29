@@ -165,7 +165,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
         #[inline]
         unsafe fn get_inputs(input_types: &[NodeIOType], inputs: Vec<GraphNodeInput>, node_indices: &HashMap<NodeId, usize>, hole_is_valid: bool) -> (IOData, Vec<NodeInput>) {
             debug_assert!(input_types.len() == inputs.len());
-            let mut cached_input_data = IOData::new_raw_uninit(
+            let mut cached_input_data = IOData::uninit_dynamic(
                 input_types.iter().map(|input| input.rust_type.clone()).collect::<Vec<_>>(),
                 input_types.iter().map(|input| input.nullability.clone()).collect::<Vec<_>>()
             );
@@ -314,7 +314,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
 
     /// Creates a buffer of uninitialized data of the type required for this graph's input
     pub fn mk_uninit_input_data(&self) -> IOData {
-        IOData::new_raw_uninit(
+        IOData::uninit_dynamic(
             self.input_types.iter().map(|input_type| input_type.rust_type.clone()).collect(),
             self.input_types.iter().map(|input_type| input_type.nullability.clone()).collect()
         )
@@ -322,7 +322,7 @@ impl<RuntimeCtx: 'static + ?Sized> LowerGraph<RuntimeCtx> {
 
     /// Creates a buffer of uninitialized data of the type required for this graph's output
     pub fn mk_uninit_output_data(&self) -> IOData {
-        IOData::new_raw_uninit(
+        IOData::uninit_dynamic(
             self.output_types.iter().map(|output_type| output_type.rust_type.clone()).collect(),
             self.output_types.iter().map(|output_type| output_type.nullability.clone()).collect()
         )

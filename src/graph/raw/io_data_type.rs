@@ -11,7 +11,7 @@ pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized 
     type IterNullRegions: Iterator<Item=Nullability>;
 
     fn iter_rust_types() -> Self::IterRustTypes;
-    fn iter_max_nullabilitys() -> Self::IterNullRegions;
+    fn iter_type_nullabilitys() -> Self::IterNullRegions;
     fn len() -> usize;
     fn split(self) -> (MaybeUninit<Self::Inner>, Vec<Nullability>);
     fn into_normal(self) -> Self::Normal;
@@ -116,7 +116,7 @@ impl<T: IODataTypes> IODataType for Partial<T> where <T::Inner as HasTypeName>::
     }
 
     fn max_nullability() -> Nullability {
-        Nullability::Partial(T::iter_max_nullabilitys().collect())
+        Nullability::Partial(T::iter_type_nullabilitys().collect())
     }
 
     fn split(self) -> (MaybeUninit<Self::Inner>, Nullability) {
