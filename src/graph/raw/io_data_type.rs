@@ -1,136 +1,38 @@
 use std::assert_matches::assert_matches;
 use std::mem::MaybeUninit;
 use structural_reflection::{HasStructure, HasTypeName, RustType};
-use crate::raw::Nullability;
-
-/// A tuple of values with nullability info, which can be read from or written to a devolve graph
-pub trait IODataTypes: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
-    type Inner: HasStructure + Copy;
-    type Normal: Copy;
-    type IterRustTypes: Iterator<Item=RustType>;
-    type IterNullRegions: Iterator<Item=Nullability>;
-
-    fn iter_rust_types() -> Self::IterRustTypes;
-    fn iter_type_nullabilitys() -> Self::IterNullRegions;
-    fn len() -> usize;
-    fn split(self) -> (MaybeUninit<Self::Inner>, Vec<Nullability>);
-    fn into_normal(self) -> Self::Normal;
-    fn new(inner: MaybeUninit<Self::Inner>, nullabilitys: Vec<Nullability>) -> Self;
-}
+use crate::raw::{IODataRead, IODataWrite, Nullability};
 
 /// A value with nullability info, which can be read from or written to a devolve graph
-pub trait IODataType: Copy where <Self::Inner as HasTypeName>::StaticId: Sized {
-    type Inner: HasStructure + Copy;
-    type Normal: Copy;
-
+pub trait IODataType: Copy {
     fn rust_type() -> RustType;
-    fn max_nullability() -> Nullability;
-    fn split(self) -> (MaybeUninit<Self::Inner>, Nullability);
-    fn into_normal(self) -> Self::Normal;
-    fn new(inner: MaybeUninit<Self::Inner>, nullability: Nullability) -> Self;
+    fn type_nullability() -> Nullability;
+    unsafe fn _read_unchecked(data: &IODataRead<'_>) -> Self;
+    unsafe fn _write_unchecked(self, data: &mut IODataWrite<'_>);
 }
 
-/// Non-null [IODataType]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NonNull<T>(pub T);
-
-/// Nullable [IODataType]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Nullable<T> {
-    None,
-    Some(T),
-}
-
-/// [IODataType] of a tuple or structure where some elements may be nullable and some may be non-null.
-/// The tuple or structure's tuple items/fields are represented as a tuple, [IODataTypes].
-#[derive(Debug, Clone, Copy)]
-pub struct Partial<T: IODataTypes>(pub T) where <T::Inner as HasTypeName>::StaticId: Sized;
-
-impl<T: HasStructure + Copy> IODataType for NonNull<T> where T::StaticId: Sized {
-    type Inner = T;
-    type Normal = T;
-
+impl<T: IODataType> IODataType for Option<T> {
     fn rust_type() -> RustType {
-        RustType::of::<T>()
+        T::rust_type()
     }
 
-    fn max_nullability() -> Nullability {
-        Nullability::NonNull
-    }
-
-    fn split(self) -> (MaybeUninit<Self::Inner>, Nullability) {
-        (MaybeUninit::new(self.0), Nullability::NonNull)
-    }
-
-    fn into_normal(self) -> Self::Normal {
-        self.0
-    }
-
-    fn new(inner: MaybeUninit<Self::Inner>, nullability: Nullability) -> Self {
-        assert_matches!(nullability, NullRegion::NonNull, "NonNull created with null data");
-        NonNull(unsafe { inner.assume_init() })
-    }
-}
-
-impl<T: HasStructure + Copy> IODataType for Nullable<T> where T::StaticId: Sized {
-    type Inner = T;
-    type Normal = Option<T>;
-
-    fn rust_type() -> RustType {
-        RustType::of::<T>()
-    }
-
-    fn max_nullability() -> Nullability {
+    fn type_nullability() -> Nullability {
         Nullability::Null
     }
 
-    fn split(self) -> (MaybeUninit<Self::Inner>, Nullability) {
+    unsafe fn _read_unchecked(data: &IODataRead<'_>) -> Self {
+        if matches!(data.value_nullability(), Nullability::Null) {
+            None
+        } else {
+            Some(T::_read_unchecked(data))
+        }
+    }
+
+    unsafe fn _write_unchecked(self, data: &mut IODataWrite<'_>) {
         match self {
-            Nullable::None => (MaybeUninit::uninit(), Nullability::Null),
-            Nullable::Some(v) => (MaybeUninit::new(v), Nullability::NonNull),
+            None => *data.value_nullability_mut() = Nullability::Null,
+            Some(value) => value._write_unchecked(data),
         }
-    }
-
-    fn into_normal(self) -> Self::Normal {
-        match self {
-            Nullable::None => None,
-            Nullable::Some(v) => Some(v),
-        }
-    }
-
-    fn new(inner: MaybeUninit<Self::Inner>, nullability: Nullability) -> Self {
-        match nullability {
-            Nullability::Null => Nullable::None,
-            Nullability::NonNull => Nullable::Some(unsafe { inner.assume_init() }),
-            Nullability::Partial(_) => panic!("Cannot create Nullable from Partial"),
-        }
-    }
-}
-
-impl<T: IODataTypes> IODataType for Partial<T> where <T::Inner as HasTypeName>::StaticId: Sized {
-    type Inner = T::Inner;
-    type Normal = T::Normal;
-
-    fn rust_type() -> RustType {
-        RustType::of::<T::Inner>()
-    }
-
-    fn max_nullability() -> Nullability {
-        Nullability::Partial(T::iter_type_nullabilitys().collect())
-    }
-
-    fn split(self) -> (MaybeUninit<Self::Inner>, Nullability) {
-        let (value, nullabilitys) = self.0.split();
-        (value, Nullability::Partial(nullabilitys))
-    }
-
-    fn into_normal(self) -> Self::Normal {
-        self.0.into_normal()
-    }
-
-    fn new(inner: MaybeUninit<Self::Inner>, nullability: Nullability) -> Self {
-        let nullabilitys = nullability.into_subdivide().take(T::len()).collect();
-        Partial(T::new(inner, nullabilitys))
     }
 }
 
@@ -158,7 +60,7 @@ macro_rules! __impl_io_data_types__index {
     ($expr:ident.G) => { $expr.6 };
 }
 
-macro_rules! impl_io_data_types {
+macro_rules! impl_io_data_type_tuple {
     ($($name:ident),*) => {
 impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structural_reflection::c_tuple::CTuple!($($name),*) where $(<$name::Inner as HasTypeName>::StaticId: Sized),* {
     type Inner = structural_reflection::c_tuple::CTuple!($($name::Inner),*);
@@ -227,14 +129,14 @@ impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structura
     };
 }
 
-impl_io_data_types!();
-impl_io_data_types!(A);
-impl_io_data_types!(A, B);
-impl_io_data_types!(A, B, C);
-impl_io_data_types!(A, B, C, D);
-impl_io_data_types!(A, B, C, D, E);
-impl_io_data_types!(A, B, C, D, E, F);
-impl_io_data_types!(A, B, C, D, E, F, G);
+impl_io_data_type_tuple!();
+impl_io_data_type_tuple!(A);
+impl_io_data_type_tuple!(A, B);
+impl_io_data_type_tuple!(A, B, C);
+impl_io_data_type_tuple!(A, B, C, D);
+impl_io_data_type_tuple!(A, B, C, D, E);
+impl_io_data_type_tuple!(A, B, C, D, E, F);
+impl_io_data_type_tuple!(A, B, C, D, E, F, G);
 
 #[cfg(test)]
 mod tests {
