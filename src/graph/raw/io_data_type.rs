@@ -62,68 +62,39 @@ macro_rules! __impl_io_data_types__index {
 
 macro_rules! impl_io_data_type_tuple {
     ($($name:ident),*) => {
-impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataTypes for structural_reflection::c_tuple::CTuple!($($name),*) where $(<$name::Inner as HasTypeName>::StaticId: Sized),* {
-    type Inner = structural_reflection::c_tuple::CTuple!($($name::Inner),*);
-    #[allow(unused_parens)]
-    type Normal = ($($name::Normal),*);
-    type IterRustTypes = __impl_io_data_types__chain_type!(structural_reflection::RustType | $($name),*);
-    type IterNullRegions = __impl_io_data_types__chain_type!($crate::raw::NullRegion | $($name),*);
-
-    fn iter_rust_types() -> Self::IterRustTypes {
-        __impl_io_data_types__chain_value!($({ structural_reflection::RustType::of::<$name::Inner>() }),*)
+impl<$($name: $crate::raw::IODataType),*> $crate::raw::IODataType for ($($name),*) {
+    fn rust_type() -> structural_reflection::RustType {
+        structural_reflection::RustType::c_tuple(
+            __impl_io_data_types__chain_value!($( { $name::rust_type() } ),*).collect()
+        )
     }
 
-    fn iter_max_nullabilitys() -> Self::IterNullRegions {
-        __impl_io_data_types__chain_value!($({ $name::max_nullability() }),*)
+    fn type_nullability() -> $crate::raw::Nullability {
+        $crate::raw::Nullability::Partial(
+            __impl_io_data_types__chain_value!($( { $name::type_nullability() } ),*).collect()
+        )
     }
 
-    fn len() -> usize {
-        #[allow(unused_mut)]
-        let mut number = 0;
-        $({__impl_io_data_types__ignore!($name); number += 1; })*
-        number
+    unsafe fn _read_unchecked(data: &$crate::raw::IODataRead<'_>) -> Self {
+        let data_iter = data.iter();
+        let result = ($(
+            $name::_read_unchecked(data_iter.next().expect("tuple data is too short")),
+        ),*)
+        if data_iter.next().is_some() {
+            panic!("tuple data is too long");
+        }
+        result
     }
 
-    fn split(self) -> (std::mem::MaybeUninit<Self::Inner>, std::vec::Vec<$crate::raw::NullRegion>) {
-        let rust_types = Self::iter_rust_types().collect::<Vec<_>>();
-        #[allow(unused_mut)]
-        let mut value = std::mem::MaybeUninit::<Self::Inner>::uninit();
-        #[allow(unused_mut)]
-        let mut nullabilitys = std::vec::Vec::with_capacity(Self::len());
-        let mut offsets = structural_reflection::infer_c_tuple_elem_offsets(rust_types.iter());
-        #[allow(unused_parens, non_snake_case)]
-        let ($($name),*) = structural_reflection::c_tuple::CTuple::into_reg(self);
-        $({
-            let offset = offsets.next().unwrap();
-            let (elem_value, elem_nullability) = $name.split();
-            unsafe {
-                value.as_mut_ptr().cast::<MaybeUninit<u8>>().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().write(elem_value);
-            }
-            nullabilitys.push(elem_nullability);
-        })*
-        assert!(offsets.next().is_none());
-
-        (value, nullabilitys)
-    }
-
-    fn into_normal(self) -> Self::Normal {
-        #[allow(unused_parens, non_snake_case)]
-        let ($($name),*) = structural_reflection::c_tuple::CTuple::into_reg(self);
-        ($($name.into_normal()),*)
-    }
-
-    fn new(#[allow(unused_variables)] value: std::mem::MaybeUninit<Self::Inner>, nullabilitys: std::vec::Vec<$crate::raw::NullRegion>) -> Self {
-        let rust_types = Self::iter_rust_types().collect::<Vec<_>>();
-        let mut offsets = structural_reflection::infer_c_tuple_elem_offsets(rust_types.iter());
-        let mut nullabilitys = nullabilitys.into_iter();
-        let this = structural_reflection::c_tuple::c_tuple!($({
-            let offset = offsets.next().unwrap();
-            let elem_nullability = nullabilitys.next().unwrap();
-            let elem_value = unsafe { value.as_ptr().cast::<MaybeUninit<u8>>().add(offset).cast::<std::mem::MaybeUninit<$name::Inner>>().read() };
-            $name::new(elem_value, elem_nullability)
-        }),*);
-        assert!(offsets.next().is_none() && nullabilitys.next().is_none());
-        this
+    unsafe fn _write_unchecked(self, data: &mut $crate::raw::IODataWrite<'_>) {
+        let ($($name),*) = self;
+        let mut data_iter = data.iter_mut();
+        $(
+            $name._write_unchecked(data_iter.next().expect("tuple data is too short"));
+        )*
+        if data_iter.next().is_some() {
+            panic!("tuple data is too long");
+        }
     }
 }
     };
@@ -140,28 +111,32 @@ impl_io_data_type_tuple!(A, B, C, D, E, F, G);
 
 #[cfg(test)]
 mod tests {
-    use structural_reflection::c_tuple::{c_tuple, CTuple};
-    use crate::raw::{IODataTypes, NonNull, Nullable, Nullability};
+    use crate::raw::{IODataTypes, NonNull, Nullable, Nullability, IOData};
 
     #[test]
     pub fn regression_tests() {
-        let input_data = c_tuple!(
-            Nullable::Some("Placeholder"),
-            NonNull("Text"),
-            Nullable::<bool>::None,
-            Nullable::<()>::None
+        let input_data = (
+            Some("Placeholder"),
+            "Text",
+            Option::<bool>::None,
+            Option::<()>::None
         );
-        let (input_raw_data, input_nullabilities) = input_data.split();
-        assert_eq!(
-            input_nullabilities,
-            vec![Nullability::NonNull, Nullability::NonNull, Nullability::Null, Nullability::Null]
-        );
-        let input_data2 = <CTuple!(
-            Nullable<&str>,
-            NonNull<&str>,
-            Nullable<bool>,
-            Nullable<()>
-        )>::new(input_raw_data, input_nullabilities);
-        assert_eq!(input_data, input_data2);
+        let io_data_type = IOData::init(input_data);
+        assert_eq!(io_data_type.as_read().read().expect("read failed"), input_data);
+        let mut io_data_type2 = IOData::uninit::<(
+            Option<&'static str>,
+            &'static str,
+            Option<bool>,
+            Option<()>,
+        )>();
+        io_data_type2.as_write().write(io_data_type2.as_read().read().expect("read failed")).expect("write failed");
+        assert_eq!(io_data_type2.as_read().read().expect("read failed"), input_data);
+        let mut io_data_type3 = IOData::uninit::<(
+            Option<&'static str>,
+            &'static str,
+            Option<bool>,
+            Option<()>,
+        )>();
+        io_data_type.copy_data_into(&mut io_data_type3).expect("copy_data_into failed");
     }
 }

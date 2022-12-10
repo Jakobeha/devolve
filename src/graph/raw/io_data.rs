@@ -123,7 +123,7 @@ impl IOData {
     ///
     /// Somewhat contrary to the name, the data is not initialized if `fun` doesn't write to it.
     /// `init_with` implies that `fun` is doing some sort of initialization.
-    pub fn init_with<Value: IODataType>(fun: impl FnOnce(&mut IODataWrite<'_>)) -> IOTypeCheckResult<Self> {
+    pub fn init_with<Value: IODataType>(fun: impl FnOnce(&mut IODataWrite<'_>)) -> IOTypeCheckRootResult<Self> {
         let mut output = IOData::uninit::<Value>();
         fun(&mut output.as_write());
         output.as_check().check_value_nullability()?;
@@ -207,29 +207,29 @@ impl<'a> IODataWrite<'a> {
 // region check type and nullability
 impl<'a> IODataCheck<'a> {
     /// Checks that the element is of the given type
-    pub fn check_type<Value: IODataType>(&self) -> IOTypeCheckResult<()> {
+    pub fn check_type<Value: IODataType>(&self) -> IOTypeCheckRootResult<()> {
         if &self.rust_type.type_name != &Value::rust_type().type_name {
-            return Err(IOTypeCheckError::root(IOTypeCheckErrorCause::TypeMismatch {
+            return Err(IOTypeCheckRootError::TypeMismatch {
                 actual: self.rust_type.type_name.clone(),
                 expected: Value::rust_type().type_name
-            }));
+            });
         }
         if self.type_nullability != Value::type_nullability() {
-            return Err(IOTypeCheckError::root(IOTypeCheckErrorCause::TypeNullabilityMismatch {
+            return Err(IOTypeCheckRootError::TypeNullabilityMismatch {
                 actual: self.type_nullability.clone(),
                 expected: Value::type_nullability()
-            }));
+            });
         }
         Ok(())
     }
 
     /// Check that actual element is not null if its type expects it to be not null
-    pub fn check_value_nullability(&self) -> IOTypeCheckResult<()> {
+    pub fn check_value_nullability(&self) -> IOTypeCheckRootResult<()> {
         if !self.raw_nullability.is_subset_of(&self.type_nullability) {
-            return Err(IOTypeCheckError::root(IOTypeCheckErrorCause::RawNullabilityInvalid {
+            return Err(IOTypeCheckRootError::RawNullabilityInvalid {
                 actual: self.raw_nullability.clone(),
                 expected: self.type_nullability.clone()
-            }));
+            });
         }
         Ok(())
     }
@@ -244,6 +244,10 @@ impl IODataLayout {
 
     fn slice_mut(&self, data: &mut RawData) -> &mut RawData {
         &mut data[self.offset..self.offset + self.size]
+    }
+
+    fn slice_mut_ptr(&self, data: *mut RawData) -> *mut RawData {
+        data.slice(self.offset, self.offset + self.size)
     }
 }
 
@@ -291,6 +295,23 @@ impl<'a> IODataRead<'a> {
             raw
         }
     }
+
+    fn iter(&self) -> impl Iterator<Item=IODataRead<'a>> {
+        let elem_types = self.rust_type.structure.general_compound_elem_types().expect("Expected structure");
+        zip(
+            zip(&self.offsets.children, elem_types),
+            zip(self.type_nullability.subdivide(), self.raw_nullability.subdivide())
+        ).map(|((offset, rust_type), (type_nullability, raw_nullability))| {
+            let raw = offset.slice(self.raw);
+            IODataRead {
+                rust_type,
+                type_nullability,
+                offsets: offset,
+                raw_nullability,
+                raw
+            }
+        })
+    }
 }
 
 impl<'a> IODataWrite<'a> {
@@ -304,6 +325,24 @@ impl<'a> IODataWrite<'a> {
             raw_nullability: &mut self.raw_nullability[idx_path],
             raw
         }
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item=IODataWrite<'a>> {
+        let elem_types = self.rust_type.structure.general_compound_elem_types().expect("Expected structure");
+        let raw_ptr = self.raw as *mut RawData;
+        zip(
+            zip(&self.offsets.children, elem_types),
+            zip(self.type_nullability.subdivide(), self.raw_nullability.subdivide_mut(elem_types.len()))
+        ).map(|((offset, rust_type), (type_nullability, raw_nullability))| {
+            let raw = unsafe { &mut *offset.slice_mut_ptr(raw_ptr) };
+            IODataRead {
+                rust_type,
+                type_nullability,
+                offsets: offset,
+                raw_nullability,
+                raw
+            }
+        })
     }
 }
 // endregion
@@ -348,7 +387,7 @@ impl<'a> IODataRead<'a> {
     /// Read entire data.
     ///
     /// Returns `Err` if `Value` is the wrong type
-    pub fn read<Value: IODataType>(&self) -> IOTypeCheckResult<Value> {
+    pub fn read<Value: IODataType>(&self) -> IOTypeCheckRootResult<Value> {
         self.as_check().check_type::<Value>()?;
         self.as_check().check_value_nullability()?;
         Ok(unsafe { self.read_unchecked::<Value>() })
@@ -366,7 +405,7 @@ impl<'a> IODataWrite<'a> {
     /// Write entire data.
     ///
     /// Returns `Err` if `Value` is the wrong type
-    pub fn write<Value: IODataType>(&mut self, value: Value) -> IOTypeCheckResult<()> {
+    pub fn write<Value: IODataType>(&mut self, value: Value) -> IOTypeCheckRootResult<()> {
         self.as_check().check_type::<Value>()?;
         self.as_check().check_value_nullability()?;
         Ok(unsafe { self.write_unchecked::<Value>(value) })
@@ -411,9 +450,10 @@ impl<'a> IODataWrite<'a> {
     pub unsafe fn iter_raw_data_mut(&mut self) -> impl Iterator<Item=(&mut RawData, &mut Nullability)> {
         match self.raw_nullability {
             Nullability::Partial(ref child_nullabilities) => {
-                let raw_ptr = self.raw.as_mut_ptr();
+                let raw_ptr = self.raw as *mut RawData;
                 zip(&self.offsets.children, child_nullabilities)
-                    .map(|(offset, nullability)| (offset.slice_mut_ptr(self.raw), nullability))
+                    .map(|(offset, nullability)|
+                        (unsafe { &mut *offset.slice_mut_ptr(raw_ptr) }, nullability))
             }
             _ => panic!("Cannot access raw data at index of non-partial data")
         }
@@ -431,10 +471,32 @@ impl IOData {
         unsafe { copy_nonoverlapping(self.raw.as_ptr(), dest.raw.as_mut_ptr(), self.raw.len()); }
         self.raw_nullability.clone_into(&mut dest.raw_nullability);
     }
+
+    /// Copy raw data into the other [IOData].
+    ///
+    /// Returns `Err` if the types or type nullabilities are different.
+    pub fn copy_data_into(&self, dest: &mut Self) -> IOTypeCheckRootResult<()> {
+        if self.rust_type != dest.rust_type {
+            return Err(IOTypeCheckRootError::TypeMismatch {
+                expected: self.rust_type.clone(),
+                actual: dest.rust_type.clone()
+            });
+        }
+        if self.type_nullability != dest.type_nullability {
+            return Err(IOTypeCheckRootError::TypeNullabilityMismatch {
+                expected: self.type_nullability.clone(),
+                actual: dest.type_nullability.clone()
+            });
+        }
+        Ok(unsafe { self.copy_data_into_unchecked(dest) })
+    }
 }
 // endregion
 
 // region errors
+type IOTypeCheckResult<'a, T> = Result<T, IOTypeCheckError<'a>>;
+type IOTypeCheckRootResult<T> = Result<T, IOTypeCheckRootError>;
+
 /// When the type of `Value` is different than the type of the [IOData]:
 ///
 /// [IOData] is dynamically-typed. You can try to load or store values of any type,
@@ -446,12 +508,12 @@ pub struct IOTypeCheckError<'a> {
     /// Index path of the error (if nested, [] if root)
     index_path: &'a [usize],
     /// Underlying cause of the error: `cause` happened at `index_path`.
-    cause: IOTypeCheckErrorCause
+    cause: IOTypeCheckRootError
 }
 
 /// Underlying cause of the error: [IOTypeCheckError] is this with an index path.
 #[derive(Debug, Display, Error, Clone, PartialEq, Eq)]
-pub enum IOTypeCheckErrorCause {
+pub enum IOTypeCheckRootError {
     #[display(fmt = "out of bounds: idx={} len={}", idx, len)]
     OutOfBounds {
         idx: usize,
@@ -476,6 +538,12 @@ pub enum IOTypeCheckErrorCause {
     RawNullabilityInvalid {
         actual: Nullability,
         expected: Nullability
+    }
+}
+
+impl IOTypeCheckError<'static> {
+    fn root(cause: IOTypeCheckRootError) -> Self {
+        Self { index_path: &[], cause }
     }
 }
 // endregion
